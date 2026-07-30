@@ -1,0 +1,5 @@
+export { NebiusDisk as Disk, NebiusDiskProvider as DiskProvider, type NebiusDisk as DiskResource } from './disk.ts'
+export { NebiusImage as Image, NebiusImageProvider as ImageProvider, type NebiusImage as ImageResource } from './image.ts'
+export { NebiusInstance as Instance, NebiusInstanceProvider as InstanceProvider, type NebiusInstance as InstanceResource } from './instance.ts'
+export { NebiusFilesystem as Filesystem, NebiusFilesystemProvider as FilesystemProvider, type NebiusFilesystem as FilesystemResource } from './filesystem.ts'
+export { NebiusDiskSnapshot as DiskSnapshot, NebiusDiskSnapshotProvider as DiskSnapshotProvider, type NebiusDiskSnapshot as DiskSnapshotResource } from './disk-snapshot.ts'

@@ -1,0 +1,132 @@
+import * as Effect from 'effect/Effect'
+import * as Config from 'effect/Config'
+import * as Alchemy from 'alchemy'
+import * as AlchemyProvider from 'alchemy/Provider'
+import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
+import * as AlchemyDiff from 'alchemy/Diff'
+import * as AlchemyTags from 'alchemy/Tags'
+
+import * as NebiusProjectSchema from '../../../../schemas/nebius/iam/v2/project.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
+import * as ResourceUtils from '../../utilities.ts'
+
+import * as ProjectSchema from './project.schema.ts'
+import * as Factory from '../../factory.ts'
+
+// ----- RESOURCE TYPES
+
+export type NebiusProject = Alchemy.Resource<
+  'Nebius.iam.v2.Project',
+  ProjectSchema.ProjectProps,
+  ProjectSchema.ProjectAttributes
+>
+
+export const NebiusProject = Alchemy.Resource<NebiusProject>('Nebius.iam.v2.Project')
+
+// ----- HELPERS
+
+/**
+ * Flatten a protobuf {@link NebiusProjectSchema.Project} (metadata + spec +
+ * status) into {@link ProjectSchema.ProjectAttributes}.
+ */
+export const toFriendlyAttributes = (
+  rawProject: NebiusProjectSchema.Project,
+): ProjectSchema.ProjectAttributes => {
+  // Proto stores state as `status.projectState` (enum number).
+  // The JSON layer converts it to a string, but our schema expects `state`.
+  const safe = NebiusProjectSchema.Project.toJSON(rawProject) as { status?: { projectState?: string } }
+  return ResourceUtils.toFriendlyAttributes<ProjectSchema.ProjectAttributes>({
+    rawResource: rawProject,
+    resourceSchema: NebiusProjectSchema.Project,
+    overrides: { state: safe.status?.projectState },
+  })
+}
+
+// ----- PROVIDER
+
+export const NebiusProjectProvider = AlchemyProvider.succeed(NebiusProject, {
+  // Observe → Ensure → Sync → Return
+  reconcile: Effect.fn('Nebius.iam.v2.Project.reconcile')(function* ({ id, news, output, session }) {
+    // When props are fully optional and the user passes none, news is undefined.
+    // But region is required in the schema, so this won't happen in practice.
+    news = news || ({} as ProjectSchema.ProjectProps)
+
+    // Validate user input at runtime — catches what TypeScript can't
+    news = yield* ProjectSchema.validateProjectProps(news)
+
+    const iamGrpcService = yield* IamGrpc.IamGrpcService
+
+    // 1. Observe — fetch live state if we have a cached physical ID
+    let project: NebiusProjectSchema.Project | undefined
+    if (output?.id) {
+      project = yield* iamGrpcService.project
+        .get(output.id)
+        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    }
+
+    // 2. Ensure — create if missing (with ownership tags)
+    if (!project) {
+      const parentId = news.parentId || (yield* Config.string('NEBIUS_TENANT_ID'))
+      const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
+      const internalLabels = yield* AlchemyTags.createInternalTags(id)
+      const labels = { ...internalLabels, ...news.labels }
+
+      yield* session.note(`Creating Nebius.iam.v2.Project (${name})`)
+      project = yield* iamGrpcService.project.create({
+        metadata: { parentId, name, labels },
+        spec: NebiusProjectSchema.ProjectSpec.fromPartial({ region: news.region }),
+      })
+    }
+
+    // 3. Sync — update if spec drifted from desired
+    const desired = NebiusProjectSchema.ProjectSpec.fromPartial({ region: news.region })
+    if (project.spec && project.spec.region !== desired.region) {
+      yield* session.note(`Updating Nebius.iam.v2.Project (${project.metadata!.name})`)
+      project = yield* iamGrpcService.project.update({
+        metadata: {
+          id: project.metadata!.id,
+          resourceVersion: project.metadata!.resourceVersion.toString(),
+        },
+        spec: desired,
+      })
+    }
+
+    // 4. Return — fresh Attributes
+    return toFriendlyAttributes(project)
+  }),
+
+  delete: Factory.makeCrudDelete({
+    resourceName: 'Nebius.iam.v2.Project',
+    resourceLabel: 'Project',
+    service: IamGrpc.IamGrpcService,
+    deleteById: (svc, id) => svc.project.delete(id),
+  }),
+
+  read: Factory.makeCrudRead({
+    resourceName: 'Nebius.iam.v2.Project',
+    service: IamGrpc.IamGrpcService,
+    getById: (svc, id) => svc.project.get(id),
+    toAttrs: (raw) => toFriendlyAttributes(raw),
+  }),
+
+  list: Effect.fn('Nebius.iam.v2.Project.list')(function* () {
+    const svc = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const items = yield* svc.project.list(tenantId)
+    return items
+      .filter((p) => !p.metadata?.name?.startsWith('default-'))
+      .map(toFriendlyAttributes)
+  }),
+
+  // eslint-disable-next-line require-yield
+  diff: Effect.fn('Nebius.iam.v2.Project.diff')(function* ({ news, olds }) {
+    news = news || ({} as ProjectSchema.ProjectProps)
+    if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Name is immutable per proto — changing it requires a replace
+    if (news.name !== olds?.name) return { action: 'replace' }
+
+    // region changes can be done in-place via update
+    return undefined
+  }),
+})

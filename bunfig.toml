@@ -1,0 +1,4 @@
+[test]
+# Only discover tests from the tests/ directory.
+# Prevents vendored repos from being scanned.
+root = "tests"

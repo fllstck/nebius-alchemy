@@ -1,0 +1,16 @@
+version: v2
+
+inputs:
+  - git_repo: https://github.com/nebius/api.git
+    branch: main
+
+plugins:
+  - remote: buf.build/community/stephenh-ts-proto
+    out: schemas
+    opt:
+      - outputServices=grpc-js
+      - useOptionals=messages
+      - env=node
+      - addGrpcMetadata=true
+      - esModuleInterop=true
+      - forceLong=long

@@ -1,0 +1,33 @@
+import * as Test from 'alchemy/Test/Bun'
+import * as Effect from 'effect/Effect'
+import { expect } from 'bun:test'
+import * as Nebius from '@fllstck/nebius-alchemy'
+
+const { test } = Test.make({ providers: Nebius.providers() as any })
+
+test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.v1.Allocation lifecycle', (stack) =>
+  Effect.gen(function* () {
+    const { pool, allocation } = yield* stack.deploy(
+      Effect.gen(function* () {
+        const pool = yield* Nebius.vpc.Pool('AllocTest-Pool', {
+          version: 'IPV4',
+          visibility: 'PRIVATE',
+          cidrs: [{ cidr: '10.0.0.0/24' }],
+        })
+        const allocation = yield* Nebius.vpc.Allocation('AllocTest-Allocation', {
+          ipv4Private: { cidr: '10.0.0.1/32', poolId: pool.id },
+        })
+        return { pool, allocation }
+      }),
+    )
+
+    expect(pool.id).toBeDefined()
+    expect(allocation.id).toBeDefined()
+    expect(typeof allocation.id).toBe('string')
+    expect(allocation.name).toBeDefined()
+    expect(['ALLOCATED', 'ASSIGNED']).toContain(allocation.state)
+  }).pipe(
+    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+  ),
+  { timeout: 120_000 },
+)

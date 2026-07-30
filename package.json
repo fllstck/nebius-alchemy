@@ -1,0 +1,78 @@
+{
+  "name": "@fllstck/nebius-alchemy",
+  "type": "module",
+  "sideEffects": false,
+  "version": "0.3.13",
+  "description": "Nebius AI Cloud resource providers for Alchemy",
+  "keywords": [
+    "nebius",
+    "alchemy",
+    "cloud",
+    "infrastructure",
+    "effect",
+    "gpu",
+    "iac",
+    "llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fllstck/nebius-alchemy.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": "Kay Plößer <k@kay.is>",
+  "main": "./modules/index.ts",
+  "module": "./modules/index.ts",
+  "types": "./modules/index.ts",
+  "exports": {
+    ".": "./modules/index.ts",
+    "./*": "./modules/*"
+  },
+  "files": [
+    "modules/",
+    "schemas/",
+    "README.md"
+  ],
+  "scripts": {
+    "audit": "bun audit",
+    "check": "bun run typecheck && bun run lint",
+    "test": "bun test tests/",
+    "generate:schemas": "buf generate",
+    "lint": "oxlint modules/ tests/ examples/",
+    "typecheck:effect": "effect-tsgo diagnostics --project tsconfig.json",
+    "typecheck:ts": "tsc --noEmit --skipLibCheck --project tsconfig.json",
+    "typecheck": "bun run typecheck:ts && bun run typecheck:effect"
+  },
+  "prettier": {
+    "printWidth": 120,
+    "tabWidth": 2,
+    "useTabs": false,
+    "semi": false,
+    "singleQuote": true,
+    "trailingComma": "all"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.1",
+    "@types/bun": "latest",
+    "oxlint": "1.75.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "^7.0.0",
+    "@effect/tsgo": "0.20.0",
+    "@effect/platform-node": "4.0.0-beta.101"
+  },
+  "peerDependencies": {
+    "typescript": "^7",
+    "effect": ">=4.0.0-beta.100 || >=4.0.0",
+    "@effect/platform-bun": ">=4.0.0-beta.100 || >=4.0.0",
+    "@effect/platform-node": ">=4.0.0-beta.100 || >=4.0.0"
+  },
+  "dependencies": {
+    "@bradenmacdonald/s3-lite-client": "0.9.6",
+    "@bufbuild/protobuf": "2.13.0",
+    "@grpc/grpc-js": "^1.14.4",
+    "alchemy": "https://pkg.ing/alchemy/7f6143e",
+    "long": "5.3.2"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "search.exclude": {
+    "repos/": true
+  },
+  "files.watcherExclude": {
+    "repos/": true
+  },
+  "js/ts.preferences.autoImportFileExcludePatterns": ["repos/**"],
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+  // ---- tsgo: use @effect/tsgo native language service ----
+  "js/ts.experimental.useTsgo": true,
+  // ---- Oxlint (disables ESLint) ----
+  "eslint.enable": false,
+  "oxc.enable": true,
+  "oxc.lint.run": "onType",
+  "oxc.configPath": "./.oxlintrc.json"
+}

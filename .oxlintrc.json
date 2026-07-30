@@ -1,0 +1,83 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "jsPlugins": ["./tools/oxlint-nebius-plugin/index.js"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    "no-shadow": "off",
+    "no-control-regex": "off",
+
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/return-await": "warn",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/unbound-method": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/consistent-type-assertions": ["warn", { "assertionStyle": "as" }],
+
+    "typescript/no-unnecessary-condition": "off",
+    "typescript/no-unsafe-enum-comparison": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/no-unnecessary-type-arguments": "off",
+    "typescript/no-unnecessary-type-conversion": "off",
+    "typescript/no-unnecessary-type-parameters": "off",
+    "typescript/no-unnecessary-boolean-literal-compare": "off",
+    "typescript/no-unsafe-assignment": "off",
+    "typescript/no-unsafe-call": "off",
+    "typescript/no-unsafe-member-access": "off",
+    "typescript/no-unsafe-return": "off",
+    "typescript/no-unsafe-argument": "off",
+    "typescript/consistent-type-exports": "off",
+    "typescript/dot-notation": "off",
+    "typescript/consistent-return": "off",
+    "typescript/no-confusing-void-expression": "off",
+    "typescript/strict-boolean-expressions": "off",
+    "typescript/strict-void-return": "off",
+    "typescript/prefer-nullish-coalescing": "off",
+    "typescript/prefer-optional-chain": "off",
+    "typescript/no-useless-default-assignment": "off",
+    "typescript/prefer-readonly": "off",
+    "typescript/non-nullable-type-assertion-style": "off",
+    "typescript/no-mixed-enums": "off",
+
+    "nebius/no-effect-catchallcause": "error",
+    "nebius/no-effect-ignore": "error",
+    "nebius/no-silent-error-swallow": "warn",
+    "nebius/no-disable-validation": "error"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": ["node_modules/", "schemas/", ".alchemy/", "./repos", "modules/api-client/"],
+  "overrides": [
+    {
+      "files": ["tests/**", "examples/**"],
+      "rules": {
+        "nebius/no-effect-ignore": "warn",
+        "nebius/no-silent-error-swallow": "off",
+        "typescript/no-explicit-any": "warn"
+      }
+    },
+    {
+      "files": ["modules/state/ensure-bucket.ts"],
+      "rules": {
+        "nebius/no-silent-error-swallow": "off"
+      }
+    }
+  ]
+}

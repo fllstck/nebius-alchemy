@@ -1,0 +1,131 @@
+import * as Effect from 'effect/Effect'
+import * as Alchemy from 'alchemy'
+import * as AlchemyProvider from 'alchemy/Provider'
+import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
+import * as AlchemyDiff from 'alchemy/Diff'
+import * as AlchemyTags from 'alchemy/Tags'
+
+import * as NebiusSecurityRuleSchema from '../../../../schemas/nebius/vpc/v1/security_rule'
+import * as VpcGrpc from '../../../api-client/vpc'
+import * as ResourceUtils from '../../utilities.ts'
+
+import * as SecurityRuleSchema from './security-rule.schema.ts'
+import * as Factory from '../../factory.ts'
+
+// ----- RESOURCE TYPES
+
+export type NebiusSecurityRule = Alchemy.Resource<
+  'Nebius.vpc.v1.SecurityRule',
+  SecurityRuleSchema.SecurityRuleProps,
+  SecurityRuleSchema.SecurityRuleAttributes
+>
+
+export const NebiusSecurityRule = Alchemy.Resource<NebiusSecurityRule>('Nebius.vpc.v1.SecurityRule')
+
+// ----- HELPERS
+
+const toFriendlyAttributes = (
+  raw: NebiusSecurityRuleSchema.SecurityRule,
+): SecurityRuleSchema.SecurityRuleAttributes =>
+  ResourceUtils.toFriendlyAttributes<SecurityRuleSchema.SecurityRuleAttributes>({
+    rawResource: raw,
+    resourceSchema: NebiusSecurityRuleSchema.SecurityRule,
+  })
+
+// ----- PROVIDER
+
+export const NebiusSecurityRuleProvider = AlchemyProvider.succeed(NebiusSecurityRule, {
+  reconcile: Effect.fn('Nebius.vpc.v1.SecurityRule.reconcile')(function* ({ id, news, output, session }) {
+    news = news || {}
+    news = yield* SecurityRuleSchema.validateSecurityRuleProps(news)
+
+    const vpcGrpcService = yield* VpcGrpc.VpcGrpcService
+
+    // 1. Observe
+    let rule: NebiusSecurityRuleSchema.SecurityRule | undefined
+    if (output?.id) {
+      rule = yield* vpcGrpcService.securityRule
+        .get(output.id)
+        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    }
+
+    // 2. Ensure — parent is the SecurityGroup, not the Project
+    if (!rule) {
+      const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
+      const internalLabels = yield* AlchemyTags.createInternalTags(id)
+      const labels = { ...internalLabels, ...news.labels }
+
+      yield* session.note(`Creating Nebius.vpc.v1.SecurityRule (${name})`)
+      rule = yield* vpcGrpcService.securityRule.create({
+        metadata: { parentId: news.parentId, name, labels },
+        // fromJSON required: SecurityRuleSpec has enums (direction, protocol, access, type)
+        spec: NebiusSecurityRuleSchema.SecurityRuleSpec.fromJSON(news),
+      })
+    }
+
+    // 3. Sync
+    const desired = NebiusSecurityRuleSchema.SecurityRuleSpec.fromJSON(news)
+    if (
+      rule.spec &&
+      (rule.spec.access !== desired.access ||
+        rule.spec.protocol !== desired.protocol ||
+        rule.spec.priority !== desired.priority ||
+        rule.spec.type !== desired.type ||
+        !AlchemyDiff.deepEqual(rule.spec.ingress, desired.ingress) ||
+        !AlchemyDiff.deepEqual(rule.spec.egress, desired.egress))
+    ) {
+      yield* session.note(`Updating Nebius.vpc.v1.SecurityRule (${rule.metadata!.name})`)
+      rule = yield* vpcGrpcService.securityRule.update({
+        metadata: {
+          id: rule.metadata!.id,
+          resourceVersion: rule.metadata!.resourceVersion.toString(),
+        },
+        spec: desired,
+      })
+    }
+
+    return toFriendlyAttributes(rule)
+  }),
+
+  delete: Factory.makeCrudDelete({
+    resourceName: 'Nebius.vpc.v1.SecurityRule',
+    resourceLabel: 'SecurityRule',
+    service: VpcGrpc.VpcGrpcService,
+    deleteById: (svc, id) => svc.securityRule.delete(id),
+  }),
+
+  read: Factory.makeCrudRead({
+    resourceName: 'Nebius.vpc.v1.SecurityRule',
+    service: VpcGrpc.VpcGrpcService,
+    getById: (svc, id) => svc.securityRule.get(id),
+    toAttrs: (raw) => toFriendlyAttributes(raw),
+  }),
+
+  // Security rules are children of a specific SecurityGroup, so there's no
+  // project-scoped list operation. Import/adopt detection works via read()
+  // against known physical IDs instead.
+  list: Effect.fn('Nebius.vpc.v1.SecurityRule.list')(function* () {
+    yield* Effect.void
+    return []
+  }),
+
+  // eslint-disable-next-line require-yield
+  diff: Effect.fn('Nebius.vpc.v1.SecurityRule.diff')(function* ({ news, olds }) {
+    news = news || {}
+    if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Name is immutable — changing it requires a replace
+    if (news.name !== olds?.name) return { action: 'replace' }
+    // Can't move a rule between security groups — must recreate
+    if (news.parentId !== olds?.parentId) return { action: 'replace' }
+    // access is immutable after creation
+    if (news.access !== olds?.access) return { action: 'replace' }
+    // priority is immutable after creation
+    if (news.priority !== olds?.priority) return { action: 'replace' }
+    // ingress source (sourceCidrs) is immutable after creation
+    if (!AlchemyDiff.deepEqual(news.ingress?.sourceCidrs, olds?.ingress?.sourceCidrs))
+      return { action: 'replace' }
+
+    return undefined
+  }),
+})

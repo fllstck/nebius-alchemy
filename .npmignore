@@ -1,0 +1,15 @@
+repos/
+tests/
+examples/
+tools/
+docs/
+agent-patterns/
+ENDPOINTS.md
+TASKS.md
+AGENTS.md
+buf.gen.yaml
+bunfig.toml
+tsconfig.json
+.gitignore
+.npmignore
+.github/

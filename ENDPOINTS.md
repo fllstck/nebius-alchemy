@@ -1,0 +1,128 @@
+## Services and their endpoints
+
+- api.billing-report-exporter.billing-data-plane.api.nebius.cloud:443
+  - [nebius.billing.v1alpha1.OneTimeExportService](nebius/billing/v1alpha1/one_time_export_service.proto)
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+- api.calculator.billing-data-plane.api.nebius.cloud:443
+  - [nebius.billing.v1.CalculatorService](nebius/billing/v1/calculator_service.proto)
+  - [nebius.billing.v1alpha1.CalculatorService](nebius/billing/v1alpha1/calculator_service.proto)
+- apps.msp.api.nebius.cloud:443
+  - [nebius.ai.v1.EndpointService](nebius/ai/v1/endpoint_service.proto)
+  - [nebius.ai.v1.JobService](nebius/ai/v1/job_service.proto)
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+- audit.api.nebius.cloud:443
+  - [nebius.audit.v2.AuditEventExportService](nebius/audit/v2/audit_event_export_service.proto)
+  - [nebius.audit.v2.AuditEventService](nebius/audit/v2/audit_event_service.proto)
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+- capacity-advisor.billing-cpl.api.nebius.cloud:443
+  - [nebius.capacity.v1.ResourceAdviceService](nebius/capacity/v1/resource_advice_service.proto)
+- capacity-blocks.billing-cpl.api.nebius.cloud:443
+  - [nebius.capacity.v1.CapacityBlockGroupService](nebius/capacity/v1/capacity_block_group_service.proto)
+  - [nebius.capacity.v1.CapacityIntervalService](nebius/capacity/v1/capacity_interval_service.proto)
+- compute.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.compute.v1.DiskService](nebius/compute/v1/disk_service.proto)
+  - [nebius.compute.v1.FilesystemService](nebius/compute/v1/filesystem_service.proto)
+  - [nebius.compute.v1.GpuClusterService](nebius/compute/v1/gpu_cluster_service.proto)
+  - [nebius.compute.v1.ImageService](nebius/compute/v1/image_service.proto)
+  - [nebius.compute.v1.InstanceService](nebius/compute/v1/instance_service.proto)
+  - [nebius.compute.v1.MaintenanceService](nebius/compute/v1/maintenance_service.proto)
+  - [nebius.compute.v1.NVLInstanceGroupService](nebius/compute/v1/nvlinstancegroup_service.proto)
+  - [nebius.compute.v1.NodeService](nebius/compute/v1/node_service.proto)
+  - [nebius.compute.v1.PlatformService](nebius/compute/v1/platform_service.proto)
+- cpl.iam.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.iam.v1.AccessKeyService](nebius/iam/v1/access_key_service.proto)
+  - [nebius.iam.v1.AccessPermitService](nebius/iam/v1/access_permit_service.proto)
+  - [nebius.iam.v1.AuthPublicKeyService](nebius/iam/v1/auth_public_key_service.proto)
+  - [nebius.iam.v1.FederatedCredentialsService](nebius/iam/v1/federated_credentials_service.proto)
+  - [nebius.iam.v1.FederationCertificateService](nebius/iam/v1/federation_certificate_service.proto)
+  - [nebius.iam.v1.FederationService](nebius/iam/v1/federation_service.proto)
+  - [nebius.iam.v1.GroupMembershipService](nebius/iam/v1/group_membership_service.proto)
+  - [nebius.iam.v1.GroupService](nebius/iam/v1/group_service.proto)
+  - [nebius.iam.v1.InvitationService](nebius/iam/v1/invitation_service.proto)
+  - [nebius.iam.v1.ProfileService](nebius/iam/v1/profile_service.proto)
+  - [nebius.iam.v1.ProjectService](nebius/iam/v1/project_service.proto)
+  - [nebius.iam.v1.ServiceAccountService](nebius/iam/v1/service_account_service.proto)
+  - [nebius.iam.v1.SessionManagementService](nebius/iam/v1/session_management_service.proto)
+  - [nebius.iam.v1.StaticKeyService](nebius/iam/v1/static_key_service.proto)
+  - [nebius.iam.v1.TenantService](nebius/iam/v1/tenant_service.proto)
+  - [nebius.iam.v1.TenantUserAccountService](nebius/iam/v1/tenant_user_account_service.proto)
+  - [nebius.iam.v1.TenantUserAccountWithAttributesService](nebius/iam/v1/tenant_user_account_with_attributes_service.proto)
+  - [nebius.iam.v2.AccessKeyService](nebius/iam/v2/access_key_service.proto)
+  - [nebius.iam.v2.ProjectService](nebius/iam/v2/project_service.proto)
+  - [nebius.iam.v2.TenantService](nebius/iam/v2/tenant_service.proto)
+- cpl.kms.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.kms.v1.AsymmetricKeyService](nebius/kms/v1/asymmetric_key_service.proto)
+  - [nebius.kms.v1.SymmetricKeyService](nebius/kms/v1/symmetric_key_service.proto)
+- cpl.mysterybox.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.mysterybox.v1.SecretService](nebius/mysterybox/v1/secret_service.proto)
+  - [nebius.mysterybox.v1.SecretVersionService](nebius/mysterybox/v1/secret_version_service.proto)
+- cpl.storage.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.storage.v1.BucketService](nebius/storage/v1/bucket_service.proto)
+- cpl.teplo.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.logging.v1.LogExportService](nebius/logging/v1/log_export_service.proto)
+- deployment-manager.mkt.api.nebius.cloud:443
+  - [nebius.applications.v1alpha1.K8sReleaseService](nebius/applications/v1alpha1/k8s_release_service.proto)
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+- dns.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.dns.v1.RecordService](nebius/dns/v1/record_service.proto)
+  - [nebius.dns.v1.ZoneService](nebius/dns/v1/zone_service.proto)
+- dpl.kms.api.nebius.cloud:443
+  - [nebius.kms.v1.AsymmetricCryptoService](nebius/kms/v1/asymmetric_crypto_service.proto)
+  - [nebius.kms.v1.SymmetricCryptoService](nebius/kms/v1/symmetric_crypto_service.proto)
+- dpl.mysterybox.api.nebius.cloud:443
+  - [nebius.mysterybox.v1.PayloadService](nebius/mysterybox/v1/payload_service.proto)
+- maintenance.msp.api.nebius.cloud:443
+  - [nebius.maintenance.v1alpha1.MaintenanceService](nebius/maintenance/v1alpha1/maintenance_service.proto)
+- mk8s.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.common.v1alpha1.OperationService](nebius/common/v1alpha1/operation_service.proto)
+  - [nebius.mk8s.v1.ClusterService](nebius/mk8s/v1/cluster_service.proto)
+  - [nebius.mk8s.v1.NodeGroupService](nebius/mk8s/v1/node_group_service.proto)
+  - [nebius.mk8s.v1alpha1.ClusterService](nebius/mk8s/v1alpha1/cluster_service.proto)
+  - [nebius.mk8s.v1alpha1.NodeGroupService](nebius/mk8s/v1alpha1/node_group_service.proto)
+- mlflow.msp.api.nebius.cloud:443
+  - [nebius.common.v1alpha1.OperationService](nebius/common/v1alpha1/operation_service.proto)
+  - [nebius.msp.mlflow.v1alpha1.ClusterService](nebius/msp/mlflow/v1alpha1/cluster_service.proto)
+- observability-agent-manager.api.nebius.cloud:443
+  - [nebius.logging.agentmanager.v1.VersionService](nebius/logging/v1/agentmanager/version_service.proto)
+- postgresql.msp.api.nebius.cloud:443
+  - [nebius.common.v1alpha1.OperationService](nebius/common/v1alpha1/operation_service.proto)
+  - [nebius.msp.postgresql.v1alpha1.BackupService](nebius/msp/postgresql/v1alpha1/backup_service.proto)
+  - [nebius.msp.postgresql.v1alpha1.ClusterService](nebius/msp/postgresql/v1alpha1/cluster_service.proto)
+- quota-dispatcher.billing-cpl.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.quotas.v1.QuotaAllowanceService](nebius/quotas/v1/quota_allowance_service.proto)
+- registry.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.registry.v1.ArtifactService](nebius/registry/v1/artifact_service.proto)
+  - [nebius.registry.v1.RegistryService](nebius/registry/v1/registry_service.proto)
+- tokens.iam.api.nebius.cloud:443
+  - [nebius.iam.v1.TokenExchangeService](nebius/iam/v1/token_exchange_service.proto)
+- transfer.storage.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.storage.v1.TransferService](nebius/storage/v1/transfer_service.proto)
+  - [nebius.storage.v1alpha1.TransferService](nebius/storage/v1alpha1/transfer_service.proto)
+- vpc.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.common.v1alpha1.OperationService](nebius/common/v1alpha1/operation_service.proto)
+  - [nebius.vpc.v1.AllocationService](nebius/vpc/v1/allocation_service.proto)
+  - [nebius.vpc.v1.NetworkService](nebius/vpc/v1/network_service.proto)
+  - [nebius.vpc.v1.PoolService](nebius/vpc/v1/pool_service.proto)
+  - [nebius.vpc.v1.RouteService](nebius/vpc/v1/route_service.proto)
+  - [nebius.vpc.v1.RouteTableService](nebius/vpc/v1/route_table_service.proto)
+  - [nebius.vpc.v1.SecurityGroupService](nebius/vpc/v1/security_group_service.proto)
+  - [nebius.vpc.v1.SecurityRuleService](nebius/vpc/v1/security_rule_service.proto)
+  - [nebius.vpc.v1.SubnetService](nebius/vpc/v1/subnet_service.proto)
+  - [nebius.vpc.v1.TargetGroupService](nebius/vpc/v1/target_group_service.proto)
+  - [nebius.vpc.v1alpha1.AllocationService](nebius/vpc/v1alpha1/allocation_service.proto)
+  - [nebius.vpc.v1alpha1.NetworkService](nebius/vpc/v1alpha1/network_service.proto)
+  - [nebius.vpc.v1alpha1.PoolService](nebius/vpc/v1alpha1/pool_service.proto)
+  - [nebius.vpc.v1alpha1.ScopeService](nebius/vpc/v1alpha1/scope_service.proto)
+  - [nebius.vpc.v1alpha1.SubnetService](nebius/vpc/v1alpha1/subnet_service.proto)
