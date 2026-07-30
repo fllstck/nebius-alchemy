@@ -2,11 +2,13 @@
 
 Build Nebius cloud infrastructure as typed [Effect](https://effect.website) programs. GPU compute, VPC networks, IAM, object storage, DNS, KMS, and secrets — all in one TypeScript program, deployed with [Alchemy](https://v2.alchemy.run).
 
-```bash
-bun add @fllstck/nebius-alchemy alchemy@next effect@next
-```
-
 ## Quick Start
+
+You need [a Nebius account](https://nebius.com/).
+
+```bash
+bun add @fllstck/nebius-alchemy alchemy@next effect@beta @effect/platform-bun@beta @effect/platform-node@beta typescript
+```
 
 ```ts
 // alchemy.run.ts
@@ -28,27 +30,43 @@ export default Alchemy.Stack(
 )
 ```
 
-```bash
-alchemy deploy --yes
+Configure the project you want to deploy to.
+
+```
+// .env
+
+NEBIUS_PROJECT_ID=<YOUR_RROJECT_ID>
 ```
 
-## Consuming
+Set the API key for the Nebius AI Cloud API. This can be done via the Nebius CLI or by manually entering a key.
+
+```bash
+bun alchemy login
+```
+
+Deploy the bucket.
+
+```bash
+alchemy deploy
+```
+
+Delete the bucket.
+
+```bash
+alchemy destroy
+```
 
 ### Peer Dependencies
 
 The package ships raw TypeScript source and requires these peer dependencies installed in your project:
 
-| Package                  | Required | Notes                                |
-| ------------------------ | -------- | ------------------------------------ |
-| `effect`                 | Yes      | Effect V4 runtime (`>=4.0.0-beta.100` or `>=4.0.0`) |
-| `@effect/platform-bun`   | Yes      | Bun platform bindings                |
-| `@effect/platform-node`  | Yes      | Required by Alchemy CLI              |
-| `typescript`             | Yes      | TypeScript 7 (`^7.0.0`)              |
-| `alchemy`                | Yes      | Alchemy V2 (`@next` tag)             |
-
-```bash
-bun add @fllstck/nebius-alchemy alchemy@next effect@beta @effect/platform-bun@beta @effect/platform-node@beta typescript
-```
+| Package                 | Required | Notes                                               |
+| ----------------------- | -------- | --------------------------------------------------- |
+| `effect`                | Yes      | Effect V4 runtime (`>=4.0.0-beta.100` or `>=4.0.0`) |
+| `@effect/platform-bun`  | Yes      | Bun platform bindings                               |
+| `@effect/platform-node` | Yes      | Required by Alchemy CLI                             |
+| `typescript`            | Yes      | TypeScript 7 (`^7.0.0`)                             |
+| `alchemy`               | Yes      | Alchemy V2 (`@next` tag)                            |
 
 ### tsconfig.json
 
@@ -72,14 +90,16 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 
 ## Prerequisites
 
-| Variable            | Required | Description                                   |
-| ------------------- | -------- | --------------------------------------------- |
-| `NEBIUS_API_KEY`    | Yes      | IAM API key (auto-populated from Nebius CLI)  |
-| `NEBIUS_PROJECT_ID` | Yes      | Nebius project ID                             |
-| `NEBIUS_TENANT_ID`  | —        | Tenant ID for project/group discovery actions |
-| `NEBIUS_REGION`     | —        | Default region (defaults to `eu-north1`)      |
+| Variable            | Required | Description                                            |
+| ------------------- | -------- | ------------------------------------------------------ |
+| `NEBIUS_API_KEY`    | Yes      | IAM API key (auto-populated from Nebius CLI)           |
+| `NEBIUS_PROJECT_ID` | Yes      | Nebius project ID                                      |
+| `NEBIUS_TENANT_ID`  | —        | Tenant ID for project/group discovery/creation actions |
+| `NEBIUS_REGION`     | —        | Default region (defaults to `eu-north1`)               |
 
 ## Resources
+
+All resources that currently are currently implemented.
 
 ### Compute
 
@@ -176,10 +196,10 @@ Read-only actions for discovering existing resources without managing them. Usef
 alchemy plan
 
 # Deploy
-alchemy deploy --yes
+alchemy deploy
 
 # Tear down
-alchemy destroy --yes
+alchemy destroy
 ```
 
 Resources follow the namespace hierarchy `Nebius.<service>.<Resource>`:
