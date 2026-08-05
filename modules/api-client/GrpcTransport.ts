@@ -2,6 +2,7 @@ import * as Effect from 'effect/Effect'
 import * as Context from 'effect/Context'
 import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
+import { randomUUID } from 'node:crypto'
 import * as grpc from '@grpc/grpc-js'
 import * as NebiusCredentials from '../Credentials'
 import * as Endpoints from '../endpoints.ts'
@@ -79,11 +80,15 @@ const makeTransport = Effect.fn('NebiusGrpcTransport.make')(function* () {
         }
       }
       if (!channel) {
-        // Build channel credentials: TLS + API key auth via metadata
+        // Build channel credentials: TLS + API key auth via metadata.
+        // X-Idempotency-Key matches the official Nebius SDK (gosdk), which
+        // attaches a fresh key to every request — idempotent creates let the
+        // server dedupe retried calls.
         const sslCreds = grpc.credentials.createSsl()
         const authCreds = grpc.credentials.createFromMetadataGenerator((_params, callback) => {
           const metadata = new grpc.Metadata()
           metadata.add('authorization', `Bearer ${Redacted.value(apiKey)}`)
+          metadata.add('x-idempotency-key', randomUUID())
           callback(null, metadata)
         })
         const channelCreds = grpc.credentials.combineChannelCredentials(sslCreds, authCreds)
