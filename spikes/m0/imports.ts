@@ -66,3 +66,16 @@ export const assertHost = (value: unknown): void => {
     void value.LogicalId
   }
 }
+
+// --- 6. Nebius bucket attributes resolve as lazy Outputs in a binding impl ---
+import * as Nebius from '@fllstck/nebius-alchemy'
+
+export const BucketOutputProbe = Effect.fn('BucketOutputProbe')(function* () {
+  const bucket = yield* Nebius.storage.Bucket('ProbeBucket')
+  // Resource attribute access is lazy: `bucket.name` is an Effect yielding an
+  // Accessor — double-yield to materialize (same as AWS S3 `bucket.bucketName`).
+  const nameAccessor = yield* bucket.name
+  const name: string = yield* nameAccessor
+  const id: string = yield* yield* bucket.id
+  return `${id}/${name}`
+})

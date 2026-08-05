@@ -58,7 +58,11 @@ Nebius, (2) env injected into the Worker as `plain_text`/`secret_text` bindings,
   text }] }`; `secret_text` deploys as a Cloudflare secret.
 - **`__ALCHEMY_RUNTIME__` guard**: deploy-time wiring runs in the CLI process
   (Node); at runtime (deployed Worker **and** `alchemy dev` local workerd) the
-  guard skips it. The host resource is absent at runtime.
+  guard skips it. **M0-verified mechanism:** alchemy's bundler *folds* the guard
+  (`ALCHEMY_DEFINE` in `Bundle.ts` replaces `globalThis.__ALCHEMY_RUNTIME__`
+  with `true` at build time) and dce-only minify physically removes the
+  `if (false)` branch — including anything inside it, such as a dynamic
+  `await import()`. The folded marker never appears in the bundle.
 - **The AWS path differs (noted, not built now):** AWS Lambda/ECS/EKS merge
   `data.env` into function config and `data.policyStatements` into IAM
   (`Function.ts:938`); narrowed by `isBindingHost` (checks `Type` ∈
@@ -106,23 +110,21 @@ Nebius, (2) env injected into the Worker as `plain_text`/`secret_text` bindings,
   stable tags, not raw SDK exceptions.
 - **D7 — Env names are namespaced** `NEBIUS_*`, unique per (host, capability),
   so multiple bindings on one host don't collide.
-- **D8 — Deploy-time provisioning lives in a dynamically-imported module.**
-  Critical for Workers: `@grpc/grpc-js` (Node-only) is statically imported by
-  `api-client` → `iam.AccessKey` etc. Any binding module that statically imports
-  those breaks the workerd bundle at module evaluation. So:
-  - `bindings.ts` (contracts + CF Layer + runtime client) imports **only**
-    workerd-safe modules: `alchemy/Binding`, `alchemy/Cloudflare/Workers/Worker`,
-    `s3-lite-client`, schemas.
-  - `host-identity.ts` (gRPC provisioning + resource declarations) is
-    `await import()`ed **inside** the `!__ALCHEMY_RUNTIME__` guard — evaluated
-    only in the CLI deploy process, never on workerd.
-  - Resource *declarations* (the `yield* Token(...)` calls) may still run
-    unguarded/idempotently at runtime (per Resource.ts "idempotent
-    registration"); it's the *module evaluation* of gRPC that must not reach
-    the bundle. If M0 shows bundlers eagerly evaluate dynamic imports, fall
-    back to declaring the identity resources from `bindings.ts` and keeping
-    only the gRPC *calls* (via a dynamic import of the api-client) behind the
-    guard.
+- **D8 — Deploy-time provisioning lives in a dynamically-imported module.
+  M0-VERIFIED, no fallback needed.** `@grpc/grpc-js` (Node-only) is statically
+  imported by `api-client` → `iam.AccessKey` etc., so any binding module that
+  statically imports those breaks the workerd bundle. The experiment
+  (`spikes/worker-bundle/`, alchemy's own `Bundle.build`):
+  - **Guarded dynamic import** (`await import('./host-identity')` inside
+    `!__ALCHEMY_RUNTIME__`): the bundle came out **67 KB with zero gRPC
+    markers** — `ALCHEMY_DEFINE` folds the guard to `false` and DCE removes the
+    entire branch *including the dynamic import*. The gRPC module is
+    **physically absent** from the Worker bundle, not merely never-evaluated.
+  - **Naive static import** (control): 884 KB bundle with `require("net")` /
+    `http2` / `tls` left as externals — would crash workerd at module
+    evaluation.
+  So: keep `host-identity.ts` behind the guarded dynamic import; no static
+  gRPC imports in binding modules (also a lint-able rule for the future).
 
 ## Architecture
 
@@ -210,8 +212,11 @@ export const GetObject = Binding.Service<GetObject>("Nebius.storage.v1.Bucket.Ge
 export const GetObjectBinding = Layer.effect(GetObject, Effect.gen(function* () {
   const host = yield* Worker
   return Effect.fn(function* (bucket: NebiusBucket) {
-    const BucketName = yield* bucket.name   // lazy Output, resolved at call time
+    // Attribute access is lazy: `bucket.name` is an Effect yielding an
+    // Accessor — double-yield to materialize (same as AWS S3 `bucket.bucketName`).
+    const BucketName = yield* yield* bucket.name
     if (!globalThis.__ALCHEMY_RUNTIME__) {
+      // DCE'd out of the Worker bundle (M0-verified) — never evaluated on workerd
       const { hostIdentity } = yield* Effect.promise(() => import("./host-identity.ts"))
       const identity = yield* hostIdentity(host.LogicalId)
       yield* bindWorkerEnv(host, {
@@ -257,10 +262,25 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
       `dns`/`zlib` across ~12 build files, `engines: node >= 12.10.0`. Cannot
       evaluate on workerd — the gRPC module graph must not reach the bundle.
 
-**Batch 2 — build-pipeline experiments (pending)**
+**Batch 2 — build-pipeline experiments: DONE**
 
-- [ ] Confirm `bucket.name` is accessible as a lazy `Output` inside a binding
-      impl Layer (same as `bucket.bucketName` usage in AWS S3 bindings)
+- [x] `bucket.name` is a lazy, double-yielded attribute in a binding impl
+      (`yield* yield* bucket.name` — first yield gives the `Accessor`, second
+      materializes; matches AWS S3 `bucket.bucketName`). Typechecked in
+      `spikes/m0/imports.ts`; runtime probe confirms laziness (resolution
+      requires a Stack context).
+- [x] **D8 decisive experiment** (`spikes/worker-bundle/bundle.mts`, alchemy's
+      own `Bundle.build` pipeline): guarded dynamic import of a module that
+      statically imports `@grpc/grpc-js` → emitted Worker bundle is **67 KB,
+      zero gRPC markers** (guard folded via `ALCHEMY_DEFINE`, dead branch +
+      dynamic import DCE'd out entirely). Naive static-import control →
+      884 KB bundle with `net`/`http2`/`tls` as unresolved externals (workerd
+      crash). → D8 confirmed, fallback not needed.
+- [ ] Confirm `secret_text`/`plain_text` binding data is honored by `alchemy
+      dev`'s local worker provider (env present in `WorkerEnvironment`) —
+      carried into M3 (the `alchemy dev` e2e exercise, needs the scratch stack)
+- [ ] Verify `AccessKey` output secret survives a second deploy (state restore)
+      — carried into M3 (integration lifecycle test) or an M2 unit test
 - [ ] **D8 validation**: prototype the `await import()`-behind-guard pattern;
       confirm the workerd bundle either (a) omits the gRPC module or (b) never
       evaluates it at runtime; confirm `@grpc/grpc-js` is genuinely
