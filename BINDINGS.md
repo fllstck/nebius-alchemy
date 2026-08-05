@@ -293,17 +293,29 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
 - [ ] Verify `AccessKey` output secret survives a second deploy (state restore)
       — already implied by `precreate` + preserve-from-output, but prove it
 
-### M1 — Worker host wiring core
+### M1 — Worker host wiring core — DONE
 
-- [ ] `modules/resources/shared/bind-host.ts`: `envToWorkerBindings` (pure) +
-      `bindWorkerEnv` (Effect.fn, `__ALCHEMY_RUNTIME__` guard)
-- [ ] `modules/resources/shared/host-identity.ts`: lazy SA + AccessKey + Group +
-      GroupMembership provisioning; returns `{ serviceAccountId, accessKeyId,
-      secretAccessKey }` (Redacted). Statically importable by deploy-time code
-      only; no binding module imports it statically (D8)
-- [ ] Unit tests `tests/resources/shared/bind-host.test.ts` (network-free):
-      plain vs secret mapping, Redacted→secret_text, runtime guard no-op
-- [ ] `bun run check` clean, `bun test` green
+- [x] `modules/resources/shared/bind-host.ts`: `envToWorkerBindings` (pure) +
+      `bindWorkerEnv` (`Effect.fn` with args on the generator, `__ALCHEMY_RUNTIME__`
+      guard). Uses the real `Worker`/`WorkerBinding` types from
+      `alchemy/Cloudflare/Workers` (resolves O7 — no local union needed).
+      `host.bind(sid, { bindings })` string form works.
+- [x] `modules/resources/shared/host-identity.ts`: `HostIdentity` (Schema.Class)
+      + lazy SA + AccessKey + Group + GroupMembership provisioning. Effect.fn
+      requirement includes the four resource `Provider` tags. D8-boundary
+      comment in place.
+      **Lesson:** `Schema.Redacted` decode expects an already-Redacted value and
+      encodes to the "<redacted>" marker — wrong fit for a plain-object model.
+      Decision: `secretAccessKey` is plain `Schema.String` in the model; Redacted
+      wrapping happens at the env boundary (M2 passes `Redacted.make(...)` to
+      `bindWorkerEnv`, which maps it to `secret_text`). HostIdentity is
+      ephemeral (never persisted), so this is safe.
+- [x] Unit tests `tests/resources/shared/{bind-host,host-identity}.test.ts`
+      (network-free, 10 pass): plain vs secret mapping, Redacted→secret_text,
+      deploy registration + runtime no-op, HostIdentity decode + rejection.
+- [x] `bun run check` clean; `bun test` green. (Lint: 3 new
+      `no-underscore-dangle` warnings on `__ALCHEMY_RUNTIME__` — same warning
+      class the baseline already carries for `_tag`.)
 
 ### M2 — Storage bindings
 
