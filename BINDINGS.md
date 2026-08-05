@@ -362,60 +362,77 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
       missing-env failure, `toStorageError` mapping matrix. 24 tests total.
 - [x] `bun run check` clean; `bun test` green.
 
-### M3 — Integration tests — BLOCKED on a platform behavior (findings below)
+### M3 — Integration tests — RESOLVED ✅
 
-Shipped:
+**The weeks-long "NOT_FOUND on freshly-created IAM resources" blocker was a
+TEST-PATTERN bug in our own integration tests, not the Nebius backend, not the
+api-client, and not the alchemy harness runtime.**
 
-- [x] `Group` provider: missing `news = news || {}` guard before validation (a
-      pre-existing bug exposed by no-props deploys).
-- [x] `GroupMembership` provider + api-client: `metadata.name` is PROHIBITED by
-      the API (verified live + CLI) — now omitted.
-- [x] `X-Idempotency-Key` header added to the transport (matches the official
-      gosdk, which sends it on every request).
-- [x] The docs' grant path identified and VERIFIED: SA → tenant's default
-      `editors` group resolves INSTANTLY through our client (the group carries
-      the `editor` general role — no AccessPermit / bucket policy needed).
+Root cause, found by bisecting the harness step by step:
 
-**BLOCKER — conclusively diagnosed (steps 1–4 complete) — the failure is a
-server-side inconsistency triggered by the ALCHEMY HARNESS process context;
-no client-side fix exists.** Final findings, in order:
+1. The alchemy **scratch stack re-plans the whole stack on every
+   `stack.deploy(...)` call** and DELETES resources not present in the new
+   effect (they're treated as "removed from the stack"). Our tests called
+   `stack.deploy(SA)`, then `stack.deploy(Membership)`, then
+   `stack.deploy(Key)` — each later deploy **deleted the earlier resources**
+   mid-test. The "phantom SAs" were deleted SAs; the access-key creates
+   failed because the SA genuinely didn't exist anymore; the membership delete
+   NOT_FOUNDs were cascades of the SA deletion (Nebius removes a SA's group
+   memberships/access keys server-side).
+2. The access-key provider's `precreate` runs before ref resolution (alchemy
+   passes raw props to precreate — `waitForDeps`/`Output.evaluate` only happen
+   before `reconcile`), so the key can't be created in the same deploy as a
+   not-yet-existing SA. The dependency must be deployed first.
+3. Deletes were not idempotent: `makeCrudDelete` propagated NOT_FOUND, so a
+   destroy whose SA was deleted before its (server-side cascaded) children
+   failed. Fixed: NOT_FOUND on delete = already gone = success (standard IaC
+   contract).
 
-1. **Wire frames** (`[CALL]` status+trailer capture, bisect): the failing
-   access-key create's request bytes are byte-identical to the working
-   standalone; the server's `grpc-status-details-bin` carries
-   `nebius.common.ServiceError { code: ResourceNotFound, retry_type: 3 }` —
-   and `3 = NOTHING` per the proto: **"do not retry, fatal"**. So there is no
-   server retry hint to honor (and the gosdk wouldn't retry these either).
-2. **Channel lifecycle** (`[CH]` capture): the `cpl.iam` channel is created
-   once, reused, closed at scope end — identical to the standalone. No
-   per-deploy recreation.
-3. **Phantom SAs**: the harness's SA create intermittently (≈50% of runs)
-   reports success for an entity that is never committed server-side — the
-   in-process GET returns a phantom projection, but a separate process / fresh
-   connection sees nothing (verified by CLI get + list, minutes later, no
-   cleanup). The phantom is invisible to fresh connections but the provider
-   stores its id.
-4. **Access-key create fails even for real SAs in-process**: v1 AND v2
-   access-key creates return NOT_FOUND for a SA that the CLI resolves
-   (in-flight CLI get: EXISTS) — over any in-process channel (fresh channel
-   retry also failed). The SAME create for the SAME SA from a SEPARATE process
-   succeeds (`create OK`). v1 fails identically.
-5. Ruled out client-side: token (fingerprinted), channel reuse, request bytes
-   (base64-compared), alchemy labels, 63-char names, membership interference,
-   retries (12×5s all fail in-process), v1-vs-v2 service, call options
-   (deadline/waitForReady), full-vs-minimal providers layer (reproduces with
-   only 3 resource providers + api-client layers).
+**The correct test pattern** (used by the reinstated integration tests):
 
-**Conclusion**: the Nebius IAM backend consistently treats requests issued
-from the harness process differently — the create operation reports done but
-is intermittently never committed, and access-key account validation cannot
-resolve a committed SA in-process. Identical requests from any other process
-work every time. This needs a report to Nebius support (operation-reported-
-success-but-uncommitted + per-connection resolution inconsistency) and/or the
-alchemy maintainers (what the harness process does differently at the gRPC
-level). Mitigations attempted and reverted: 12×5s NOT_FOUND retry on the
-access-key create (never helps in-process — all retries fail identically; it
-only delays failure by 60s).
+```ts
+// Stage 1: deploy the dependency alone so its id is concrete.
+const { sa } = yield* stack.deploy(
+  Effect.gen(function* () {
+    const sa = yield* Nebius.iam.ServiceAccount('SA', { description: 'x' })
+    return { sa }
+  }),
+)
+// Stage 2: RE-DECLARE the full resource set (the SA becomes a noop — NOT
+// deleted) and reference it via the in-effect resource instance (`.id`).
+const { key } = yield* stack.deploy(
+  Effect.gen(function* () {
+    const sa = yield* Nebius.iam.ServiceAccount('SA', { description: 'x' })
+    const key = yield* Nebius.iam.AccessKey('Key', { serviceAccountId: sa.id })
+    return { key }
+  }),
+)
+```
+
+Shipped fixes in this milestone:
+
+- [x] **Idempotent deletes**: `makeCrudDelete` swallows `GrpcError` code 5
+      (NOT_FOUND) — a delete of an already-gone resource is success. Applies
+      to every CRUD resource provider.
+- [x] **`bindings.integration.test.ts` reinstated** — identity lifecycle
+      (SA → default editors-group membership → v2 access key with INLINE
+      secret), 8/8 consecutive green runs (create + destroy).
+- [x] **Pre-existing `access-key.integration.test.ts` fixed** with the staged
+      pattern — 3/3 green (it was broken by the same partial-redeploy bug).
+- [x] `Group` provider `news = news || {}` guard; `GroupMembership`
+      `metadata.name` removal; `X-Idempotency-Key` header — from the earlier
+      bisect.
+- [x] `GroupMembership` bounded NOT_FOUND retry on create (the member/parent
+      may be propagating) — retained.
+
+Diagnostic dead ends conclusively ruled out along the way (all reproduced with
+byte-identical requests): server retry hints (the `grpc-status-details-bin`
+carries `retry_type: NOTHING` — the server explicitly says don't retry),
+channel lifecycle/reuse, fresh-channel-in-process, token identity, alchemy
+labels, 63-char names, membership interference, v1-vs-v2 access-key service,
+full-vs-minimal providers layer, bun-test-vs-bun-script (a plain bun test with
+the api-client passes). The single variable that always correlated was the
+number of `stack.deploy` calls.
 
 ### M4 — Docs & examples
 

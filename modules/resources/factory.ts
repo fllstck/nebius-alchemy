@@ -4,6 +4,7 @@ import * as Context from 'effect/Context'
 import * as Alchemy from 'alchemy'
 import * as AlchemyTags from 'alchemy/Tags'
 import type { GrpcError, GrpcDeadlineExceededError } from '../api-client/grpc-utils'
+import { GrpcError as GrpcErrorCtor } from '../api-client/grpc-utils'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,7 +130,16 @@ export const makeCrudDelete = <STag extends Context.Service<any, any>, E>(config
       yield* session.note(`Deleting ${config.resourceLabel} (${output.id})`)
     }
     const svc = yield* config.service
-    yield* config.deleteById(svc, output.id)
+    // Idempotent delete: NOT_FOUND means the resource is already gone (it may
+    // have been cascaded away by the server, e.g. deleting a service account
+    // removes its group memberships and access keys) — treat it as success.
+    yield* config.deleteById(svc, output.id).pipe(
+      Effect.catchIf(
+        // oxlint-disable-next-line no-explicit-any — error type is generic over E
+        (e: any): e is GrpcError => e instanceof GrpcErrorCtor && e.code === 5,
+        () => Effect.void,
+      ),
+    )
   })
 
 // ---------------------------------------------------------------------------
