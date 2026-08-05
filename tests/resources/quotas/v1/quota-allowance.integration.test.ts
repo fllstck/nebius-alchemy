@@ -1,7 +1,6 @@
-import * as Test from 'alchemy/Test/Bun'
 import * as Effect from 'effect/Effect'
+import { test } from '../../../helpers/stack'
 import { expect } from 'bun:test'
-import * as Nebius from '@fllstck/nebius-alchemy'
 import * as Config from 'effect/Config'
 import * as QuotasGrpc from '../../../../modules/api-client/quotas'
 import * as IamGrpc from '../../../../modules/api-client/iam'
@@ -10,8 +9,6 @@ import * as ResourceUtils from '../../../../modules/resources/utilities.ts'
 import * as QuotaAllowanceSchema from '../../../../modules/resources/quotas/v1/quota-allowance.schema.ts'
 import { makeTenantScopedList } from '../../../../modules/resources/factory.ts'
 import { integrationTest } from '../../../helpers/gate'
-
-const { test } = Test.make({ providers: Nebius.providers() as any })
 
 const toFriendlyAttributes = (
   raw: NebiusQuotaAllowanceSchema.QuotaAllowance,

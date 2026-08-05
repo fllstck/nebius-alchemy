@@ -1,10 +1,7 @@
-import * as Test from 'alchemy/Test/Bun'
 import * as Effect from 'effect/Effect'
+import { Nebius, test } from '../../../helpers/stack'
 import { expect } from 'bun:test'
-import * as Nebius from '@fllstck/nebius-alchemy'
 import { safeDestroy } from '../../../helpers/cleanup'
-
-const { test } = Test.make({ providers: Nebius.providers() as any })
 
 test.provider.skipIf(true)(
   'Nebius.iam.v1.FederationCertificate lifecycle (requires valid SAML federation + X.509 certificate — not practical for automated testing)',

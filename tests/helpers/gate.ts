@@ -8,9 +8,10 @@
  *   bun test                       # unit tests only — network-free
  *   SLOW_TESTS=1 bun test tests/   # everything, including integration
  *
- * Usage with Alchemy's Test.make (resource lifecycle tests):
+ * Usage with Alchemy's Test.make (resource lifecycle tests) — the shared
+ * instance lives in `tests/helpers/stack.ts`:
  *
- *   const { test } = Test.make({ providers: Nebius.providers() as any })
+ *   import { Nebius, test } from '<rel>/helpers/stack'
  *   integrationTest(test.provider, 'Nebius.storage.v1.Bucket lifecycle', (stack) =>
  *     Effect.gen(function* () { ... }),
  *     { timeout: 120_000 },
