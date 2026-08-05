@@ -35,10 +35,7 @@ integrationTest(
       expect(key.secretAccessKey.length).toBeGreaterThan(0)
       expect(key.secretDeliveryMode).toBe('INLINE')
     }).pipe(
-      Effect.ensuring(
-        Effect.gen(function* () {
-          yield* safeDestroy(stack)}),
-      ),
+      safeDestroy(stack),
     ),
   { timeout: 120_000 },
 )

@@ -25,7 +25,7 @@ integrationTest(test.provider, 'Nebius.iam.v1.Federation lifecycle', (stack) =>
     expect(fed.name).toBeDefined()
     expect(fed.state).toBe('ACTIVE')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

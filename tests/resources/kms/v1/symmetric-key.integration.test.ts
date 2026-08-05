@@ -27,7 +27,7 @@ integrationTest(
       expect(key.description).toBe('Alchemy integration test KMS key')
       expect(key.algorithm).toBe('AES_256')
     }).pipe(
-      Effect.ensuring(safeDestroy(stack)),
+      safeDestroy(stack),
     ),
   { timeout: 120_000 },
 )

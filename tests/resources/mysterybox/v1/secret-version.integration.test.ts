@@ -30,7 +30,7 @@ integrationTest(test.provider, 'Nebius.mysterybox.v1.SecretVersion lifecycle', (
     expect(version.description).toBe('Alchemy integration test version')
     expect(version.state).toBe('ACTIVE')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 180_000 },
 )

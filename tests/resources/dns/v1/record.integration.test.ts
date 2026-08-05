@@ -34,7 +34,7 @@ integrationTest(test.provider, 'Nebius.dns.v1.Record lifecycle', (stack) =>
     expect(record.type).toBe('A')
     expect(record.data).toBe('192.0.2.1')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 180_000 },
 )

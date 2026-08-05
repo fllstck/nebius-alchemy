@@ -33,11 +33,7 @@ integrationTest(
       expect(key.secretKey.length).toBeGreaterThan(0)
       expect(key.accessKey).toBeDefined()
     }).pipe(
-      Effect.ensuring(
-        Effect.gen(function* () {
-          yield* safeDestroy(stack)
-        }),
-      ),
+      safeDestroy(stack),
     ),
   { timeout: 120_000 },
 )

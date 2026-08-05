@@ -1,21 +1,53 @@
 import * as BunTest from 'bun:test'
-import * as ImageModule from '../../../../modules/resources/compute/v1/image'
+import * as Effect from 'effect/Effect'
+import * as Module from '../../../../modules/resources/compute/v1/image'
+import * as SchemaModule from '../../../../modules/resources/compute/v1/image.schema'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
 
 const { describe, expect, test } = BunTest
 
 describe('Nebius.compute.v1.Image', () => {
-  test('NebiusImage resource constructor is defined', () => {
-    expect(ImageModule.NebiusImage).toBeDefined()
-    expect(typeof ImageModule.NebiusImage).toBe('function')
+  test('constructor is defined', () => {
+    expect(Module.NebiusImage).toBeDefined()
+    expect(typeof Module.NebiusImage).toBe('function')
   })
 
-  test('NebiusImageProvider is defined', () => {
-    expect(ImageModule.NebiusImageProvider).toBeDefined()
+  test('provider is defined', () => {
+    expect(Module.NebiusImageProvider).toBeDefined()
   })
 
-  test('NebiusImageProps and NebiusImageAttributes types compile', () => {
-    // Type-only test — if this file compiles, the types are valid.
-    const provider = ImageModule.NebiusImageProvider
-    expect(typeof provider).toBe('object')
+  describe('diff', () => {
+    test('name change requires replace', async () => {
+      const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
+      expect(await runDiff(svc, { name: 'new-image' }, { name: 'old-image' })).toEqual({ action: 'replace' })
+    })
+
+    test('no change is a noop', async () => {
+      const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
+      expect(await runDiff(svc, { name: 'my-image', description: 'x' }, { name: 'my-image', description: 'x' })).toBeUndefined()
+    })
+  })
+
+  describe('validation', () => {
+    test('accepts valid props', async () => {
+      const result = await runEffect(
+        SchemaModule.validateImageProps({ name: 'my-image', description: 'a golden image', sourceDiskId: 'disk-abc123' }),
+      )
+      expect(result.name).toBe('my-image')
+    })
+
+    test('rejects props without a source disk or snapshot', async () => {
+      const result = await runEffect(
+        SchemaModule.validateImageProps({ name: 'my-image' }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects non-DNS-compliant name', async () => {
+      const result = await runEffect(
+        SchemaModule.validateImageProps({ name: 'My Image!' }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
   })
 })

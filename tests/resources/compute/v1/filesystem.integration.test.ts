@@ -23,7 +23,7 @@ test.provider.skipIf(true)(
     expect(fs.type).toBe('NETWORK_SSD')
     expect(fs.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 180_000 },
 )

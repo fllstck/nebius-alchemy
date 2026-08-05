@@ -1,15 +1,46 @@
 import * as BunTest from 'bun:test'
-import * as SecretModule from '../../../../modules/resources/mysterybox/v1/secret'
+import * as Effect from 'effect/Effect'
+import * as Module from '../../../../modules/resources/mysterybox/v1/secret'
+import * as SchemaModule from '../../../../modules/resources/mysterybox/v1/secret.schema'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
 
 const { describe, expect, test } = BunTest
 
 describe('Nebius.mysterybox.v1.Secret', () => {
-  test('NebiusSecret resource constructor is defined', () => {
-    expect(SecretModule.NebiusSecret).toBeDefined()
-    expect(typeof SecretModule.NebiusSecret).toBe('function')
+  test('constructor is defined', () => {
+    expect(Module.NebiusSecret).toBeDefined()
+    expect(typeof Module.NebiusSecret).toBe('function')
   })
 
-  test('NebiusSecretProvider is defined', () => {
-    expect(SecretModule.NebiusSecretProvider).toBeDefined()
+  test('provider is defined', () => {
+    expect(Module.NebiusSecretProvider).toBeDefined()
+  })
+
+  describe('diff', () => {
+    test('name change requires replace', async () => {
+      const svc = await resolveProvider(Module.NebiusSecret.Provider, Module.NebiusSecretProvider)
+      expect(await runDiff(svc, { name: 'new-secret' }, { name: 'old-secret' })).toEqual({ action: 'replace' })
+    })
+
+    test('no change is a noop', async () => {
+      const svc = await resolveProvider(Module.NebiusSecret.Provider, Module.NebiusSecretProvider)
+      expect(await runDiff(svc, { name: 'my-secret' }, { name: 'my-secret' })).toBeUndefined()
+    })
+  })
+
+  describe('validation', () => {
+    test('accepts valid props', async () => {
+      const result = await runEffect(
+        SchemaModule.validateSecretProps({ name: 'my-secret', description: 'creds' }),
+      )
+      expect(result.name).toBe('my-secret')
+    })
+
+    test('rejects non-DNS-compliant name', async () => {
+      const result = await runEffect(
+        SchemaModule.validateSecretProps({ name: 'Bad Name!' }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
   })
 })

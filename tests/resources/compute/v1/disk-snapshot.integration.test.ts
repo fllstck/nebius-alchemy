@@ -31,7 +31,7 @@ test.provider.skipIf(true)(
     expect(snap.sourceDiskId).toBe(disk.id)
     expect(snap.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 300_000 },
 )

@@ -33,7 +33,7 @@ integrationTest(test.provider, 'Nebius.iam.v2.Project lifecycle', (stack) =>
     expect(updated.id).toBe(created.id)
     expect(updated.name).toBe(created.name)
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

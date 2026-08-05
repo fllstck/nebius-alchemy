@@ -1,7 +1,11 @@
-import * as BunTest from 'bun:test'
+import { describe, expect, test } from 'bun:test'
+import * as Effect from 'effect/Effect'
 import * as BucketModule from '../../../../modules/resources/storage/v1/bucket'
+import * as NebiusBucketSchema from '../../../../schemas/nebius/storage/v1/bucket.ts'
+import * as NebiusStorageBase from '../../../../schemas/nebius/storage/v1/base.ts'
+import { resolveProvider, runDiff } from '../../../helpers/provider'
 
-const { describe, expect, test } = BunTest
+const provider = () => resolveProvider(BucketModule.NebiusBucket.Provider, BucketModule.NebiusBucketProvider)
 
 describe('Nebius.storage.v1.Bucket', () => {
   test('NebiusBucket resource constructor is defined', () => {
@@ -13,10 +17,37 @@ describe('Nebius.storage.v1.Bucket', () => {
     expect(BucketModule.NebiusBucketProvider).toBeDefined()
   })
 
-  test('NebiusBucketProps and NebiusBucketAttributes types compile', () => {
-    // Type-only test — if this file compiles, the types are valid.
-    // We verify the provider has the expected lifecycle methods.
-    const provider = BucketModule.NebiusBucketProvider
-    expect(typeof provider).toBe('object')
+  describe('spec serialization', () => {
+    test('fromJSON converts enum strings to int32 values (no NaN pass-through)', async () => {
+      const spec = NebiusBucketSchema.BucketSpec.fromJSON({
+        versioningPolicy: 'ENABLED',
+        defaultStorageClass: 'STANDARD',
+        objectAuditLogging: 'ALL',
+        forceStorageClass: false,
+      })
+      // Pins the documented anti-pattern: strings must never pass through to
+      // serialization (that produced NaN wire values).
+      expect(spec.versioningPolicy).toBe(NebiusStorageBase.VersioningPolicy.ENABLED)
+      expect(spec.defaultStorageClass).toBe(NebiusStorageBase.StorageClass.STANDARD)
+      expect(spec.objectAuditLogging).toBe(NebiusBucketSchema.BucketSpec_ObjectAuditLogging.ALL)
+      expect(Number.isNaN(spec.versioningPolicy)).toBe(false)
+    })
+  })
+
+  describe('diff', () => {
+    test('name change requires replace', async () => {
+      const svc = await provider()
+      expect(await runDiff(svc, { name: 'new-bucket' }, { name: 'old-bucket' })).toEqual({ action: 'replace' })
+    })
+
+    test('same name is a noop (no replace)', async () => {
+      const svc = await provider()
+      expect(await runDiff(svc, { name: 'same-bucket' }, { name: 'same-bucket' })).toBeUndefined()
+    })
+
+    test('unresolved news short-circuits to undefined', async () => {
+      const svc = await provider()
+      expect(await runDiff(svc, { name: Effect.succeed('x') } as any)).toBeUndefined()
+    })
   })
 })

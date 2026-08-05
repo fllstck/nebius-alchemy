@@ -39,7 +39,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.SecurityRule lifecycle', (stack) =
     expect(rule.access).toBe('ALLOW')
     expect(rule.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 180_000 },
 )

@@ -25,6 +25,13 @@ import type * as TestBun from 'alchemy/Test/Bun'
 
 export const runIntegration = (): boolean => Boolean(process.env.SLOW_TESTS)
 
+/**
+ * Timeout for network-touching integration tests that don't poll operations
+ * (api-client plumbing checks). Real RPCs on a degraded network can exceed
+ * bun's 5s default, so every I/O test opts into an explicit bound.
+ */
+export const INTEGRATION_TIMEOUT_MS = 30_000
+
 export const integrationTest = (
   provider: TestBun.TestApi['test']['provider'],
   name: string,

@@ -27,7 +27,7 @@ integrationTest(
       expect(secret.description).toBe('Alchemy integration test secret')
       expect(secret.state).toBe('ACTIVE')
     }).pipe(
-      Effect.ensuring(safeDestroy(stack)),
+      safeDestroy(stack),
     ),
   { timeout: 120_000 },
 )

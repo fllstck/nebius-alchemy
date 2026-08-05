@@ -26,7 +26,7 @@ integrationTest(test.provider, 'Nebius.dns.v1.Zone lifecycle', (stack) =>
     expect(zone.domainName).toBe('alchemy-test.example.com.')
     expect(zone.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

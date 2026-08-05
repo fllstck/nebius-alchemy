@@ -18,7 +18,7 @@ integrationTest(test.provider, 'Nebius.iam.v1.Group lifecycle', (stack) =>
     expect(group.name).toBeDefined()
     expect(group.state).toBeDefined()
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

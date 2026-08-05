@@ -1,13 +1,15 @@
 /**
  * Shared cleanup helpers for integration tests.
  *
- * The ubiquitous `Effect.ensuring(stack.destroy()...)` cleanup pattern dumped
+ * The ubiquitous cleanup pattern (`Effect.ensuring(stack.destroy()...)`) dumped
  * raw error strings to test output. With real credentials in play, error
  * strings must be treated as potentially sensitive — `redact()` masks any key
  * material before it reaches the logs, and `safeDestroy()` bundles the
- * log-redacted, error-ignored destroy.
+ * redacted logging with exit-aware cleanup semantics (see below).
  */
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
+import * as Schema from 'effect/Schema'
 import type { ScratchStack } from 'alchemy/Test/Bun'
 
 // ---------------------------------------------------------------------------
@@ -55,24 +57,74 @@ export const redact = (input: string): string => {
 }
 
 // ---------------------------------------------------------------------------
+// DestroyFailedError
+// ---------------------------------------------------------------------------
+
+/**
+ * A stack destroy failed after the test body itself succeeded.
+ *
+ * Raised by {@link safeDestroy} so a leaked resource fails the test instead
+ * of being silently logged away. When the body ALSO failed, the destroy
+ * error is logged (redacted) only — the body's own failure must never be
+ * masked by a cleanup error.
+ */
+export class DestroyFailedError extends Schema.TaggedErrorClass<DestroyFailedError>()('DestroyFailedError', {
+  message: Schema.String,
+}) {}
+
+// ---------------------------------------------------------------------------
 // safeDestroy()
 // ---------------------------------------------------------------------------
 
 /**
- * Destroy a scratch stack with guaranteed, redacted cleanup logging.
+ * Run a test body with guaranteed, exit-aware stack cleanup.
  *
- * On destroy failure, logs the error with {@link redact} applied and ignores
- * it — a destroy failure must never mask the test body's own outcome, but its
- * error string must not leak key material.
+ * Semantics (documented so they aren't weakened later):
  *
- * Usage (inside `Effect.ensuring`, mirroring the previous inline pattern):
+ * - Body **succeeded** → destroy runs; a destroy failure FAILS the test with
+ *   {@link DestroyFailedError} (the resource leaked — silence would hide it).
+ * - Body **failed** → destroy still runs, but its failure is logged (redacted)
+ *   and ignored so the body's own error is what surfaces.
+ * - Body **interrupted** → destroy still runs; the interruption is re-raised.
  *
- *   Effect.ensuring(safeDestroy(stack))
+ * All destroy error strings are {@link redact}ed before logging.
+ *
+ * Usage — replaces the previous `Effect.ensuring(safeDestroy(stack))` shape
+ * (which could not propagate destroy failures without masking body failures,
+ * since `ensuring` finalizers are typed `E = never`):
+ *
+ *   Effect.gen(function* () { ... }).pipe(
+ *     safeDestroy(stack),
+ *   )
  */
 export const safeDestroy = (stack: ScratchStack) =>
-  stack.destroy().pipe(
-    Effect.tapError((e) =>
-      Effect.logError(`[cleanup] destroy failed: ${redact(String(e))}`),
-    ),
-    Effect.ignore,
-  )
+  <A, E, R>(body: Effect.Effect<A, E, R>): Effect.Effect<A, E | DestroyFailedError, R> =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(body)
+
+      if (Exit.isFailure(exit)) {
+        // Body failed (or was interrupted): cleanup must run, but must not
+        // mask the body's own outcome. Log-redact destroy errors and ignore.
+        yield* stack.destroy().pipe(
+          Effect.tapError((e) =>
+            Effect.logError(
+              `[cleanup] destroy failed (body already failed): ${redact(String(e))}`,
+            ),
+          ),
+          Effect.ignore,
+        )
+        // Re-raise the original failure (or interruption) unchanged.
+        return yield* Effect.failCause(exit.cause)
+      }
+
+      // Body succeeded: a failed cleanup means a leaked resource — fail the test.
+      yield* stack.destroy().pipe(
+        Effect.tapError((e) =>
+          Effect.logError(`[cleanup] destroy failed: ${redact(String(e))}`),
+        ),
+        Effect.mapError(
+          (e) => new DestroyFailedError({ message: redact(String(e)) }),
+        ),
+      )
+      return exit.value
+    })

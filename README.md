@@ -216,9 +216,29 @@ Names are auto-generated from logical IDs when omitted — no need to invent uni
 
 ```bash
 bun run check             # typecheck + lint
-bun test                  # unit + integration tests
+bun test                  # unit tests only — network-free (see below)
+bun run test:integration  # SLOW_TESTS=1 bun test tests/ — everything
 bun run generate:schemas  # regenerate protobuf schemas from .proto files
 ```
+
+### Testing & the `SLOW_TESTS` flag
+
+A plain `bun test` (no env vars) is **guaranteed network-free**: every test that
+deploys/destroys real Nebius resources or opens a real gRPC channel is gated
+behind the `SLOW_TESTS` flag and is reported as `skip`.
+
+```bash
+bun test                       # unit tests only — zero network I/O
+SLOW_TESTS=1 bun test tests/   # full suite incl. real resource lifecycles
+bun run test:integration       # shorthand for the above
+```
+
+The flag lives in a single place — `tests/helpers/gate.ts` (`runIntegration()` /
+`integrationTest()`). Integration tests additionally require real Nebius
+credentials (env / stored / CLI); api-client tests skip when credentials aren't
+resolvable. Destroy cleanup uses `safeDestroy()` from `tests/helpers/cleanup.ts`
+— a failed destroy fails the test when the body succeeded, and logs (redacted)
+without masking the body's own failure otherwise.
 
 ## Architecture
 

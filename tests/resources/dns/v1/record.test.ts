@@ -1,20 +1,56 @@
 import * as BunTest from 'bun:test'
-import * as RecordModule from '../../../../modules/resources/dns/v1/record'
+import * as Effect from 'effect/Effect'
+import * as Module from '../../../../modules/resources/dns/v1/record'
+import * as SchemaModule from '../../../../modules/resources/dns/v1/record.schema'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
 
 const { describe, expect, test } = BunTest
 
+const validRecordProps = {
+  parentId: 'zone-abc123',
+  relativeName: 'www',
+  type: 'A',
+  data: '10.0.0.1',
+}
+
 describe('Nebius.dns.v1.Record', () => {
-  test('NebiusRecord resource constructor is defined', () => {
-    expect(RecordModule.NebiusRecord).toBeDefined()
-    expect(typeof RecordModule.NebiusRecord).toBe('function')
+  test('constructor is defined', () => {
+    expect(Module.NebiusRecord).toBeDefined()
+    expect(typeof Module.NebiusRecord).toBe('function')
   })
 
-  test('NebiusRecordProvider is defined', () => {
-    expect(RecordModule.NebiusRecordProvider).toBeDefined()
+  test('provider is defined', () => {
+    expect(Module.NebiusRecordProvider).toBeDefined()
   })
 
-  test('NebiusRecordProps and NebiusRecordAttributes types compile', () => {
-    const provider = RecordModule.NebiusRecordProvider
-    expect(typeof provider).toBe('object')
+  describe('diff', () => {
+    test('zone change requires replace (records can\'t move zones)', async () => {
+      const svc = await resolveProvider(Module.NebiusRecord.Provider, Module.NebiusRecordProvider)
+      expect(await runDiff(svc, { parentId: 'zone-2' }, { parentId: 'zone-1' })).toEqual({ action: 'replace' })
+    })
+
+    test('type change requires replace', async () => {
+      const svc = await resolveProvider(Module.NebiusRecord.Provider, Module.NebiusRecordProvider)
+      expect(await runDiff(svc, { type: 'AAAA' }, { type: 'A' })).toEqual({ action: 'replace' })
+    })
+
+    test('no change is a noop', async () => {
+      const svc = await resolveProvider(Module.NebiusRecord.Provider, Module.NebiusRecordProvider)
+      expect(await runDiff(svc, { parentId: 'zone-1', type: 'A' }, { parentId: 'zone-1', type: 'A' })).toBeUndefined()
+    })
+  })
+
+  describe('validation', () => {
+    test('accepts valid props', async () => {
+      const result = await runEffect(SchemaModule.validateRecordProps(validRecordProps))
+      expect(result.relativeName).toBe('www')
+    })
+
+    test('rejects an unknown record type', async () => {
+      const result = await runEffect(
+        SchemaModule.validateRecordProps({ ...validRecordProps, type: 'ZZZ' }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
   })
 })

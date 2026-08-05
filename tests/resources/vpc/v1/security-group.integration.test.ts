@@ -26,7 +26,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.SecurityGroup lifecycle', (stack) 
     expect(sg.networkId).toBe(network.id)
     expect(sg.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

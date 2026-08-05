@@ -44,7 +44,7 @@ hGJ6qN8vL2T3wR5sZxVbNmQ9K4c7fL8mN2wR5sZxVbNmQ9K4c7fL8mN2wR5sZxVb
     expect(typeof cert.id).toBe('string')
     expect(cert.description).toBe('Alchemy integration test cert')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 180_000 },
 )

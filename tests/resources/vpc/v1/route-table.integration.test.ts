@@ -26,7 +26,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.RouteTable lifecycle', (stack) =>
     expect(rt.networkId).toBe(network.id)
     expect(rt.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

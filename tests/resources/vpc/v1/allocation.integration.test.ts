@@ -29,7 +29,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.Allocation lifecycle', (stack) =>
     expect(allocation.name).toBeDefined()
     expect(['ALLOCATED', 'ASSIGNED']).toContain(allocation.state)
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

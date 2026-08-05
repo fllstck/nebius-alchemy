@@ -50,7 +50,7 @@ integrationTest(test.provider, 'Nebius.compute.v1.Instance lifecycle', (stack) =
     expect(instance.name).toBeDefined()
     expect(['RUNNING', 'CREATING']).toContain(instance.state)
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 300_000 },
 )

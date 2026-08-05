@@ -22,7 +22,7 @@ integrationTest(test.provider, 'Nebius.compute.v1.Disk lifecycle', (stack) =>
     expect(created.type).toBe('NETWORK_SSD')
     expect(created.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

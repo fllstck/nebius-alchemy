@@ -51,7 +51,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.Route lifecycle', (stack) =>
     expect(updated.id).toBe(route.id)
     expect(updated.description).toBe('updated')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 180_000 },
 )

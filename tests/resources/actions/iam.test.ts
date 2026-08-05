@@ -41,7 +41,7 @@ integrationTest(
         )
         .pipe(Effect.flip)
       expect(notFound).toBeInstanceOf(Validation.ResourceNotFoundError)
-    }).pipe(Effect.ensuring(safeDestroy(stack))),
+    }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )
 
@@ -62,6 +62,6 @@ integrationTest(
 
       expect(found?.id).toBe(group.id)
       expect(groups.some((g) => g.id === group.id)).toBe(true)
-    }).pipe(Effect.ensuring(safeDestroy(stack))),
+    }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )

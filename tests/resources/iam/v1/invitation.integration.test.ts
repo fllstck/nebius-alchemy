@@ -22,7 +22,7 @@ integrationTest(test.provider, 'Nebius.iam.v1.Invitation lifecycle', (stack) =>
     expect(inv.description).toBe('Alchemy integration test invitation')
     expect(inv.email).toBe('test@example.com')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

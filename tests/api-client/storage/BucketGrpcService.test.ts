@@ -12,8 +12,9 @@ import * as NebiusCredentialsModule from '../../../modules/Credentials'
 import * as GrpcTransportModule from '../../../modules/api-client/GrpcTransport.ts'
 import * as BucketGrpcServiceModule from '../../../modules/api-client/storage.ts'
 import * as GrpcUtilsModule from '../../../modules/api-client/grpc-utils.ts'
-import { runIntegration } from '../../helpers/gate'
+import { runIntegration, INTEGRATION_TIMEOUT_MS } from '../../helpers/gate'
 import { redact } from '../../helpers/cleanup'
+import { uniqueName } from '../../helpers/names'
 
 const { beforeAll, describe, expect, test } = BunTest
 const { AuthProviders } = AlchemyAuthProvider
@@ -199,13 +200,15 @@ describe('StorageGrpcService (bucket)', () => {
           throw new Error(`unexpected error type from list pipeline: ${String(error)}`)
         }
       }
-    })
+    }, { timeout: INTEGRATION_TIMEOUT_MS })
 
     it('creates and deletes a bucket via operation-aware service', async () => {
       // Runtime credential guard — see the gating block above.
       if (!hasCredentials) return
 
-      const bucketName = `alchemy-test-${Date.now()}`
+      // Random suffix (not Date.now()): parallel runs in the same millisecond
+      // and leaked buckets from prior failed runs must never collide.
+      const bucketName = uniqueName('alchemy-test')
       const projectId = process.env.NEBIUS_PROJECT_ID ?? ''
 
       // Tracked OUTSIDE the Effect so the cleanup block — which runs on ANY
@@ -308,6 +311,6 @@ describe('StorageGrpcService (bucket)', () => {
         return
       }
       throw new Error(`unexpected error type from create/delete pipeline: ${String(error)}`)
-    }, { timeout: 10_000 })
+    }, { timeout: INTEGRATION_TIMEOUT_MS })
   })
 })

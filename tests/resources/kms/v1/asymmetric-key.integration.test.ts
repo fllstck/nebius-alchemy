@@ -26,7 +26,7 @@ integrationTest(
       expect(typeof key.id).toBe('string')
       expect(key.algorithm).toBe('ECDSA_NIST_P256_SHA_256')
     }).pipe(
-      Effect.ensuring(safeDestroy(stack)),
+      safeDestroy(stack),
     ),
   { timeout: 120_000 },
 )

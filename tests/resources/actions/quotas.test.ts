@@ -32,6 +32,6 @@ integrationTest(test.provider, 'Nebius.quotas.action.GetQuota / ListQuotas', (st
       expect(found.name).toBe('compute.disk.count')
       expect(found.region).toBe('eu-north1')
     }
-  }).pipe(Effect.ensuring(safeDestroy(stack))),
+  }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )

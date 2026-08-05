@@ -25,7 +25,7 @@ integrationTest(
       expect(typeof sa.id).toBe('string')
       expect(sa.active).toBe(true)
     }).pipe(
-      Effect.ensuring(safeDestroy(stack)),
+      safeDestroy(stack),
     ),
   { timeout: 120_000 },
 )

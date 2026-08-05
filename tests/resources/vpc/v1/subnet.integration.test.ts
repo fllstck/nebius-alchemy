@@ -27,7 +27,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.Subnet lifecycle', (stack) =>
     expect(subnet.networkId).toBe(network.id)
     expect(subnet.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 180_000 },
 )

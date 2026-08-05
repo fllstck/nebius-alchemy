@@ -40,7 +40,7 @@ integrationTest(test.provider, 'Nebius.vpc.action.GetNetwork / ListNetworks', (s
       )
       .pipe(Effect.flip)
     expect(notFound).toBeInstanceOf(Validation.ResourceNotFoundError)
-  }).pipe(Effect.ensuring(safeDestroy(stack))),
+  }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )
 
@@ -69,7 +69,7 @@ integrationTest(test.provider, 'Nebius.vpc.action.GetSubnet / ListSubnets', (sta
 
     expect(found?.id).toBe(subnet.id)
     expect(subnets.some((s) => s.id === subnet.id)).toBe(true)
-  }).pipe(Effect.ensuring(safeDestroy(stack))),
+  }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )
 
@@ -94,7 +94,7 @@ integrationTest(test.provider, 'Nebius.vpc.action.GetSecurityGroup / ListSecurit
 
     expect(found?.id).toBe(sg.id)
     expect(groups.some((g) => g.id === sg.id)).toBe(true)
-  }).pipe(Effect.ensuring(safeDestroy(stack))),
+  }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )
 
@@ -119,7 +119,7 @@ integrationTest(test.provider, 'Nebius.vpc.action.GetRouteTable / ListRouteTable
 
     expect(found?.id).toBe(rt.id)
     expect(tables.some((t) => t.id === rt.id)).toBe(true)
-  }).pipe(Effect.ensuring(safeDestroy(stack))),
+  }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )
 
@@ -143,6 +143,6 @@ integrationTest(test.provider, 'Nebius.vpc.action.GetPool / ListPools', (stack) 
 
     expect(found?.id).toBe(pool.id)
     expect(pools.some((p) => p.id === pool.id)).toBe(true)
-  }).pipe(Effect.ensuring(safeDestroy(stack))),
+  }).pipe(safeDestroy(stack)),
   { timeout: 120_000 },
 )

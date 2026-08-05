@@ -37,7 +37,7 @@ integrationTest(test.provider, 'Nebius.storage.v1.Bucket lifecycle', (stack) =>
     expect(updated.id).toBe(created.id)
     expect(updated.versioningPolicy).toBe('ENABLED')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )

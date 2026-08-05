@@ -11,7 +11,7 @@ import * as NebiusAuthModule from '../../modules/AuthProvider'
 import * as NebiusCredentialsModule from '../../modules/Credentials'
 import * as GrpcTransportModule from '../../modules/api-client/GrpcTransport.ts'
 import * as EndpointsModule from '../../modules/endpoints.ts'
-import { runIntegration } from '../helpers/gate'
+import { runIntegration, INTEGRATION_TIMEOUT_MS } from '../helpers/gate'
 
 const { beforeAll, describe, expect, test } = BunTest
 const { UnknownServiceError } = EndpointsModule
@@ -225,7 +225,7 @@ describe('NebiusGrpcTransport', () => {
       // Just verify it returns a valid state number.
       const state = channel.getConnectivityState(true)
       expect(typeof state).toBe('number')
-    })
+    }, { timeout: INTEGRATION_TIMEOUT_MS })
 
     it('channelFor resolves TransferService to a different endpoint than BucketService', async () => {
       // Runtime credential guard — see the gating block above.
@@ -244,6 +244,6 @@ describe('NebiusGrpcTransport', () => {
       expect(transferChannel).toBeDefined()
       // TransferService is on a different endpoint, so channels should differ
       expect(bucketChannel).not.toBe(transferChannel)
-    })
+    }, { timeout: INTEGRATION_TIMEOUT_MS })
   })
 })

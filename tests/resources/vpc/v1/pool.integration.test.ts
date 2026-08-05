@@ -24,7 +24,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.Pool lifecycle', (stack) =>
     expect(pool.visibility).toBe('PRIVATE')
     expect(pool.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(safeDestroy(stack)),
+    safeDestroy(stack),
   ),
   { timeout: 120_000 },
 )
