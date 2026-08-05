@@ -16,7 +16,10 @@ test.provider('Nebius.iam.v1.Group lifecycle', (stack) =>
     expect(group.name).toBeDefined()
     expect(group.state).toBeDefined()
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 120_000 },
 )

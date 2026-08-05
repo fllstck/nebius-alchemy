@@ -57,17 +57,39 @@ export const NebiusInstanceProvider = AlchemyProvider.succeed(NebiusInstance, {
     }
 
     // 2. Ensure — create if missing (with ownership tags)
+    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
     if (!instance) {
-      const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)
       const labels = { ...internalLabels, ...news.labels }
 
       yield* session.note(`Creating Nebius.compute.v1.Instance (${name})`)
-      instance = yield* computeGrpcService.instance.create({
-        metadata: { parentId, name, labels },
-        spec: NebiusInstanceSchema.InstanceSpec.fromJSON(news),
-      })
+      instance = yield* computeGrpcService.instance
+        .create({
+          metadata: { parentId, name, labels },
+          spec: NebiusInstanceSchema.InstanceSpec.fromJSON(news),
+        })
+        .pipe(
+          // Create can time out client-side while the backend still starts the
+          // instance (the long-running operation is created server-side before
+          // the response reaches us). Recover by looking the instance up by its
+          // deterministic physical name and adopting it — otherwise destroy has
+          // no ID to act on and silently leaks a running VM + boot disk.
+          Effect.catch((e: unknown) =>
+            Effect.gen(function* () {
+              const recovered = yield* computeGrpcService.instance
+                .getByName({ parentId, name })
+                .pipe(Effect.catch(() => Effect.succeed(undefined)))
+              if (recovered) {
+                yield* session.note(
+                  `Recovered Nebius.compute.v1.Instance (${recovered.metadata!.id}) after create failure`,
+                )
+                return recovered
+              }
+              return yield* Effect.fail(e)
+            }),
+          ),
+        )
     }
 
     // 3. Sync — update if spec drifted from desired
@@ -83,9 +105,12 @@ export const NebiusInstanceProvider = AlchemyProvider.succeed(NebiusInstance, {
         instance.spec.stopped !== desired.stopped)
     ) {
       yield* session.note(`Updating Nebius.compute.v1.Instance (${instance.metadata!.name})`)
+      // The compute API requires metadata.parentId on update (unlike VPC
+      // resources) — omitting it yields `INVALID_ARGUMENT: ParentID is invalid`.
       instance = yield* computeGrpcService.instance.update({
         metadata: {
           id: instance.metadata!.id,
+          parentId,
           resourceVersion: instance.metadata!.resourceVersion.toString(),
         },
         spec: desired,

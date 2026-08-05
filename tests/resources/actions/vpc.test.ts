@@ -2,6 +2,7 @@ import * as Test from 'alchemy/Test/Bun'
 import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
+import * as Validation from '../../../modules/resources/validation'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -13,28 +14,50 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetNetwork / Li
       Nebius.vpc.Network('ActionTest-Net', {}),
     )
 
-    const { networks, found, notFound } = yield* stack.deploy(
+    const { networks, found } = yield* stack.deploy(
       Effect.gen(function* () {
         const networks = yield* Nebius.vpc.action.ListNetworks({})
         const found = yield* Nebius.vpc.action.GetNetwork({ name: net.name })
-        const notFound = yield* Nebius.vpc.action.GetNetwork({ name: 'nonexistent-network-99999' })
-        return { networks, found, notFound }
+        return { networks, found }
       }),
     )
 
     expect(found?.id).toBe(net.id)
     expect(found?.name).toBe(net.name)
     expect(networks.some((n) => n.id === net.id)).toBe(true)
-    expect(notFound).toBeUndefined()
-  }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+
+    // The not-found path is a separate action instance (distinct logical id —
+    // same-name actions in one stack share a single output) and fails with
+    // ResourceNotFoundError by contract. Effect.flip surfaces the deploy's
+    // failure as the success value.
+    const notFound = yield* stack
+      .deploy(
+        Effect.gen(function* () {
+          yield* Nebius.vpc.action.GetNetwork('NotFoundCheck', { name: 'nonexistent-network-99999' })
+        }),
+      )
+      .pipe(Effect.flip)
+    expect(notFound).toBeInstanceOf(Validation.ResourceNotFoundError)
+  }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )
 
 test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSubnet / ListSubnets', (stack) =>
   Effect.gen(function* () {
-    const net = yield* stack.deploy(Nebius.vpc.Network('ActionTest-Sub-Net', {}))
-    const subnet = yield* stack.deploy(
-      Nebius.vpc.Subnet('ActionTest-Sub', { networkId: net.id }),
+    // Deploy the whole graph in ONE stack so destroy orders the child
+    // (subnet) before the parent (network). Separate deploys replace the
+    // entire stack each time — the parent would be scheduled for deletion
+    // while the child still exists, and the API rejects it
+    // (FAILED_PRECONDITION), orphaning the network.
+    const { subnet } = yield* stack.deploy(
+      Effect.gen(function* () {
+        const net = yield* Nebius.vpc.Network('ActionTest-Sub-Net', {})
+        const subnet = yield* Nebius.vpc.Subnet('ActionTest-Sub', { networkId: net.id })
+        return { subnet }
+      }),
     )
 
     const { subnets, found } = yield* stack.deploy(
@@ -47,15 +70,22 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSubnet / Lis
 
     expect(found?.id).toBe(subnet.id)
     expect(subnets.some((s) => s.id === subnet.id)).toBe(true)
-  }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+  }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )
 
 test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSecurityGroup / ListSecurityGroups', (stack) =>
   Effect.gen(function* () {
-    const net = yield* stack.deploy(Nebius.vpc.Network('ActionTest-SG-Net', {}))
-    const sg = yield* stack.deploy(
-      Nebius.vpc.SecurityGroup('ActionTest-SG', { networkId: net.id }),
+    // Single stack — see GetSubnet test for why.
+    const { sg } = yield* stack.deploy(
+      Effect.gen(function* () {
+        const net = yield* Nebius.vpc.Network('ActionTest-SG-Net', {})
+        const sg = yield* Nebius.vpc.SecurityGroup('ActionTest-SG', { networkId: net.id })
+        return { sg }
+      }),
     )
 
     const { groups, found } = yield* stack.deploy(
@@ -68,15 +98,22 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSecurityGrou
 
     expect(found?.id).toBe(sg.id)
     expect(groups.some((g) => g.id === sg.id)).toBe(true)
-  }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+  }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )
 
 test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetRouteTable / ListRouteTables', (stack) =>
   Effect.gen(function* () {
-    const net = yield* stack.deploy(Nebius.vpc.Network('ActionTest-RT-Net', {}))
-    const rt = yield* stack.deploy(
-      Nebius.vpc.RouteTable('ActionTest-RT', { networkId: net.id }),
+    // Single stack — see GetSubnet test for why.
+    const { rt } = yield* stack.deploy(
+      Effect.gen(function* () {
+        const net = yield* Nebius.vpc.Network('ActionTest-RT-Net', {})
+        const rt = yield* Nebius.vpc.RouteTable('ActionTest-RT', { networkId: net.id })
+        return { rt }
+      }),
     )
 
     const { tables, found } = yield* stack.deploy(
@@ -89,7 +126,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetRouteTable /
 
     expect(found?.id).toBe(rt.id)
     expect(tables.some((t) => t.id === rt.id)).toBe(true)
-  }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+  }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )
 
@@ -113,6 +153,9 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetPool / ListP
 
     expect(found?.id).toBe(pool.id)
     expect(pools.some((p) => p.id === pool.id)).toBe(true)
-  }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+  }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )

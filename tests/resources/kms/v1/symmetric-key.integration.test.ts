@@ -24,7 +24,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
       expect(key.description).toBe('Alchemy integration test KMS key')
       expect(key.algorithm).toBe('AES_256')
     }).pipe(
-      Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+      Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
     ),
   { timeout: 120_000 },
 )

@@ -82,9 +82,13 @@ export const withGrpcRetry = <A, E, R>(
   const loop = (attempt: number): Effect.Effect<A, E, R> =>
     effect.pipe(
       // Retry on retryable GrpcError codes, up to maxRetries.
+      // DEADLINE_EXCEEDED surfaces as GrpcDeadlineExceededError (not GrpcError
+      // with code 4), so it is matched explicitly here.
       // Non-matching errors pass through without retry.
       Effect.catchIf(
-        (e) => e instanceof GrpcError && RETRYABLE_CODES.has(e.code) && attempt < maxRetries,
+        (e) =>
+          attempt < maxRetries &&
+          (e instanceof GrpcDeadlineExceededError || (e instanceof GrpcError && RETRYABLE_CODES.has(e.code))),
         (_e) => {
           const delay = initial * Math.pow(2, attempt)
           // Jitter: randomize between 50% and 100% of the computed delay
@@ -110,18 +114,29 @@ export const withGrpcRetry = <A, E, R>(
  * @param call - Factory that creates the gRPC call. Receives a callback and
  *   optional {@link grpc.CallOptions} (used to pass deadline).
  * @param options - Optional call-level settings.
- * @param options.deadline - If set, the gRPC call will be aborted by the
- *   server if it doesn't complete by this time. Deadline-exceeded errors
- *   (code 4) are surfaced as {@link GrpcDeadlineExceededError}.
+ * @param options.deadlineMs - Call timeout in milliseconds. The deadline is
+ *   computed per call (at call time, not service construction), so a long-lived
+ *   service never hands gRPC an already-expired deadline. Deadline-exceeded
+ *   errors (code 4) are surfaced as {@link GrpcDeadlineExceededError}.
  */
 export const wrapUnaryCall = <T>(
   call: (
     callback: (error: grpc.ServiceError | null, response: T) => void,
     options?: grpc.CallOptions,
   ) => grpc.ClientUnaryCall,
-  options?: { deadline?: Date; retry?: GrpcRetryOptions },
+  options?: { deadlineMs?: number; retry?: GrpcRetryOptions },
 ): Effect.Effect<T, GrpcError | GrpcDeadlineExceededError> => {
   const base: Effect.Effect<T, GrpcError | GrpcDeadlineExceededError> = Effect.callback((resume) => {
+    // Deadline is computed per call so it is never stale, even when the
+    // service has been alive for longer than the timeout. waitForReady keeps
+    // the call queued while the channel is CONNECTING/TRANSIENT_FAILURE
+    // instead of failing immediately with a spurious DEADLINE_EXCEEDED.
+    // (waitForReady is supported at runtime by @grpc/grpc-js but missing from
+    // its CallOptions types — the intersection documents the runtime contract.)
+    const callOptions: grpc.CallOptions & { waitForReady?: boolean } = {
+      ...(options?.deadlineMs !== undefined ? { deadline: new Date(Date.now() + options.deadlineMs) } : {}),
+      waitForReady: true,
+    }
     const grpcCall = call(
       (error, response) => {
         if (error) {
@@ -149,7 +164,7 @@ export const wrapUnaryCall = <T>(
           resume(Effect.succeed(response))
         }
       },
-      options ? { deadline: options.deadline } : undefined,
+      callOptions,
     )
 
     // Extract Nebius warnings from response trailers.
@@ -242,13 +257,13 @@ export type EffectService<S extends ServiceDescriptor> = {
  * Lower-level building block. Prefer {@link makeGrpcService} for the
  * full pipeline (channel resolution + client construction + wrapping).
  *
- * @param options.deadline - Default deadline for all wrapped unary calls.
- *   Callers can override per-call by wrapping with a different deadline.
+ * @param options.deadlineMs - Default call timeout in milliseconds for all
+ *   wrapped unary calls. Computed per call (see {@link wrapUnaryCall}).
  */
 export const wrapGrpcClient = <S extends ServiceDescriptor>(
   descriptor: S,
   client: Record<string, (req: any, cb: (err: grpc.ServiceError | null, res: any) => void) => grpc.ClientUnaryCall>,
-  options?: { deadline?: Date; retry?: GrpcRetryOptions },
+  options?: { deadlineMs?: number; retry?: GrpcRetryOptions },
 ): EffectService<S> => {
   const wrapped: Record<string, (req: any) => Effect.Effect<any, GrpcError | GrpcDeadlineExceededError>> = {}
   for (const [method, def] of Object.entries(descriptor)) {
@@ -323,7 +338,13 @@ export const pollOperation = (
         const call = client.get(
           GetOperationRequest.fromPartial({ id: operationId }),
           new grpc.Metadata(),
-          { deadline: new Date(Date.now() + 30_000) },
+          // Per-attempt deadline; waitForReady so a reconnecting channel does
+          // not fail the poll immediately. (waitForReady is a runtime-supported
+          // CallOptions field missing from grpc-js's types.)
+          {
+            deadline: new Date(Date.now() + 30_000),
+            waitForReady: true,
+          } as grpc.CallOptions & { waitForReady?: boolean },
           (error, response) => {
             if (error) {
               if (error.code === 4) {
@@ -525,7 +546,9 @@ export const wrapWithOperationPolling = <
  * Resolves the channel via {@link NebiusGrpcTransport}, instantiates the
  * generated gRPC client, and wraps every unary method in an Effect.
  *
- * All unary calls get a default 30-second deadline to prevent infinite hangs.
+ * All unary calls get a default 30-second per-call deadline to prevent
+ * infinite hangs, and automatically retry transient failures
+ * (DEADLINE_EXCEEDED, UNAVAILABLE, …).
  *
  * @example
  * ```ts
@@ -543,7 +566,7 @@ export const makeGrpcService = <S extends ServiceDescriptor>(
     service: S
     serviceName: string
   },
-  options?: { deadline?: Date; retry?: GrpcRetryOptions },
+  options?: { deadlineMs?: number; retry?: GrpcRetryOptions },
 ): Effect.Effect<EffectService<S>, UnknownServiceError, NebiusGrpcTransport> =>
   Effect.gen(function* () {
     const serviceName = ClientClass.serviceName
@@ -558,8 +581,9 @@ export const makeGrpcService = <S extends ServiceDescriptor>(
       channelOverride: channel,
     })
 
-    const deadline = options?.deadline ?? new Date(Date.now() + 30_000)
-    return wrapGrpcClient(ClientClass.service, client, { deadline, retry: options?.retry })
+    const deadlineMs = options?.deadlineMs ?? 30_000
+    const retry = options?.retry ?? { maxRetries: 3 }
+    return wrapGrpcClient(ClientClass.service, client, { deadlineMs, retry })
   }).pipe(Effect.withSpan('makeGrpcService'))
 
 // ---------------------------------------------------------------------------

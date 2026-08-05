@@ -13,6 +13,6 @@ export interface CreateInput {
 
 /** Standard input for `update` operations across all Nebius CRUD services. */
 export interface UpdateInput {
-  readonly metadata: { id: string; resourceVersion?: number | string }
+  readonly metadata: { id: string; parentId?: string; resourceVersion?: number | string }
   readonly spec: {}
 }

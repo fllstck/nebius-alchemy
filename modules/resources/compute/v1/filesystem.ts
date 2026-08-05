@@ -49,8 +49,8 @@ export const NebiusFilesystemProvider = AlchemyProvider.succeed(NebiusFilesystem
         .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
     }
 
+    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
     if (!fs) {
-      const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
       const name =
         news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)
@@ -83,6 +83,7 @@ export const NebiusFilesystemProvider = AlchemyProvider.succeed(NebiusFilesystem
       fs = yield* svc.filesystem.update({
         metadata: {
           id: fs.metadata!.id,
+          parentId,
           resourceVersion: fs.metadata!.resourceVersion.toString(),
         },
         spec: desired,

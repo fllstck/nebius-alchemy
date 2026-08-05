@@ -24,7 +24,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.dns.v1.Zone lifecycle', (s
     expect(zone.domainName).toBe('alchemy-test.example.com.')
     expect(zone.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 120_000 },
 )

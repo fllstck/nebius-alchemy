@@ -90,11 +90,20 @@ export const NebiusFederationProvider = AlchemyProvider.succeed(NebiusFederation
     return toFriendlyAttributes(federation)
   }),
 
-  delete: Factory.makeCrudDelete({
-    resourceName: 'Nebius.iam.v1.Federation',
-    resourceLabel: 'Federation',
-    service: IamGrpc.IamGrpcService,
-    deleteById: (svc, id) => svc.federation.delete(id),
+  // oxlint-disable-next-line typescript/no-explicit-any — approved: Alchemy Session type not exported
+  delete: Effect.fn('Nebius.iam.v1.Federation.delete')(function* ({ output, session }: { output: { id: string }; session: any }) {
+    const iam = yield* IamGrpc.IamGrpcService
+
+    // An ACTIVE federation cannot be deleted — deactivate it first
+    // (see `nebius iam federation delete` docs). NOT_FOUND means the
+    // federation is already gone; treat that as success and skip delete.
+    yield* session.note(`Deactivating Nebius.iam.v1.Federation (${output.id})`)
+    yield* iam.federation.deactivate(output.id).pipe(
+      Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.void : Effect.fail(e))),
+    )
+
+    yield* session.note(`Deleting Federation (${output.id})`)
+    yield* iam.federation.delete(output.id)
   }),
 
   read: Factory.makeCrudRead({

@@ -28,7 +28,10 @@ test.provider('Nebius.mysterybox.v1.SecretVersion lifecycle', (stack) =>
     expect(version.description).toBe('Alchemy integration test version')
     expect(version.state).toBe('ACTIVE')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 180_000 },
 )

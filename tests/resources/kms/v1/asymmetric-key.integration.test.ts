@@ -23,7 +23,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
       expect(typeof key.id).toBe('string')
       expect(key.algorithm).toBe('ECDSA_NIST_P256_SHA_256')
     }).pipe(
-      Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+      Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
     ),
   { timeout: 120_000 },
 )

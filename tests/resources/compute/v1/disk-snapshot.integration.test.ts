@@ -30,7 +30,10 @@ test.provider.skipIf(true)(
     expect(snap.sourceDiskId).toBe(disk.id)
     expect(snap.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 300_000 },
 )

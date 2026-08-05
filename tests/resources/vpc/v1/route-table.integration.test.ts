@@ -24,7 +24,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.v1.RouteTable lifecycl
     expect(rt.networkId).toBe(network.id)
     expect(rt.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 120_000 },
 )

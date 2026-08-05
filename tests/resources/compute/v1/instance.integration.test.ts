@@ -48,7 +48,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.compute.v1.Instance lifecy
     expect(instance.name).toBeDefined()
     expect(['RUNNING', 'CREATING']).toContain(instance.state)
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 300_000 },
 )

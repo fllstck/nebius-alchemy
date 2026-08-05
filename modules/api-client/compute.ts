@@ -108,10 +108,10 @@ export interface InstanceService {
   readonly get: (
     id: string,
   ) => Effect.Effect.Effect<Instance, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly getByName: (
-    parentId: string,
-    name: string,
-  ) => Effect.Effect.Effect<Instance, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly getByName: (req: {
+    parentId: string
+    name: string
+  }) => Effect.Effect.Effect<Instance, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   /** List all instances in a project (paginates automatically). */
   readonly list: (
     parentId: string,

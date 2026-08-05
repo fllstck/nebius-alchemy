@@ -22,7 +22,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.v1.Pool lifecycle', (s
     expect(pool.visibility).toBe('PRIVATE')
     expect(pool.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 120_000 },
 )

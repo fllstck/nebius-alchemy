@@ -249,6 +249,10 @@ export interface FederationService {
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusFederationSchema.Federation>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly create: (req: CreateFederationInput) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
   readonly update: (req: UpdateFederationInput) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  /** Deactivate a federation — required before it can be deleted. */
+  readonly deactivate: (id: string) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  /** Re-activate a deactivated federation. */
+  readonly activate: (id: string) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
   readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
 }
 
@@ -649,7 +653,7 @@ const makeFederationService = Effect.Effect.gen(function* () {
 
   const polled = GrpcUtils.wrapWithOperationPolling(raw, {
     serviceName: 'nebius.iam.v1.FederationService',
-    polling: ['create', 'update'],
+    polling: ['create', 'update', 'deactivate', 'activate'],
     forget: ['delete'],
     transport,
     getRequest: (id) => NebiusFederationServiceSchema.GetFederationRequest.fromPartial({ id }),
@@ -661,6 +665,10 @@ const makeFederationService = Effect.Effect.gen(function* () {
         NebiusFederationServiceSchema.CreateFederationRequest.fromPartial(req),
       update: (req: UpdateFederationInput) =>
         NebiusFederationServiceSchema.UpdateFederationRequest.fromPartial(req),
+      deactivate: (id: string) =>
+        NebiusFederationServiceSchema.DeactivateFederationRequest.fromPartial({ federationId: id }),
+      activate: (id: string) =>
+        NebiusFederationServiceSchema.ActivateFederationRequest.fromPartial({ federationId: id }),
       delete: (id: string) => NebiusFederationServiceSchema.DeleteFederationRequest.fromPartial({ id }),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

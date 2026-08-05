@@ -53,8 +53,8 @@ export const NebiusImageProvider = AlchemyProvider.succeed(NebiusImage, {
     }
 
     // 2. Ensure — create if missing (with ownership tags)
+    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
     if (!image) {
-      const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)
       const labels = { ...internalLabels, ...news.labels }
@@ -79,6 +79,7 @@ export const NebiusImageProvider = AlchemyProvider.succeed(NebiusImage, {
       image = yield* computeGrpcService.image.update({
         metadata: {
           id: image.metadata!.id,
+          parentId,
           resourceVersion: image.metadata!.resourceVersion.toString(),
         },
         spec: desired,

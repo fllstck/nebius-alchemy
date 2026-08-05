@@ -35,7 +35,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.storage.v1.Bucket lifecycl
     expect(updated.id).toBe(created.id)
     expect(updated.versioningPolicy).toBe('ENABLED')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 120_000 },
 )

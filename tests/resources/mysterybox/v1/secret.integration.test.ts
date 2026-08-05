@@ -24,7 +24,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
       expect(secret.description).toBe('Alchemy integration test secret')
       expect(secret.state).toBe('ACTIVE')
     }).pipe(
-      Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+      Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
     ),
   { timeout: 120_000 },
 )

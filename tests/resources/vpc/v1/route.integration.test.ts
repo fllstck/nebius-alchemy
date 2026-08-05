@@ -49,7 +49,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.v1.Route lifecycle', (
     expect(updated.id).toBe(route.id)
     expect(updated.description).toBe('updated')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 180_000 },
 )

@@ -30,6 +30,9 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.quotas.action.GetQuota / L
       expect(found.name).toBe('compute.disk.count')
       expect(found.region).toBe('eu-north1')
     }
-  }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+  }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )

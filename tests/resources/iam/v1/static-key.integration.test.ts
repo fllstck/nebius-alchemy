@@ -32,7 +32,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
     }).pipe(
       Effect.ensuring(
         Effect.gen(function* () {
-          yield* stack.destroy().pipe(Effect.ignore)
+          yield* stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )
         }),
       ),
     ),

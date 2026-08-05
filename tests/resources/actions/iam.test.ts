@@ -2,6 +2,7 @@ import * as Test from 'alchemy/Test/Bun'
 import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
+import * as Validation from '../../../modules/resources/validation'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -13,20 +14,34 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
     Effect.gen(function* () {
       const project = yield* stack.deploy(Nebius.iam.Project('ActionTest-Project', { region: 'eu-north1' }))
 
-      const { projects, found, notFound } = yield* stack.deploy(
+      const { projects, found } = yield* stack.deploy(
         Effect.gen(function* () {
           const projects = yield* Nebius.iam.action.ListProjects({})
           const found = yield* Nebius.iam.action.GetProject({ name: project.name })
-          const notFound = yield* Nebius.iam.action.GetProject({ name: 'nonexistent-project-99999' })
-          return { projects, found, notFound }
+          return { projects, found }
         }),
       )
 
       expect(found?.id).toBe(project.id)
       expect(found?.name).toBe(project.name)
       expect(projects.some((p) => p.id === project.id)).toBe(true)
-      expect(notFound).toBeUndefined()
-    }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+
+      // The not-found path is a separate action instance (distinct logical id —
+      // same-name actions in one stack share a single output) and fails with
+      // ResourceNotFoundError by contract. Effect.flip surfaces the deploy's
+      // failure as the success value.
+      const notFound = yield* stack
+        .deploy(
+          Effect.gen(function* () {
+            yield* Nebius.iam.action.GetProject('NotFoundCheck', { name: 'nonexistent-project-99999' })
+          }),
+        )
+        .pipe(Effect.flip)
+      expect(notFound).toBeInstanceOf(Validation.ResourceNotFoundError)
+    }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )
 
@@ -46,6 +61,9 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
 
       expect(found?.id).toBe(group.id)
       expect(groups.some((g) => g.id === group.id)).toBe(true)
-    }).pipe(Effect.ensuring(stack.destroy().pipe(Effect.ignore))),
+    }).pipe(Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    ))),
   { timeout: 120_000 },
 )

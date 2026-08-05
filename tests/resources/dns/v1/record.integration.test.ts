@@ -32,7 +32,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.dns.v1.Record lifecycle', 
     expect(record.type).toBe('A')
     expect(record.data).toBe('192.0.2.1')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 180_000 },
 )

@@ -31,7 +31,10 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.iam.v2.Project lifecycle',
     expect(updated.id).toBe(created.id)
     expect(updated.name).toBe(created.name)
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 120_000 },
 )

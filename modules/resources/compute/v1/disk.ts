@@ -53,8 +53,8 @@ export const NebiusDiskProvider = AlchemyProvider.succeed(NebiusDisk, {
     }
 
     // 2. Ensure — create if missing (with ownership tags)
+    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
     if (!disk) {
-      const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)
       const labels = { ...internalLabels, ...news.labels }
@@ -76,9 +76,12 @@ export const NebiusDiskProvider = AlchemyProvider.succeed(NebiusDisk, {
         disk.spec.forbidDeletion !== desired.forbidDeletion)
     ) {
       yield* session.note(`Updating Nebius.compute.v1.Disk (${disk.metadata!.name})`)
+      // The compute API requires metadata.parentId on update (like Instance) —
+      // omitting it yields `INVALID_ARGUMENT: ParentID is invalid`.
       disk = yield* computeGrpcService.disk.update({
         metadata: {
           id: disk.metadata!.id,
+          parentId,
           resourceVersion: disk.metadata!.resourceVersion.toString(),
         },
         spec: desired,

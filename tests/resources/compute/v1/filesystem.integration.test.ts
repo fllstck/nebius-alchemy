@@ -22,7 +22,10 @@ test.provider.skipIf(true)(
     expect(fs.type).toBe('NETWORK_SSD')
     expect(fs.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(Effect.ignore)),
+    Effect.ensuring(stack.destroy().pipe(
+      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
+      Effect.ignore,
+    )),
   ),
   { timeout: 180_000 },
 )
