@@ -362,7 +362,16 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
       missing-env failure, `toStorageError` mapping matrix. 24 tests total.
 - [x] `bun run check` clean; `bun test` green.
 
-### M3 — Integration tests — RESOLVED ✅
+### M3 — Integration tests — DONE ✅ (see below for the resolved blocker)
+
+Both integration tests green and stable (3/3 consecutive full runs):
+- identity lifecycle: SA → editors-group membership → v2 access key
+- **S3 round-trip via s3-lite-client** — the binding chain validated end-to-end
+  against real Nebius S3 (putObject → getObject → deleteObject)
+
+Stretch (not yet done): `alchemy dev` local-worker e2e (workerd execution of
+the `secret_text`/`plain_text` binding path) — needs no CF credentials, but
+not required to consider M3 done.
 
 **The weeks-long "NOT_FOUND on freshly-created IAM resources" blocker was a
 TEST-PATTERN bug in our own integration tests, not the Nebius backend, not the
@@ -414,9 +423,15 @@ Shipped fixes in this milestone:
 - [x] **Idempotent deletes**: `makeCrudDelete` swallows `GrpcError` code 5
       (NOT_FOUND) — a delete of an already-gone resource is success. Applies
       to every CRUD resource provider.
-- [x] **`bindings.integration.test.ts` reinstated** — identity lifecycle
-      (SA → default editors-group membership → v2 access key with INLINE
-      secret), 8/8 consecutive green runs (create + destroy).
+- [x] **`bindings.integration.test.ts` reinstated + completed** — two tests,
+      both stable across repeated runs:
+      1. *Identity lifecycle* (SA → default editors-group membership → v2
+         access key with INLINE secret) — create + destroy.
+      2. *S3 round-trip*: the full binding chain — bucket + SA → editors
+         grant → access key → **s3-lite-client** (byte-for-byte the client the
+         binding Layer builds: full-URL `endPoint`, path-style,
+         region-scoped key) → `PutObject`/`GetObject` round-trip against real
+         Nebius S3, object cleaned before bucket destroy.
 - [x] **Pre-existing `access-key.integration.test.ts` fixed** with the staged
       pattern — 3/3 green (it was broken by the same partial-redeploy bug).
 - [x] `Group` provider `news = news || {}` guard; `GroupMembership`
