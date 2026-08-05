@@ -6,6 +6,7 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 
 import * as NebiusAccessKeyV2Schema from '../../../../schemas/nebius/iam/v2/access_key'
+import * as NebiusAccessKeyV2ServiceSchema from '../../../../schemas/nebius/iam/v2/access_key_service'
 import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access'
 import * as IamGrpc from '../../../api-client/iam'
 import * as ResourceUtils from '../../utilities.ts'
@@ -77,21 +78,26 @@ export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, 
     // so this retries the whole create a bounded number of times, not the
     // failed call).
     yield* session.note(`Creating access key for service account (${news.serviceAccountId})`)
-    const key = yield* iamGrpcService.accessKeyV2
-      .create({
-        metadata: {
-          parentId,
-          name,
-        },
-        spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
-          account: NebiusAccessSchema.Account.fromPartial({
-            serviceAccount: { id: news.serviceAccountId },
-          }),
-          description: news.description || '',
-          ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
-          secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
+    console.log(`[AK-DBG] parentId=${parentId} sa=${news.serviceAccountId} name=${name} mode=${secretDeliveryMode}`)
+    const req = NebiusAccessKeyV2ServiceSchema.CreateAccessKeyRequest.fromPartial({
+      metadata: {
+        parentId,
+        name,
+      },
+      spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
+        account: NebiusAccessSchema.Account.fromPartial({
+          serviceAccount: { id: news.serviceAccountId },
         }),
-      })
+        description: news.description || '',
+        ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
+        secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
+      }),
+    })
+    console.log(
+      `[AK-DBG] bytes=${Buffer.from(NebiusAccessKeyV2ServiceSchema.CreateAccessKeyRequest.encode(req).finish()).toString('base64')}`,
+    )
+    const key = yield* iamGrpcService.accessKeyV2
+      .create(req)
       .pipe(
         Effect.retry({
           times: 12,

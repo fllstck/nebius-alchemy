@@ -39,6 +39,7 @@ export const NebiusServiceAccountProvider = AlchemyProvider.succeed(NebiusServic
   reconcile: Effect.fn('Nebius.iam.v1.ServiceAccount.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* ServiceAccountSchema.validateServiceAccountProps(news)
+    console.log(`[SA-DBG] reconcile start output=${JSON.stringify(output?.id ?? null)}`)
 
     const iamGrpcService = yield* IamGrpc.IamGrpcService
 
@@ -58,10 +59,12 @@ export const NebiusServiceAccountProvider = AlchemyProvider.succeed(NebiusServic
       const labels = { ...internalLabels, ...news.labels }
 
       yield* session.note(`Creating Nebius.iam.v1.ServiceAccount (${name})`)
+      console.log(`[SA-DBG] CREATE parentId=${parentId} name=${name} labels=${JSON.stringify(labels)}`)
       sa = yield* iamGrpcService.serviceAccount.create({
         metadata: { parentId, name, labels },
         spec: NebiusServiceAccountSchema.ServiceAccountSpec.fromPartial({ description: news.description || '' }),
       })
+      console.log(`[SA-DBG] create returned id=${sa.metadata?.id} rv=${sa.metadata?.resourceVersion}`)
     }
 
     // 3. Sync — update if spec drifted
