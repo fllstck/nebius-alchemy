@@ -449,7 +449,7 @@ full-vs-minimal providers layer, bun-test-vs-bun-script (a plain bun test with
 the api-client passes). The single variable that always correlated was the
 number of `stack.deploy` calls.
 
-### M4 — Docs & examples — DONE ✅
+### M4 — Docs & examples — DONE ✅ (with a follow-up: see “M4 e2e findings” below)
 
 - [x] `examples/bindings.ts`: Cloudflare Worker stack consuming
       `Nebius.storage.GetObject`/`PutObject` — the Goal snippet shape, using
@@ -469,6 +469,40 @@ number of `stack.deploy` calls.
 - [x] Final: `bun run check` clean (0 errors, 12 baseline warnings),
       `bun test` green (385), `SLOW_TESTS=1` integration green for the
       bindings + access-key + bucket suites (4/4).
+
+### M4 e2e findings (the `alchemy dev` stretch — attempted, two findings)
+
+Running `alchemy dev examples/bindings.ts` (workerd local-worker e2e) surfaced
+TWO issues:
+
+1. **`alchemy dev` CLI hangs in this environment** (reported for the
+alchemy maintainers): the RPC spawner's sidecar process
+(`alchemy/src/Cloudflare/Local.ts`) crashes with
+`TypeError: The "paths[0]" property must be of type string, got undefined` at
+`path.join(dotAlchemy, "local")` (reproduced by running the sidecar entry
+manually), and the CLI waits forever for its RPC address. It worked on the
+first ever run, then broke — looks like stale state / an environment quirk.
+The local-workerd e2e remains blocked on this.
+
+2. **A REAL bug in the bindings' deploy-time wiring** (the first dev run
+exposed it): the deploy fails with
+`Error: Expected string at ["serviceAccountId"]` from `new HostIdentity(...)`.
+The impl resolves lazily-declared resource outputs via
+`yield* yield* sa.id` — and that returns `undefined` in the binding-impl
+context (the ambient `RuntimeContext` during a resource lifecycle is not the
+resolve context; a scratch-stack probe of the same pattern HANGS — 120s
+timeout). The alchemy-blessed pattern (R2 `BucketHttp` precedent): pass the
+**Output/Accessor expressions through** — `yield* bucket.bucketName` yields an
+`Effect<string>` accessor that the runtime client resolves later — never
+resolve inline via double-yield.
+
+**Fix (not yet applied)**: restructure `HostIdentity` to hold Outputs
+(not resolved strings), pass the outputs into the `AccessPermit` props
+(Input resolves refs — the M3-validated path) and into `bindWorkerEnv`'s env
+values (the Worker provider resolves Output expressions in bind data, as R2's
+`bucketName: bucket.bucketName` does); update the M1 host-identity/bind-host
+tests; validate via the M3-style harness path. Until then the bindings are
+M3-tested at the provider level but NOT deploy-time proven.
 
 ## Adding AWS hosts later
 
