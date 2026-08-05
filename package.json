@@ -60,13 +60,13 @@
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "^7.0.0",
     "@effect/tsgo": "0.20.0",
-    "@effect/platform-node": "4.0.0-beta.101"
+    "@effect/platform-node": "4.0.0-beta.103"
   },
   "peerDependencies": {
     "typescript": "^7",
-    "effect": ">=4.0.0-beta.100 || >=4.0.0",
-    "@effect/platform-bun": ">=4.0.0-beta.100 || >=4.0.0",
-    "@effect/platform-node": ">=4.0.0-beta.100 || >=4.0.0"
+    "effect": ">=4.0.0-beta.103 || >=4.0.0",
+    "@effect/platform-bun": ">=4.0.0-beta.103 || >=4.0.0",
+    "@effect/platform-node": ">=4.0.0-beta.103 || >=4.0.0"
   },
   "dependencies": {
     "@bradenmacdonald/s3-lite-client": "0.9.6",
