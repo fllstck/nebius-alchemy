@@ -2,7 +2,6 @@ import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as ConfigProvider from 'effect/ConfigProvider'
-import * as grpc from '@grpc/grpc-js'
 import * as PlatformNode from '@effect/platform-node'
 import * as AlchemyAuthProvider from 'alchemy/Auth/AuthProvider'
 import * as AlchemyProfile from 'alchemy/Auth/Profile'
@@ -15,6 +14,7 @@ import * as GrpcUtilsModule from '../../../modules/api-client/grpc-utils.ts'
 import { runIntegration, INTEGRATION_TIMEOUT_MS } from '../../helpers/gate'
 import { redact } from '../../helpers/cleanup'
 import { uniqueName } from '../../helpers/names'
+import { fakeChannel } from '../../helpers/channel'
 
 const { beforeAll, describe, expect, test } = BunTest
 const { AuthProviders } = AlchemyAuthProvider
@@ -31,17 +31,13 @@ const { GrpcError, GrpcDeadlineExceededError, OperationFailedError } = GrpcUtils
 // Layer construction
 // ---------------------------------------------------------------------------
 
-/** Fake gRPC channel — for structural tests only. */
-const fakeChannel = new grpc.Channel(
-  'localhost:0',
-  grpc.credentials.createInsecure(),
-  {},
-)
+/** Fake gRPC channel — pure structural mock, never a real channel. */
+const channel = fakeChannel()
 
 /** Mock transport → mock service: no credentials needed. */
 const mockTransportLayer = Layer.succeed(NebiusGrpcTransport, {
-  getChannel: (_endpoint: string) => Effect.succeed(fakeChannel),
-  channelFor: (_service: string) => Effect.succeed(fakeChannel),
+  getChannel: (_endpoint: string) => Effect.succeed(channel),
+  channelFor: (_service: string) => Effect.succeed(channel),
   evictChannel: (_endpoint: string) => Effect.void,
 })
 

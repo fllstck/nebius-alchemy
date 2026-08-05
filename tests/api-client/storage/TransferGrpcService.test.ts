@@ -1,10 +1,10 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as grpc from '@grpc/grpc-js'
 import * as GrpcTransportModule from '../../../modules/api-client/GrpcTransport.ts'
 import * as TransferGrpcServiceModule from '../../../modules/api-client/storage.ts'
 import * as TransferServiceSchema from '../../../schemas/nebius/storage/v1/transfer_service.ts'
+import { fakeChannel } from '../../helpers/channel'
 
 const { describe, expect, test } = BunTest
 const { NebiusGrpcTransport } = GrpcTransportModule
@@ -15,17 +15,13 @@ const { ListTransfersRequest, GetTransferRequest } = TransferServiceSchema
 // Layer construction
 // ---------------------------------------------------------------------------
 
-/** Fake gRPC channel that never connects — for structural tests only. */
-const fakeChannel = new grpc.Channel(
-  'localhost:0',
-  grpc.credentials.createInsecure(),
-  {},
-)
+/** Fake gRPC channel — pure structural mock, never a real channel. */
+const channel = fakeChannel()
 
 /** Mock transport layer — provides a fake channel so service layers can build. */
 const mockTransportLayer = Layer.succeed(NebiusGrpcTransport, {
-  getChannel: (_endpoint: string) => Effect.succeed(fakeChannel),
-  channelFor: (_service: string) => Effect.succeed(fakeChannel),
+  getChannel: (_endpoint: string) => Effect.succeed(channel),
+  channelFor: (_service: string) => Effect.succeed(channel),
   evictChannel: (_endpoint: string) => Effect.void,
 })
 
