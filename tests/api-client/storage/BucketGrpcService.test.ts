@@ -11,6 +11,7 @@ import * as NebiusAuthModule from '../../../modules/AuthProvider'
 import * as NebiusCredentialsModule from '../../../modules/Credentials'
 import * as GrpcTransportModule from '../../../modules/api-client/GrpcTransport.ts'
 import * as BucketGrpcServiceModule from '../../../modules/api-client/storage.ts'
+import * as GrpcUtilsModule from '../../../modules/api-client/grpc-utils.ts'
 import { runIntegration } from '../../helpers/gate'
 
 const { describe, expect, test } = BunTest
@@ -21,6 +22,7 @@ const { NebiusAuth } = NebiusAuthModule
 const { NebiusCredentials, fromAuthProvider } = NebiusCredentialsModule
 const { NebiusGrpcTransport, NebiusGrpcTransportLive } = GrpcTransportModule
 const { StorageGrpcService, StorageGrpcServiceLive } = BucketGrpcServiceModule
+const { GrpcError, GrpcDeadlineExceededError, OperationFailedError } = GrpcUtilsModule
 
 
 // ---------------------------------------------------------------------------
@@ -133,9 +135,12 @@ describe('StorageGrpcService (bucket)', () => {
 
   describe('integration — real API', () => {
     it('calls the real list API and returns a typed result (success or GrpcError)', async () => {
-      // The gRPC call may fail due to platform transport issues (e.g. h2 support),
-      // but it should return a properly-typed result, not crash.
-      // This verifies the full pipeline: auth → credentials → transport → service → gRPC call.
+      // Tolerant by design: this verifies the full auth → credentials →
+      // transport → service → gRPC pipeline, NOT API correctness. A degraded
+      // network (UNAVAILABLE / DEADLINE_EXCEEDED) must not fail the plumbing
+      // check. But a non-gRPC error (e.g. UnknownServiceError) WOULD mean the
+      // library's own wiring is broken — those must fail. Do not weaken the
+      // Left-branch assertions below.
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const { bucket: svc } = yield* StorageGrpcService
@@ -153,10 +158,26 @@ describe('StorageGrpcService (bucket)', () => {
 
       expect(result).toBeDefined()
       if (result._tag === 'Right') {
+        // Well-formed array result — buckets (or an empty list).
         expect(Array.isArray(result.value)).toBe(true)
+        for (const bucket of result.value) {
+          expect(typeof bucket).toBe('object')
+        }
       } else {
-        // Left: GrpcError from transport — still proves the pipeline works.
-        expect(result.value._tag).toBe('GrpcError')
+        // Left: must be a gRPC/transport-level error — the pipeline reached the
+        // API. Anything else (UnknownServiceError, ...) means the wiring broke.
+        const error = result.value
+        if (error instanceof GrpcError) {
+          // Documented gRPC status code: 4 DEADLINE_EXCEEDED, 5 NOT_FOUND,
+          // 6 ALREADY_EXISTS, 7 PERMISSION_DENIED, 8 RESOURCE_EXHAUSTED,
+          // 9 FAILED_PRECONDITION, 10 ABORTED, 12 UNIMPLEMENTED, 13 INTERNAL,
+          // 14 UNAVAILABLE, 15 DATA_LOSS, 16 UNAUTHENTICATED.
+          expect([4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16]).toContain(error.code)
+        } else if (error instanceof GrpcDeadlineExceededError) {
+          // Transport-level timeout — pipeline works, infra slow.
+        } else {
+          throw new Error(`unexpected error type from list pipeline: ${String(error)}`)
+        }
       }
     })
 
@@ -185,8 +206,7 @@ describe('StorageGrpcService (bucket)', () => {
           )
 
           if (createResult._tag !== 'Right') {
-            expect(createResult.value._tag).toBeDefined()
-            return { outcome: 'create-failed' as const }
+            return { outcome: 'create-failed' as const, error: createResult.value }
           }
 
           const bucket = createResult.value
@@ -219,8 +239,7 @@ describe('StorageGrpcService (bucket)', () => {
           if (deleteResult._tag === 'Right') {
             return { outcome: 'create-and-delete-succeeded' as const }
           }
-          expect(deleteResult.value._tag).toBeDefined()
-          return { outcome: 'delete-failed' as const }
+          return { outcome: 'delete-failed' as const, error: deleteResult.value }
         }).pipe(
           // Guaranteed cleanup — mirrors the pattern used by every SLOW_TESTS
           // resource test. Runs on any exit of the body: success, a failed
@@ -245,7 +264,27 @@ describe('StorageGrpcService (bucket)', () => {
       )
 
       expect(result).toBeDefined()
-      expect(result.outcome).toBeDefined()
+      if (result.outcome === 'create-and-delete-succeeded') {
+        // Full pipeline worked: auth → credentials → transport → service →
+        // create operation → delete operation.
+        return
+      }
+
+      // Failure path: the pipeline still worked if the error is gRPC/operation
+      // level (infra down, quota, transient) — as opposed to UnknownServiceError
+      // or anything else, which would mean the library wiring is broken.
+      const error = result.error
+      if (error instanceof GrpcError) {
+        // Documented gRPC status code — e.g. 14 UNAVAILABLE (transport down),
+        // 8 RESOURCE_EXHAUSTED (quota), 6 ALREADY_EXISTS, 5 NOT_FOUND, ...
+        expect([4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16]).toContain(error.code)
+        return
+      }
+      if (error instanceof GrpcDeadlineExceededError || error instanceof OperationFailedError) {
+        // Transport-level timeout / long-running operation failed server-side.
+        return
+      }
+      throw new Error(`unexpected error type from create/delete pipeline: ${String(error)}`)
     }, { timeout: 10_000 })
   })
 })
