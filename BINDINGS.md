@@ -331,21 +331,36 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
       `no-underscore-dangle` warnings on `__ALCHEMY_RUNTIME__` — same warning
       class the baseline already carries for `_tag`.)
 
-### M2 — Storage bindings
+### M2 — Storage bindings — DONE
 
-- [x] Resolve O4: roles `storage.viewer` (read) / `storage.editor`
-      (read-write) from the action→role table; grant via `iam.AccessPermit` on
-      the bucket (D5 updated — see above). No project-level role required.
-- [ ] `modules/resources/storage/v1/bindings.ts`:
-      `GetObject` + `PutObject` contracts; `GetObjectBinding` / `PutObjectBinding`
-      CF Layers (hostIdentity → AccessPermit grant → bindWorkerEnv → runtime
-      client via s3-lite-client reading `WorkerEnvironment`)
-- [ ] `Schema.TaggedErrorClass` errors: `ObjectNotFound`, `AccessDenied`,
-      `InvalidCredentials` (env missing), `S3Error` (catch-all)
-- [ ] Re-export from `storage/v1/index.ts`; wire into docs-namespace
-- [ ] Unit tests (network-free): contracts defined, env mapping, error mapping
-      from s3-lite errors
-- [ ] `bun run check` clean, `bun test` green
+- [x] O4 resolved: `storage.viewer` (read) / `storage.editor` (read-write)
+      from the action→role table; grant via `iam.AccessPermit` on the bucket
+      (D5 updated).
+- [x] `modules/resources/storage/v1/bindings.ts`: `GetObject` + `PutObject`
+      contracts; `GetObjectBinding` / `PutObjectBinding` CF Layers
+      (hostIdentity → grantBucketAccess → bindWorkerEnv → s3-lite-client
+      runtime client reading `WorkerEnvironment`; client memoized per binding;
+      bucket name via the client's default-bucket option, so the request type
+      is just `{ key }`). Re-exported from `storage/v1/index.ts` as
+      `Nebius.storage.GetObject` etc.
+      **Key type-system finding:** `Binding.Service`'s contract types impl fns
+      with `R = never`, so `Layer.effect` rejects deploy-time Provider
+      requirements on the per-bucket fn. Resolved with an encapsulated
+      `unrequiring` cast in `host-identity.ts` (Provider requirements are real
+      at deploy time but satisfied by the stack's provider collection) — this
+      matches alchemy's own bindings exactly (R2 `BucketHttp` d.ts shows
+      `Effect<..., never, never>` despite declaring `AccountApiToken` inside).
+      Also: `Schema.NonEmptyString` is the `String` wrapper type, not primitive
+      `string`; `ConfigError` from a `Config` read is defected via
+      `Effect.orDie` (per house style); `noUncheckedIndexedAccess` requires
+      literal-key env record typing.
+- [x] Tagged errors (D6): `ObjectNotFound`, `BucketNotFound`, `AccessDenied`,
+      `InvalidCredentials`, `S3Error`; `toStorageError` maps s3-lite
+      `ServerError` codes (NoSuchKey/NoSuchBucket/AccessDenied) + catch-alls.
+- [x] Unit tests `tests/resources/storage/v1/bindings.test.ts` (network-free):
+      contracts defined, tagged-error catchability, `readS3Env` complete +
+      missing-env failure, `toStorageError` mapping matrix. 24 tests total.
+- [x] `bun run check` clean; `bun test` green.
 
 ### M3 — Integration tests (SLOW_TESTS=1, real Nebius creds)
 

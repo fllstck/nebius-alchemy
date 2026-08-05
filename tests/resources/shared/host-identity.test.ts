@@ -21,8 +21,8 @@ describe('host-identity', () => {
   describe('HostIdentity schema', () => {
     test('decodes a plain object identity', () => {
       const decoded = Schema.decodeUnknownSync(HostIdentityModule.HostIdentity)(ENCODED_IDENTITY)
-      expect(decoded.serviceAccountId).toBe('serviceaccount-abc123')
-      expect(decoded.groupId).toBe('group-xyz789')
+      expect(String(decoded.serviceAccountId)).toBe('serviceaccount-abc123')
+      expect(String(decoded.groupId)).toBe('group-xyz789')
       expect(decoded.awsAccessKeyId).toBe('AKIAIOSFODNN7EXAMPLE')
       expect(decoded.secretAccessKey).toBe('s3cr3t')
     })
