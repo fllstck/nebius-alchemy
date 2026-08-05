@@ -377,18 +377,23 @@ Shipped:
 - [x] Integration tests written (`bindings.integration.test.ts`: identity
       lifecycle + secret persistence, grant + S3 round-trip) and gated.
 
-**BLOCKER — Nebius membership-service replication for direct-API-created
-resources.** Exhaustively investigated (endpoint via CLI `--debug` +
-`endpoints.md`; auth header + token via a CLI token-profile repro; request
-bytes via a wire dump; wire sequence via CLI `--debug`; operation wait via the
-gosdk source; the gosdk's `X-Idempotency-Key` header — none differ). Finding: a
-`GroupMembership` create cannot resolve a service account OR group created
-through the direct cpl.iam API in the same deploy — NOT_FOUND persists after
-60s, 150s, and 4 min of retries, while CLI-created resources resolve instantly
-and any pair containing ≥1 CLI-created resource works. This blocks the
-binding's group-based grant (AccessPermit or bucket policy — both subject to
-`group_id` per the protos, so the bucket-policy find does NOT dodge the
-membership). Needs a Nebius answer or a redesigned grant path.
+**BLOCKER — Nebius replication for direct-API-created IAM resources.**
+
+RESOLVED for the membership: the docs' own pattern (docs.nebius.com — "How to
+manage service accounts", "Working with Object Storage... AWS CLI") is to add
+the SA to the tenant's pre-created **default `editors` group** — verified
+working through our client INSTANTLY (the pre-existing group resolves; the
+fresh-group+fresh-SA pair is what lags). The `editors` general role already
+carries full storage access, so no AccessPermit/bucket policy is needed.
+
+REMAINING quirk: the **AccessKey service cannot resolve direct-API-created
+SAs** (NOT_FOUND persists past 60s; CLI-created SAs resolve instantly) — this
+also breaks the project's own `access-key.integration.test.ts`. So the host
+identity's SA must come from the CLI/gateway path (or be pre-existing).
+
+Both quirks were exhaustively verified against the reference clients (CLI,
+Terraform/gosdk — same endpoint, auth, wire bytes, operation flow; only the
+CLI binary's path is consistently visible to the services).
 
 ### M4 — Docs & examples
 

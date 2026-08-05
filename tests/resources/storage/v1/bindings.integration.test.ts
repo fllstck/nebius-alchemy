@@ -1,25 +1,33 @@
 /**
  * M3 — bindings integration tests (SLOW_TESTS=1, real Nebius credentials).
  *
- * Proves the binding's deploy-time + runtime halves against the real cloud:
+ * Grant path (per the Nebius docs "How to manage service accounts" + AWS CLI
+ * guide): add the host-identity SA to the tenant's pre-created default
+ * `editors` group. The group already carries the `editor` general role, so S3
+ * access is inherited — no AccessPermit / bucket policy needed, and (verified)
+ * the membership resolves INSTANTLY for a fresh SA because the group is
+ * pre-existing (the fresh-group + fresh-SA pair is what lags).
  *
- *   1. Host identity lifecycle: ServiceAccount → Group → GroupMembership →
- *      AccessKey, with the one-time secret surviving a SECOND deploy (state
- *      store persistence — closes the carried-over M0 check).
- *   2. Grant + runtime client: AccessPermit (`storage.editor` on the bucket)
- *      actually enables S3 object ops with the injected credentials — real
- *      put / get / delete round-trip via s3-lite-client, plus the 404 path
- *      for a missing key.
- *
- * The full Worker e2e (binding Layer running in `alchemy dev` workerd) is a
- * documented manual verification — see BINDINGS.md M3.
+ *   1. Host identity lifecycle: SA → default editors group → AccessKey, with
+ *      the one-time secret surviving a SECOND deploy (state persistence).
+ *   2. S3 round-trip: the injected env values (endpoint, bucket, key id,
+ *      secret) actually work against the real bucket — put/get/delete.
  */
 import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import { S3Client, S3Errors } from '@bradenmacdonald/s3-lite-client'
+import type { GroupId } from '../../../../modules/resources/iam/v1/group.schema'
 import { Nebius, test } from '../../../helpers/stack'
 import { integrationTest } from '../../../helpers/gate'
 import { safeDestroy } from '../../../helpers/cleanup'
+
+/**
+ * The tenant's default `editors` group (pre-created by Nebius). Discoverable
+ * via `nebius iam group list --parent-id <tenant>` → name == "editors".
+ * The binding's provisioning will look this up at deploy time; the test pins
+ * the tenant's known id.
+ */
+const EDITORS_GROUP_ID = 'group-e00ee03sdm7ht85b9m' as GroupId
 
 /** Region used by the binding's env injection (README: NEBIUS_REGION, default eu-north1). */
 const REGION = process.env.NEBIUS_REGION ?? 'eu-north1'
@@ -43,15 +51,12 @@ integrationTest(
         }),
       )
       expect(sa.id).toBeDefined()
-      expect(sa.id).toBeDefined()
       expect(String(sa.parentId)).toBe(String(process.env.NEBIUS_PROJECT_ID))
 
-      const group = yield* stack.deploy(Nebius.iam.Group('BindTestGroup'))
-      expect(group.id).toBeDefined()
-
+      // The grant path from the Nebius docs: SA into the default editors group.
       yield* stack.deploy(
         Nebius.iam.GroupMembership('BindTestMembership', {
-          parentId: group.id,
+          parentId: EDITORS_GROUP_ID,
           memberId: sa.id,
         }),
       )
@@ -74,12 +79,12 @@ integrationTest(
       )
       expect(keyAgain.secretAccessKey).toBe(key.secretAccessKey)
     }).pipe(safeDestroy(stack)),
-  { timeout: 360_000 },
+  { timeout: 120_000 },
 )
 
 integrationTest(
   test.provider,
-  'Nebius bindings: AccessPermit grant + S3 round-trip',
+  'Nebius bindings: editors-group grant + S3 round-trip',
   (stack) =>
     Effect.gen(function* () {
       const sa = yield* stack.deploy(
@@ -87,10 +92,9 @@ integrationTest(
           description: 'binding integration test',
         }),
       )
-      const group = yield* stack.deploy(Nebius.iam.Group('BindTripGroup'))
       yield* stack.deploy(
         Nebius.iam.GroupMembership('BindTripMembership', {
-          parentId: group.id,
+          parentId: EDITORS_GROUP_ID,
           memberId: sa.id,
         }),
       )
@@ -110,16 +114,7 @@ integrationTest(
       )
       expect(bucket.state).toBe('ACTIVE')
 
-      // The grant the binding would declare (D5): storage.editor on the bucket
-      // for the host-identity group.
-      yield* stack.deploy(
-        Nebius.iam.AccessPermit('BindTripPermit', {
-          parentId: group.id,
-          resourceId: bucket.id,
-          role: 'storage.editor',
-        }),
-      )
-
+      // The exact env values the binding injects (D7) — prove they work.
       const client = new S3Client({
         endPoint: S3_ENDPOINT,
         region: REGION,
@@ -140,13 +135,15 @@ integrationTest(
       yield* attempt(() => client.deleteObject(objectKey))
 
       // --- Missing key surfaces as a 404 (NoSuchKey), not a 403 ---
-      const missing = yield* attempt(() => client.getObject('definitely-missing-key').then(
-        (r) => ({ ok: true as const, response: r }),
-        (e: unknown) => ({ ok: false as const, error: e }),
-      ))
+      const missing = yield* attempt(() =>
+        client.getObject('definitely-missing-key').then(
+          (r) => ({ ok: true as const, response: r }),
+          (e: unknown) => ({ ok: false as const, error: e }),
+        ),
+      )
       expect(missing.ok).toBe(false)
       if (missing.ok) throw new Error('unreachable')
       expect(missing.error).toBeInstanceOf(S3Errors.ServerError)
     }).pipe(safeDestroy(stack)),
-  { timeout: 480_000 },
+  { timeout: 180_000 },
 )
