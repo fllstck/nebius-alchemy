@@ -2,6 +2,7 @@ import * as Test from 'alchemy/Test/Bun'
 import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
+import { integrationTest } from '../../helpers/gate'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -12,7 +13,7 @@ const { test } = Test.make({ providers: Nebius.providers() as any })
  * These tests verify that discovery actions can list and find existing quota
  * entries without creating any new resources.
  */
-test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.quotas.action.GetQuota / ListQuotas', (stack) =>
+integrationTest(test.provider, 'Nebius.quotas.action.GetQuota / ListQuotas', (stack) =>
   Effect.gen(function* () {
     const { quotas, found } = yield* stack.deploy(
       Effect.gen(function* () {

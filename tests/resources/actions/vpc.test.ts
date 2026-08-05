@@ -3,12 +3,13 @@ import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
 import * as Validation from '../../../modules/resources/validation'
+import { integrationTest } from '../../helpers/gate'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
 // ── VPC Actions ────────────────────────────────────────────────────────────
 
-test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetNetwork / ListNetworks', (stack) =>
+integrationTest(test.provider, 'Nebius.vpc.action.GetNetwork / ListNetworks', (stack) =>
   Effect.gen(function* () {
     const net = yield* stack.deploy(
       Nebius.vpc.Network('ActionTest-Net', {}),
@@ -45,7 +46,7 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetNetwork / Li
   { timeout: 120_000 },
 )
 
-test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSubnet / ListSubnets', (stack) =>
+integrationTest(test.provider, 'Nebius.vpc.action.GetSubnet / ListSubnets', (stack) =>
   Effect.gen(function* () {
     // Deploy the whole graph in ONE stack so destroy orders the child
     // (subnet) before the parent (network). Separate deploys replace the
@@ -77,7 +78,7 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSubnet / Lis
   { timeout: 120_000 },
 )
 
-test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSecurityGroup / ListSecurityGroups', (stack) =>
+integrationTest(test.provider, 'Nebius.vpc.action.GetSecurityGroup / ListSecurityGroups', (stack) =>
   Effect.gen(function* () {
     // Single stack — see GetSubnet test for why.
     const { sg } = yield* stack.deploy(
@@ -105,7 +106,7 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetSecurityGrou
   { timeout: 120_000 },
 )
 
-test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetRouteTable / ListRouteTables', (stack) =>
+integrationTest(test.provider, 'Nebius.vpc.action.GetRouteTable / ListRouteTables', (stack) =>
   Effect.gen(function* () {
     // Single stack — see GetSubnet test for why.
     const { rt } = yield* stack.deploy(
@@ -133,7 +134,7 @@ test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetRouteTable /
   { timeout: 120_000 },
 )
 
-test.provider.skipIf(!process.env.SLOW_TESTS)('Nebius.vpc.action.GetPool / ListPools', (stack) =>
+integrationTest(test.provider, 'Nebius.vpc.action.GetPool / ListPools', (stack) =>
   Effect.gen(function* () {
     const pool = yield* stack.deploy(
       Nebius.vpc.Pool('ActionTest-Pool', {

@@ -3,12 +3,14 @@ import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
 import * as Validation from '../../../modules/resources/validation'
+import { integrationTest } from '../../helpers/gate'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
 // ── IAM Actions ────────────────────────────────────────────────────────────
 
-test.provider.skipIf(!process.env.SLOW_TESTS)(
+integrationTest(
+  test.provider,
   'Nebius.iam.action.GetProject / ListProjects',
   (stack) =>
     Effect.gen(function* () {
@@ -45,7 +47,8 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
   { timeout: 120_000 },
 )
 
-test.provider.skipIf(!process.env.SLOW_TESTS)(
+integrationTest(
+  test.provider,
   'Nebius.iam.action.GetGroup / ListGroups',
   (stack) =>
     Effect.gen(function* () {

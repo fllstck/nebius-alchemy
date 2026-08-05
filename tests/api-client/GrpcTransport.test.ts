@@ -11,6 +11,7 @@ import * as NebiusAuthModule from '../../modules/AuthProvider'
 import * as NebiusCredentialsModule from '../../modules/Credentials'
 import * as GrpcTransportModule from '../../modules/api-client/GrpcTransport.ts'
 import * as EndpointsModule from '../../modules/endpoints.ts'
+import { runIntegration } from '../helpers/gate'
 
 const { describe, expect, test } = BunTest
 const { UnknownServiceError } = EndpointsModule
@@ -89,7 +90,10 @@ const hasCredentials: boolean = await (async () => {
   }
 })()
 
-const it = hasCredentials ? test : test.skip
+// Integration-flag gate: a plain `bun test` must never open real gRPC channels.
+// `hasCredentials` is an additional runtime skip when the flag is set but no
+// stored credentials are resolvable on this machine.
+const it = runIntegration() && hasCredentials ? test : test.skip
 
 // ---------------------------------------------------------------------------
 // Tests

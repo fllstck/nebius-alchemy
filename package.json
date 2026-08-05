@@ -39,6 +39,7 @@
     "audit": "bun audit",
     "check": "bun run typecheck && bun run lint",
     "test": "bun test tests/",
+    "test:integration": "SLOW_TESTS=1 bun test tests/",
     "generate:schemas": "buf generate",
     "lint": "oxlint modules/ tests/ examples/",
     "typecheck:effect": "effect-tsgo diagnostics --project tsconfig.json",

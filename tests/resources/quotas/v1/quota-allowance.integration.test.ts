@@ -9,6 +9,7 @@ import * as NebiusQuotaAllowanceSchema from '../../../../schemas/nebius/quotas/v
 import * as ResourceUtils from '../../../../modules/resources/utilities.ts'
 import * as QuotaAllowanceSchema from '../../../../modules/resources/quotas/v1/quota-allowance.schema.ts'
 import { makeTenantScopedList } from '../../../../modules/resources/factory.ts'
+import { integrationTest } from '../../../helpers/gate'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -20,7 +21,8 @@ const toFriendlyAttributes = (
     resourceSchema: NebiusQuotaAllowanceSchema.QuotaAllowance,
   })
 
-test.provider.skipIf(!process.env.SLOW_TESTS)(
+integrationTest(
+  test.provider,
   'Nebius.quotas.v1.QuotaAllowance list (raw gRPC)',
   (_stack) =>
     Effect.gen(function* () {
@@ -44,7 +46,8 @@ test.provider.skipIf(!process.env.SLOW_TESTS)(
   { timeout: 30_000 },
 )
 
-test.provider.skipIf(!process.env.SLOW_TESTS)(
+integrationTest(
+  test.provider,
   'Nebius.quotas.v1.QuotaAllowance list filters virtual defaults',
   (_stack) =>
     Effect.gen(function* () {
