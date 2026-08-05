@@ -71,6 +71,7 @@ The `agent-patterns/` directory contains concise summaries extracted from the ve
 | `agent-patterns/effect-fn.md`       | Effect.fn vs Effect.gen, Effect.fn.Return, combinator attachment |
 | `agent-patterns/effect-schema.md`   | Schema.Class, Schema.TaggedErrorClass, decoding/encoding         |
 | `agent-patterns/effect-services.md` | Context.Service, Layer.effect, Layer composition                 |
+| `agent-patterns/alchemy-test-patterns.md` | Alchemy scratch-stack deploy semantics (partial re-deploys DELETE prior resources), staged-deploy pattern, precreate-vs-ref-resolution timing, idempotent deletes |
 
 ## Quick Reference Commands
 
