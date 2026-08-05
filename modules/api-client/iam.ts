@@ -323,7 +323,8 @@ export interface FederatedCredentialsService {
 // ---------------------------------------------------------------------------
 
 export interface CreateGroupMembershipInput {
-  readonly metadata: { parentId: string; name: string; labels?: Record<string, string> }
+  /** `name` must be OMITTED — the Nebius API rejects metadata.name for group memberships. */
+  readonly metadata: { parentId: string; name?: string; labels?: Record<string, string> }
   readonly spec: {}
   readonly revokeAfterHours?: number
 }

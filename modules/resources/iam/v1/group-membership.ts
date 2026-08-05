@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Schedule from 'effect/Schedule'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -10,6 +11,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as GroupMembershipSchema from './group-membership.schema.ts'
 import * as Factory from '../../factory.ts'
+import { GrpcError } from '../../../api-client/grpc-utils.ts'
 
 // ----- RESOURCE TYPES
 
@@ -65,13 +67,29 @@ export const NebiusGroupMembershipProvider = AlchemyProvider.succeed(NebiusGroup
       const labels = { ...internalLabels, ...news.labels }
 
       yield* session.note(`Creating Nebius.iam.v1.GroupMembership (${name})`)
-      membership = yield* iam.groupMembership.create({
-        metadata: { parentId: news.parentId, name, labels },
-        spec: NebiusGroupMembershipSchema.GroupMembershipSpec.fromPartial({
-          memberId: news.memberId,
-        }),
-        ...(news.revokeAfterHours ? { revokeAfterHours: news.revokeAfterHours } : {}),
-      })
+      // NOTE: metadata.name must be omitted — the Nebius API rejects it for
+      // group memberships (verified against the live API).
+      membership = yield* iam.groupMembership
+        .create({
+          metadata: { parentId: news.parentId, labels },
+          spec: NebiusGroupMembershipSchema.GroupMembershipSpec.fromPartial({
+            memberId: news.memberId,
+          }),
+          ...(news.revokeAfterHours ? { revokeAfterHours: news.revokeAfterHours } : {}),
+        })
+        // The member (typically a just-created service account) may not be
+        // visible to the membership backend yet: Nebius replicates fresh SAs
+        // created through the direct API to the membership's member store with
+        // a variable delay (seconds to several minutes — observed 0s–3min+;
+        // CLI-created SAs resolve instantly). The create's member resolution
+        // fails with NOT_FOUND during that window; retry with a generous bound.
+        .pipe(
+          Effect.retry({
+            times: 48,
+            schedule: Schedule.spaced('5 seconds'),
+            while: (e) => e instanceof GrpcError && e.code === 5,
+          }),
+        )
     }
 
     return toFriendlyAttributes(membership)

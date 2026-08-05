@@ -2,6 +2,7 @@ import * as Effect from 'effect/Effect'
 import * as Context from 'effect/Context'
 import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
+import { randomUUID } from 'node:crypto'
 import * as grpc from '@grpc/grpc-js'
 import * as NebiusCredentials from '../Credentials'
 import * as Endpoints from '../endpoints.ts'
@@ -84,6 +85,9 @@ const makeTransport = Effect.fn('NebiusGrpcTransport.make')(function* () {
         const authCreds = grpc.credentials.createFromMetadataGenerator((_params, callback) => {
           const metadata = new grpc.Metadata()
           metadata.add('authorization', `Bearer ${Redacted.value(apiKey)}`)
+          // TEST (M3): gosdk sends X-Idempotency-Key on every request — does it
+          // make creates synchronously consistent (no propagation delay)?
+          metadata.add('x-idempotency-key', crypto.randomUUID())
           callback(null, metadata)
         })
         const channelCreds = grpc.credentials.combineChannelCredentials(sslCreds, authCreds)

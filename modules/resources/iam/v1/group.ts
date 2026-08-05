@@ -35,6 +35,7 @@ export const toFriendlyAttributes = (raw: NebiusGroupSchema.Group): GroupSchema.
 
 export const NebiusGroupProvider = AlchemyProvider.succeed(NebiusGroup, {
   reconcile: Effect.fn('Nebius.iam.v1.Group.reconcile')(function* ({ id, news, output, session }) {
+    news = news || ({} as GroupSchema.GroupProps)
     news = yield* GroupSchema.validateGroupProps(news)
 
     const iam = yield* IamGrpc.IamGrpcService
