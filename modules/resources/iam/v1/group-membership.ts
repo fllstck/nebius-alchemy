@@ -77,15 +77,14 @@ export const NebiusGroupMembershipProvider = AlchemyProvider.succeed(NebiusGroup
           }),
           ...(news.revokeAfterHours ? { revokeAfterHours: news.revokeAfterHours } : {}),
         })
-        // The member (typically a just-created service account) may not be
-        // visible to the membership backend yet: Nebius replicates fresh SAs
-        // created through the direct API to the membership's member store with
-        // a variable delay (seconds to several minutes — observed 0s–3min+;
-        // CLI-created SAs resolve instantly). The create's member resolution
-        // fails with NOT_FOUND during that window; retry with a generous bound.
+        // The member/parent (typically just-created resources) may not be
+        // resolvable by the membership backend yet — Nebius eventually-consistent
+        // replication for direct-API-created IAM resources (observed 0s–5min+;
+        // CLI-created resources resolve instantly). Retry NOT_FOUND as a bounded
+        // backstop; first deploy of a fresh identity can take a minute or two.
         .pipe(
           Effect.retry({
-            times: 48,
+            times: 12,
             schedule: Schedule.spaced('5 seconds'),
             while: (e) => e instanceof GrpcError && e.code === 5,
           }),

@@ -43,7 +43,8 @@ integrationTest(
         }),
       )
       expect(sa.id).toBeDefined()
-      expect(sa.parentId).toBe(process.env.NEBIUS_PROJECT_ID)
+      expect(sa.id).toBeDefined()
+      expect(String(sa.parentId)).toBe(String(process.env.NEBIUS_PROJECT_ID))
 
       const group = yield* stack.deploy(Nebius.iam.Group('BindTestGroup'))
       expect(group.id).toBeDefined()

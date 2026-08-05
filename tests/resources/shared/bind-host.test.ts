@@ -19,7 +19,7 @@ const makeMockHost = () => {
 describe('bind-host', () => {
   afterEach(() => {
     // Tests mutate the phase guard global — always restore it.
-    delete (globalThis as Record<string, unknown>).__ALCHEMY_RUNTIME__
+    delete globalThis.__ALCHEMY_RUNTIME__
   })
 
   describe('envToWorkerBindings', () => {
@@ -76,7 +76,7 @@ describe('bind-host', () => {
 
     test('is a no-op at runtime (guard folded to true)', async () => {
       const { host, calls } = makeMockHost()
-      ;(globalThis as Record<string, unknown>).__ALCHEMY_RUNTIME__ = true
+      globalThis.__ALCHEMY_RUNTIME__ = true
       await Effect.runPromise(
         BindHost.bindWorkerEnv(host, 'Nebius.storage.GetObject', {
           NEBIUS_BUCKET_NAME: 'my-bucket',

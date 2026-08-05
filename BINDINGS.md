@@ -362,17 +362,33 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
       missing-env failure, `toStorageError` mapping matrix. 24 tests total.
 - [x] `bun run check` clean; `bun test` green.
 
-### M3 — Integration tests (SLOW_TESTS=1, real Nebius creds)
+### M3 — Integration tests — BLOCKED on a platform behavior (findings below)
 
-- [ ] `tests/resources/storage/v1/bindings.integration.test.ts`:
-  - Deploy-time provisioning lifecycle: stack declares host identity
-    resources; assert SA + AccessKey created, secret present in output
-  - Runtime client: after deploy, call the `GetObject` client against the real
-    bucket (put + get round-trip via s3-lite-client)
-- [ ] Cloudflare Worker end-to-end via `alchemy dev` local worker provider
-      (real Nebius bucket, local workerd execution) — primary e2e path; real
-      Cloudflare deploy is a stretch (needs CF creds; skip if unavailable)
-- [ ] Uses `integrationTest()` / `safeDestroy()` from `tests/helpers`
+Shipped:
+
+- [x] `Group` provider: missing `news = news || {}` guard before validation (a
+      pre-existing bug exposed by no-props deploys — the binding's identity
+      declares the group with no props).
+- [x] `GroupMembership` provider + api-client: `metadata.name` is PROHIBITED by
+      the API (verified against the live API + CLI) — the provider sent a
+      generated `gm-...` name. Now omitted.
+- [x] `GroupMembership` create: bounded NOT_FOUND retry (12×5s) as a backstop
+      for the replication delay below.
+- [x] Integration tests written (`bindings.integration.test.ts`: identity
+      lifecycle + secret persistence, grant + S3 round-trip) and gated.
+
+**BLOCKER — Nebius membership-service replication for direct-API-created
+resources.** Exhaustively investigated (endpoint via CLI `--debug` +
+`endpoints.md`; auth header + token via a CLI token-profile repro; request
+bytes via a wire dump; wire sequence via CLI `--debug`; operation wait via the
+gosdk source; the gosdk's `X-Idempotency-Key` header — none differ). Finding: a
+`GroupMembership` create cannot resolve a service account OR group created
+through the direct cpl.iam API in the same deploy — NOT_FOUND persists after
+60s, 150s, and 4 min of retries, while CLI-created resources resolve instantly
+and any pair containing ≥1 CLI-created resource works. This blocks the
+binding's group-based grant (AccessPermit or bucket policy — both subject to
+`group_id` per the protos, so the bucket-policy find does NOT dodge the
+membership). Needs a Nebius answer or a redesigned grant path.
 
 ### M4 — Docs & examples
 
