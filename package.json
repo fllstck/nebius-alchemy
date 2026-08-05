@@ -56,7 +56,7 @@
   "devDependencies": {
     "@effect/language-service": "0.87.1",
     "@types/bun": "latest",
-    "oxlint": "1.75.0",
+    "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
     "typescript": "^7.0.0",
     "@effect/tsgo": "0.20.0",
