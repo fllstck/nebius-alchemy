@@ -184,6 +184,60 @@ Read-only actions for discovering existing resources without managing them. Usef
 - `Nebius.vpc.action.ListRouteTables` / `GetRouteTable`
 - `Nebius.quotas.action.ListQuotas` / `GetQuota`
 
+## Bindings
+
+**Bindings** are typed runtime clients you attach to **your own Cloudflare
+Worker** — no Nebius Function host required. One declaration derives three
+things at deploy time:
+
+1. **Credential minting + least-privilege grant** on Nebius (a service account
+   added to your tenant's default `editors` group + a region-scoped access
+   key),
+2. **env injection** into the Worker as `plain_text`/`secret_text` bindings,
+3. a **typed runtime client** (s3-lite-client, fetch-based) reading those env
+   values.
+
+```ts
+const Api = Cloudflare.Worker(
+  'Api',
+  { main: import.meta.url },
+  Effect.gen(function* () {
+    const bucket = yield* Nebius.storage.Bucket('assets')
+    const getObject = yield* Nebius.storage.GetObject(bucket)
+    const putObject = yield* Nebius.storage.PutObject(bucket)
+    return { fetch: /* getObject/putObject */ }
+  }).pipe(Effect.provide(Layer.mergeAll(
+    Nebius.storage.GetObjectBinding,
+    Nebius.storage.PutObjectBinding,
+  ))),
+)
+```
+
+Currently available (Cloudflare Workers):
+
+| Contract                  | Layer                          | Runtime                          |
+| ------------------------- | ------------------------------ | -------------------------------- |
+| `Nebius.storage.GetObject` | `Nebius.storage.GetObjectBinding` | s3-lite-client (`GET object`) |
+| `Nebius.storage.PutObject` | `Nebius.storage.PutObjectBinding` | s3-lite-client (`PUT object`) |
+
+**Roadmap**: AWS Lambda/ECS/EKS hosts are a documented extension point — the
+same contracts with `*Http` layers pushing `{ env }` instead of CF bindings.
+AI endpoint bindings (`ChatCompletions`) are deferred.
+
+### Bindings env reference
+
+Injected into the Worker at deploy time (names are stable):
+
+| Env var                    | Meaning                                       |
+| -------------------------- | --------------------------------------------- |
+| `NEBIUS_S3_ENDPOINT`       | `https://storage.<region>.nebius.cloud`       |
+| `NEBIUS_REGION`            | Region the access key was minted in           |
+| `NEBIUS_ACCESS_KEY_ID`     | AWS-style access key id (plain text)          |
+| `NEBIUS_SECRET_ACCESS_KEY` | Secret access key (deployed as `secret_text`) |
+| `NEBIUS_BUCKET_NAME`       | The bound bucket's name                       |
+
+See [`examples/bindings.ts`](examples/bindings.ts) for the full pattern.
+
 ## Examples
 
 | Example                                            | What it demonstrates                                                  |
@@ -196,6 +250,7 @@ Read-only actions for discovering existing resources without managing them. Usef
 | [`examples/kms.ts`](examples/kms.ts)               | Symmetric and asymmetric encryption keys                              |
 | [`examples/mysterybox.ts`](examples/mysterybox.ts) | Versioned secret with payload rotation                                |
 | [`examples/actions.ts`](examples/actions.ts)       | Read-only discovery actions for IAM, VPC, and quotas                  |
+| [`examples/bindings.ts`](examples/bindings.ts)     | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)           |
 
 ## Usage
 

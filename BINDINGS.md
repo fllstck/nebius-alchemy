@@ -449,14 +449,26 @@ full-vs-minimal providers layer, bun-test-vs-bun-script (a plain bun test with
 the api-client passes). The single variable that always correlated was the
 number of `stack.deploy` calls.
 
-### M4 — Docs & examples
+### M4 — Docs & examples — DONE ✅
 
-- [ ] `examples/bindings.ts`: Cloudflare Worker stack consuming
-      `Nebius.storage.GetObject` (the Goal snippet, compilable)
-- [ ] README "Bindings" section: what they are, supported host (Cloudflare
-      Worker) + roadmap note (AWS), one-line usage, env var reference
-- [ ] Final: `bun run check` clean, `bun test` green, `SLOW_TESTS=1 bun test`
-      passes with credentials
+- [x] `examples/bindings.ts`: Cloudflare Worker stack consuming
+      `Nebius.storage.GetObject`/`PutObject` — the Goal snippet shape, using
+      the **Effect-native Worker form** (`Cloudflare.Worker(id, props, impl)`, where
+      the impl's `WorkerServices` inherently satisfy the binding layers'
+      `Worker | WorkerEnvironment` requirements — the stack-level `Alchemy.Stack`
+      Req can't include those services). Deploy-time grant + env wiring + a
+      GET/POST `fetch` handler demonstrating the runtime clients. Compiles
+      clean (`bun run check`, 0 errors). Gotchas discovered: `Effect.provide`
+      has only a single-layer curried overload (chain or `Layer.mergeAll`);
+      Effect-native `fetch` is an `HttpEffect` (request via
+      `yield* HttpServerRequest`, not a function arg).
+- [x] README "Bindings" section: what they are, Cloudflare-first + AWS
+      roadmap note, one-line usage snippet, contracts table,
+      `NEBIUS_S3_*` env reference; `examples/bindings.ts` row in the
+      Examples table.
+- [x] Final: `bun run check` clean (0 errors, 12 baseline warnings),
+      `bun test` green (385), `SLOW_TESTS=1` integration green for the
+      bindings + access-key + bucket suites (4/4).
 
 ## Adding AWS hosts later
 
