@@ -376,23 +376,24 @@ Shipped:
       `editors` group resolves INSTANTLY through our client (the group carries
       the `editor` general role — no AccessPermit / bucket policy needed).
 
-**BLOCKER — Nebius treats our grpc-js client's IAM creates differently from
-its own gosdk/CLI.** Definitive experiment: a small Go program using the
-**gosdk itself** (the CLI's exact library), with the same token, creates an SA,
-membership, and access key **all instantly** — while our client (byte-identical
-request body — verified with wire dumps on both sides; same `Authorization:
-Bearer` + `X-Idempotency-Key` headers; same endpoint; same operation
-semantics; tried the gosdk's `grpc-go` user-agent — no effect) cannot resolve
-even a CLI-created SA for the AccessKey service within seconds (works after
-~30-60s). The gosdk's behavior is server-side, invisible at any documented
-layer. This also breaks the project's pre-existing
-`access-key.integration.test.ts`.
+**BLOCKER — Nebius IAM resolution lag for freshly-created resources (flaky,
+timing-dependent).** Definitive bisect: a **from-scratch minimal grpc-js
+client** (direct generated protos, per-call metadata) and the project's own
+api-client **standalone** (GrpcTransport + wrapGrpcClient, mocked credential)
+both create SA → editors-group membership → v2 access key **instantly and
+consistently** — with api-client-created AND CLI-created SAs. Inside the
+alchemy stack (integration test), the same api-client calls are **flaky**: a
+NOT_FOUND (fresh resource unresolvable) intermittently hits the access-key
+create, and when it passes, the same lag hits the DELETE during destroy. So
+this is NOT a client-implementation bug (the same code works standalone) — the
+Nebius IAM backend treats in-stack/fresh creates inconsistently, and the
+gosdk/CLI path is consistent (unobserved mechanism — plausibly server-hinted
+retries (`RetryType=CALL` in error details) that the gosdk honors and our
+client doesn't parse).
 
-Consequence: the binding's identity SA must be created via the official
-CLI/gosdk path (option 2c — shell out to `nebius iam service-account create`;
-the docs' own workflow). The integration test that proves the full grant + S3
-round-trip path is written but removed from the suite until the platform
-quirk is resolved or the 2c provisioning is implemented.
+Mitigation shipped: bounded NOT_FOUND retry on the membership create; the
+`X-Idempotency-Key` header; fail-fast elsewhere. Recommended: a Nebius ticket
+with the standalone-vs-stack repro and the gosdk comparison.
 
 ### M4 — Docs & examples
 

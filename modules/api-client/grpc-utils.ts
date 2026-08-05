@@ -274,20 +274,8 @@ export const wrapGrpcClient = <S extends ServiceDescriptor>(
       // `as any` is needed because Record<string, FnA> and Record<string, FnB>
       // are structurally incompatible (index signature variance), even though
       // each method supports the wider overload at runtime.
-      wrapped[method] = (req: unknown) => {
-        // TEMP DEBUG (M3 bisect) — dump wire bytes for create calls
-        // oxlint-disable-next-line no-explicit-any
-        if (method === 'create') {
-          try {
-            // oxlint-disable-next-line no-explicit-any
-            const ser = (descriptor[method] as any)?.requestSerialize?.(req as any)
-            console.log(`[WIRE] ${method}: ${Buffer.from(ser).toString('base64').slice(0, 300)}`)
-          } catch (e) {
-            console.log('[WIRE] serialize failed:', String(e))
-          }
-        }
-        return wrapUnaryCall((cb, callOpts) => (client as any)[method]!(req, callOpts ?? {}, cb), options)
-      }
+      wrapped[method] = (req: unknown) =>
+        wrapUnaryCall((cb, callOpts) => (client as any)[method]!(req, callOpts ?? {}, cb), options)
     }
   }
   return wrapped as EffectService<S>
