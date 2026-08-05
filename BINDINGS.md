@@ -376,24 +376,28 @@ Shipped:
       `editors` group resolves INSTANTLY through our client (the group carries
       the `editor` general role — no AccessPermit / bucket policy needed).
 
-**BLOCKER — Nebius IAM resolution lag for freshly-created resources (flaky,
-timing-dependent).** Definitive bisect: a **from-scratch minimal grpc-js
-client** (direct generated protos, per-call metadata) and the project's own
-api-client **standalone** (GrpcTransport + wrapGrpcClient, mocked credential)
-both create SA → editors-group membership → v2 access key **instantly and
-consistently** — with api-client-created AND CLI-created SAs. Inside the
-alchemy stack (integration test), the same api-client calls are **flaky**: a
-NOT_FOUND (fresh resource unresolvable) intermittently hits the access-key
-create, and when it passes, the same lag hits the DELETE during destroy. So
-this is NOT a client-implementation bug (the same code works standalone) — the
-Nebius IAM backend treats in-stack/fresh creates inconsistently, and the
-gosdk/CLI path is consistent (unobserved mechanism — plausibly server-hinted
-retries (`RetryType=CALL` in error details) that the gosdk honors and our
-client doesn't parse).
+**BLOCKER — unresolved: the failure is environmental to the ALCHEMY STACK, not
+the Nebius backend or the api-client.** A from-scratch grpc-js client AND the
+project's own api-client (standalone, mocked credential) both run the full
+sequence — SA create → editors-group membership → v2 access key → deletes —
+**consistently green across 20+ runs**, including: exact request bytes (wire
+captured both sides), exact call sequence (incl. the membership `listMembers`
+dedup and the key `getSecret`), exact stack request shapes (alchemy labels,
+no description), stack-style long names, 0/2s pacing, metadata-generator vs
+per-call metadata, shared vs separate channels, 30s deadlines, bun-test vs
+bun-script, and the identical 417-char binary token (fingerprinted). Inside
+the alchemy stack (`Test.make` + `Nebius.providers()`) the same calls
+intermittently fail with NOT_FOUND on freshly-created resources — on the
+access-key create OR its delete. Conclusion (per the bisect): the difference
+is in the alchemy stack's service environment; the specific mechanism is
+unidentified from the outside (candidates: the harness's layer/scope
+composition, per-deploy channel lifecycle, or a harness-global affecting the
+calls). Next step: instrument the HTTP/2 frames inside the failing stack
+context, or consult the alchemy maintainers.
 
-Mitigation shipped: bounded NOT_FOUND retry on the membership create; the
-`X-Idempotency-Key` header; fail-fast elsewhere. Recommended: a Nebius ticket
-with the standalone-vs-stack repro and the gosdk comparison.
+Mitigation shipped: bounded NOT_FOUND retry on the membership create;
+`X-Idempotency-Key` header; fail-fast elsewhere. This also breaks the
+project's pre-existing `access-key.integration.test.ts`.
 
 ### M4 — Docs & examples
 
