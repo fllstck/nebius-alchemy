@@ -98,13 +98,20 @@ Nebius, (2) env injected into the Worker as `plain_text`/`secret_text` bindings,
 - **D4 — Runtime clients are HTTP-only.** `s3-lite-client` (already a dep,
   fetch-based, workerd-safe) for S3. The gRPC `api-client` services are
   **deploy-time only**.
-- **D5 — Storage grants via bucket policy, not AccessPermit.** Nebius
-  `AccessPermit` requires a group parent and is project/group-scoped. The bucket
-  supports `bucketPolicy.rules[].groupId` grants (paths + roles + anonymous) —
-  closest thing to per-bucket least privilege. Host identity:
-  SA → group (`iam.Group`) → `iam.GroupMembership`; grant: bucket policy entry
-  `{ paths: ["*"], roles: ["storage.editor"], groupId }`. Verify role names in
-  M2 (open question O4).
+- **D5 — Storage grants via AccessPermit, not bucket policy (O4-verified).**
+  A bucket policy is a *prop* of the Bucket resource — a binding can't modify
+  the user's bucket declaration, so wiring the grant through it would force the
+  user to know the lazily-created host-identity group id (circular). Instead the
+  binding lazily declares `iam.AccessPermit` on the bucket:
+  `{ parentId: hostGroupId, resourceId: bucketId, role }` — a separate resource,
+  keyed (host, bucket), with built-in dedup by (parentId, resourceId, role).
+  Nebius docs confirm permits and bucket policies both grant object access and
+  combine (docs.nebius.com/object-storage/buckets/bucket-policy → "Access
+  permits and bucket policies"). No project-level role needed for S3 API access.
+  Roles per capability (from the action→role table at
+  docs.nebius.com/object-storage/supported-actions):
+  - read (`GetObject`/`HeadObject`/`ListObjects`): `storage.viewer`
+  - read-write (+`PutObject`/`DeleteObject`/multipart): `storage.editor`
 - **D6 — Errors are `Schema.TaggedErrorClass`.** Per AGENTS.md. Runtime failures
   (S3 404/403, endpoint unreachable, missing env) map to tagged errors with
   stable tags, not raw SDK exceptions.
@@ -194,7 +201,8 @@ export const hostIdentity = (hostLogicalId: string) =>
   })
 ```
 
-Grants are capability-specific (storage: bucket policy). Imported from
+Grants are capability-specific (storage: `iam.AccessPermit` on the bucket,
+per D5). Imported from
 `bindings.ts` via `await import("./host-identity.ts")` inside the guard.
 
 ### `storage/v1/bindings.ts` — storage bindings (CF)
@@ -219,14 +227,20 @@ export const GetObjectBinding = Layer.effect(GetObject, Effect.gen(function* () 
       // DCE'd out of the Worker bundle (M0-verified) — never evaluated on workerd
       const { hostIdentity } = yield* Effect.promise(() => import("./host-identity.ts"))
       const identity = yield* hostIdentity(host.LogicalId)
-      yield* bindWorkerEnv(host, {
+      // Grant: AccessPermit on the bucket for the host-identity group (D5).
+      // The AccessKey secret is wrapped in Redacted → deployed as secret_text.
+      yield* Iam.AccessPermit(`${host.LogicalId}${bucket.LogicalId}Access`, {
+        parentId: identity.groupId,
+        resourceId: yield* yield* bucket.id,
+        role: "storage.editor",   // read-write; "storage.viewer" for read-only
+      })
+      yield* bindWorkerEnv(host, "Nebius.storage.GetObject", {
         NEBIUS_S3_ENDPOINT: storageEndpoint(region),   // storage.<region>.nebius.cloud
-        NEBIUS_ACCESS_KEY_ID: identity.accessKeyId,
-        NEBIUS_SECRET_ACCESS_KEY: identity.secretAccessKey,  // Redacted → secret_text
+        NEBIUS_ACCESS_KEY_ID: identity.awsAccessKeyId,
+        NEBIUS_SECRET_ACCESS_KEY: Redacted.make(identity.secretAccessKey),
         NEBIUS_BUCKET_NAME: BucketName,
         NEBIUS_REGION: region,
       })
-      // + bucket policy group grant (D5), once per bucket
     }
     return Effect.fn("Nebius.storage.Bucket.GetObject")(function* (request) {
       // runtime: s3-lite-client from WorkerEnvironment env; map errors (D6)
@@ -319,13 +333,15 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
 
 ### M2 — Storage bindings
 
-- [ ] Resolve O4: exact role name + bucket-policy group-grant shape for object
-      read/write (`storage.viewer` / `storage.editor`?)
+- [x] Resolve O4: roles `storage.viewer` (read) / `storage.editor`
+      (read-write) from the action→role table; grant via `iam.AccessPermit` on
+      the bucket (D5 updated — see above). No project-level role required.
 - [ ] `modules/resources/storage/v1/bindings.ts`:
       `GetObject` + `PutObject` contracts; `GetObjectBinding` / `PutObjectBinding`
-      CF Layers; runtime client via s3-lite-client reading `WorkerEnvironment`
-- [ ] `Schema.TaggedErrorClass` errors: `BucketNotFound`, `ObjectNotFound`,
-      `AccessDenied`, `InvalidCredentials` (env missing), `S3Error` (catch-all)
+      CF Layers (hostIdentity → AccessPermit grant → bindWorkerEnv → runtime
+      client via s3-lite-client reading `WorkerEnvironment`)
+- [ ] `Schema.TaggedErrorClass` errors: `ObjectNotFound`, `AccessDenied`,
+      `InvalidCredentials` (env missing), `S3Error` (catch-all)
 - [ ] Re-export from `storage/v1/index.ts`; wire into docs-namespace
 - [ ] Unit tests (network-free): contracts defined, env mapping, error mapping
       from s3-lite errors
@@ -423,7 +439,10 @@ clients, or `host-identity.ts`.
 | O1 | Does `alchemy dev`'s local worker provider honor `secret_text`/`plain_text` binding data? | e2e testability without CF creds | M0 spike |
 | O2 | Does `s3-lite-client` work on workerd + path-style Nebius S3? | Storage runtime client | M0 spike |
 | O3 | Does the workerd bundle tolerate (omit or never-evaluate) the guarded `await import()` of the gRPC module? | D8 approach | M0 spike; fallback documented in D8 |
-| O4 | Exact Nebius role names for bucket object ops (`storage.editor`?) and bucket-policy group-grant shape | Storage grant | M2, verify via Nebius docs/CLI |
+| O4 | ~~Exact Nebius role names + grant shape~~ **RESOLVED**: `storage.viewer`
+    (read) / `storage.editor` (read-write) from the action→role table;
+    grant via `iam.AccessPermit` on the bucket (D5) — permits and bucket
+    policies both grant object access and combine | Storage grant | D5 updated |
 | O5 | `AccessKey` output secret survives second deploy (state restore) | Env re-injection across deploys | M0 spike |
 | O6 | One shared host identity vs per-capability keys | Least privilege | D3 decided: shared identity, per-capability grants |
 | O7 | `WorkerBindingShape` local union drifts from alchemy's `WorkerBinding` wire type on upgrade | Bundle correctness | M0 spike pins types; keep local union minimal |
