@@ -14,8 +14,7 @@ export default Cloudflare.Worker("Api", { main: import.meta.url },
   Effect.gen(function* () {
     const bucket = yield* Nebius.storage.Bucket("assets")
     const getObject = yield* Nebius.storage.Bucket.GetObject(bucket)
-    const chat = yield* Nebius.ai.Endpoint.ChatCompletions(model)
-    return { fetch: /* uses getObject and chat */ }
+    return { fetch: /* uses getObject */ }
   }).pipe(Effect.provide(Nebius.storage.Bucket.GetObjectBinding)),
 )
 ```
@@ -27,6 +26,8 @@ Nebius, (2) env/config injected into the user's host, (3) a typed runtime client
 
 - No `Nebius.compute.Function` host / custom runtime (explicitly out of scope)
 - No event sources or sinks (no Nebius-native pub/sub to subscribe to)
+- No AI endpoint bindings (`ChatCompletions`) for now — endpoints are expensive
+  and slow to deploy, making them impractical to test; revisit later
 - No KMS / mysterybox / DNS bindings in the first pass (same pattern, later)
 - No local-dev emulation layers (`*Local`) — dev runs against the real cloud
 - Not proposing changes to `alchemy` itself (though `bindHostEnv` is a candidate
@@ -106,12 +107,9 @@ Nebius, (2) env/config injected into the user's host, (3) a typed runtime client
 modules/resources/shared/bind-host.ts     # D1: host narrowing + bindHostEnv helper
 modules/resources/shared/host-identity.ts # D3: lazy SA + AccessKey + group grant
 modules/resources/storage/v1/bindings.ts  # GetObject / PutObject contracts + 2 Layers each
-modules/resources/ai/v1/bindings.ts       # ChatCompletions contract + 2 Layers
 modules/resources/storage/v1/index.ts     # re-export binding namespace members
-modules/resources/ai/v1/index.ts          # re-export binding namespace members
 tests/resources/shared/bind-host.test.ts
 tests/resources/storage/v1/bindings.test.ts
-tests/resources/ai/v1/bindings.test.ts
 tests/resources/storage/v1/bindings.integration.test.ts
 examples/bindings.ts
 README.md                                 # Bindings section
@@ -123,7 +121,7 @@ Exports (parallel to `AWS.S3.GetObject` naming):
 Nebius.storage.GetObject          // contract (callable)
 Nebius.storage.GetObjectHttp      // AWS-family Layer
 Nebius.storage.GetObjectBinding   // Cloudflare Layer
-// tags: "Nebius.storage.v1.Bucket.GetObject", "Nebius.ai.v1.Endpoint.ChatCompletions"
+// tags: "Nebius.storage.v1.Bucket.GetObject"
 ```
 
 ### `bind-host.ts` — the shared host half
@@ -165,9 +163,9 @@ export const hostIdentity = (hostLogicalId: string) =>
   })
 ```
 
-Grants are capability-specific (storage: bucket policy; ai: none beyond token).
+Grants are capability-specific (storage: bucket policy).
 
-### `storage/v1/bindings.ts` — first capability
+### `storage/v1/bindings.ts` — storage bindings
 
 ```ts
 export interface GetObject extends Binding.Service<
@@ -198,21 +196,6 @@ export const GetObjectBinding = /* same, but env via { bindings: [secret_text...
 `PutObject` mirrors it. Runtime client is built once per binding from env values
 (`s3-lite-client` `S3Client` with `{ endpointUrl, region, accessKeyId,
 secretAccessKey }` — path-style for Nebius, verify in M0).
-
-### `ai/v1/bindings.ts` — second capability
-
-```ts
-export interface ChatCompletions extends Binding.Service<
-  ChatCompletions, "Nebius.ai.v1.Endpoint.ChatCompletions",
-  (endpoint: NebiusEndpoint) => Effect.Effect<ChatClient>
-> {}
-```
-
-Deploy-time: resolve base URL from `endpoint.publicEndpoints[0]` (Output), source
-the auth token (open question O5), inject via `bindHostEnv` as
-`NEBIUS_ENDPOINT_URL` / `NEBIUS_ENDPOINT_TOKEN` (secret). Runtime: `fetch`
-`POST {base}/chat/completions` with a minimal `Schema.Class` response/error
-surface. Only public endpoints supported (O6).
 
 ## Milestones
 
@@ -258,32 +241,18 @@ surface. Only public endpoints supported (O6).
       error mapping from s3-lite errors
 - [ ] `bun run check` clean, `bun test` green
 
-### M3 — AI bindings
-
-- [ ] Resolve O5: token sourcing (options below)
-- [ ] `modules/resources/ai/v1/bindings.ts`: `ChatCompletions` contract +
-      `*Http` / `*Binding` Layers; minimal chat-completions request/response
-      `Schema.Class`
-- [ ] `Schema.TaggedErrorClass` errors: `EndpointUnavailable`,
-      `Unauthorized`, `ModelError` (provider-side failure)
-- [ ] Re-export from `ai/v1/index.ts`
-- [ ] Unit tests (network-free): contracts, env mapping, response decoding
-- [ ] `bun run check` clean, `bun test` green
-
-### M4 — Integration tests (SLOW_TESTS=1, real Nebius creds)
+### M3 — Integration tests (SLOW_TESTS=1, real Nebius creds)
 
 - [ ] `tests/resources/storage/v1/bindings.integration.test.ts`:
   - Deploy-time provisioning lifecycle: stack declares host identity
     resources; assert SA + AccessKey created, secret present in output
   - Runtime client: after deploy, call `GetObject` client against the real
     bucket (put + get round-trip via s3-lite-client)
-- [ ] AI: deploy endpoint (if credentials permit), call `ChatCompletions`
-      against `publicEndpoints[0]` with injected token
 - [ ] Optional/stretch: full Cloudflare Worker end-to-end (`alchemy dev` +
       local Worker provider) — needs CF creds; mark skipped if unavailable
 - [ ] Uses `integrationTest()` / `safeDestroy()` from `tests/helpers`
 
-### M5 — Docs & examples
+### M4 — Docs & examples
 
 - [ ] `examples/bindings.ts`: one Cloudflare Worker stack + one AWS Lambda
       stack consuming the same `Nebius.storage.GetObject`
@@ -312,13 +281,13 @@ surface. Only public endpoints supported (O6).
 | O2 | Does `s3-lite-client` work on workerd + path-style Nebius S3? | Storage runtime client | M0 spike |
 | O3 | Is `isBindingHost`/`isWorker` duck-typing stable across alchemy versions? | D1 narrowing | Pin alchemy beta; keep local type list |
 | O4 | Exact Nebius role names for bucket object ops (`storage.editor`?) and bucket-policy group-grant shape | Storage grant | M2, verify via Nebius docs/CLI |
-| O5 | AI auth token sourcing: inline `authToken` prop isn't in attributes — read from props at deploy? binding-supplied token prop? mysterybox ref? | ChatCompletions design | M3 decision |
-| O6 | Private-only endpoints unreachable from Lambda/Worker | AI binding scope | Document; public-only v1 |
-| O7 | Bundle hygiene: ensure no `@grpc/grpc-js` / AWS SDK lands in runtime/binding bundles | Worker deploys | D4 + M2/M3 review of imports |
-| O8 | One shared host identity vs per-capability keys | Least privilege | D3 decided: shared identity, per-capability grants |
+| O5 | Bundle hygiene: ensure no `@grpc/grpc-js` / AWS SDK lands in runtime/binding bundles | Worker deploys | D4 + M2/M3 review of imports |
+| O6 | One shared host identity vs per-capability keys | Least privilege | D3 decided: shared identity, per-capability grants |
 
 ## Out of scope (noted for later)
 
+- AI endpoint bindings (`ChatCompletions`) — endpoints are expensive/slow to
+  deploy, impractical to test; revisit when testing is cheap
 - KMS Encrypt/Decrypt, mysterybox GetSecretValue, DNS record bindings — same
   pattern once M2/M3 land
 - Event sources / sinks
