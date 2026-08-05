@@ -3,6 +3,7 @@ import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
 import { integrationTest } from '../../../helpers/gate'
+import { safeDestroy } from '../../../helpers/cleanup'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -26,10 +27,7 @@ integrationTest(
       expect(key.description).toBe('Alchemy integration test KMS key')
       expect(key.algorithm).toBe('AES_256')
     }).pipe(
-      Effect.ensuring(stack.destroy().pipe(
-      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
-      Effect.ignore,
-    )),
+      Effect.ensuring(safeDestroy(stack)),
     ),
   { timeout: 120_000 },
 )

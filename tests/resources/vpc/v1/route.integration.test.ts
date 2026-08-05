@@ -3,6 +3,7 @@ import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
 import { integrationTest } from '../../../helpers/gate'
+import { safeDestroy } from '../../../helpers/cleanup'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -50,10 +51,7 @@ integrationTest(test.provider, 'Nebius.vpc.v1.Route lifecycle', (stack) =>
     expect(updated.id).toBe(route.id)
     expect(updated.description).toBe('updated')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(
-      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
-      Effect.ignore,
-    )),
+    Effect.ensuring(safeDestroy(stack)),
   ),
   { timeout: 180_000 },
 )

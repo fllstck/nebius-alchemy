@@ -2,6 +2,7 @@ import * as Test from 'alchemy/Test/Bun'
 import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
+import { safeDestroy } from '../../../helpers/cleanup'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -22,10 +23,7 @@ test.provider.skipIf(true)(
     expect(fs.type).toBe('NETWORK_SSD')
     expect(fs.state).toBe('READY')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(
-      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
-      Effect.ignore,
-    )),
+    Effect.ensuring(safeDestroy(stack)),
   ),
   { timeout: 180_000 },
 )

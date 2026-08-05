@@ -4,6 +4,7 @@ import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
 import * as Validation from '../../../modules/resources/validation'
 import { integrationTest } from '../../helpers/gate'
+import { safeDestroy } from '../../helpers/cleanup'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -40,10 +41,7 @@ integrationTest(
         )
         .pipe(Effect.flip)
       expect(notFound).toBeInstanceOf(Validation.ResourceNotFoundError)
-    }).pipe(Effect.ensuring(stack.destroy().pipe(
-      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
-      Effect.ignore,
-    ))),
+    }).pipe(Effect.ensuring(safeDestroy(stack))),
   { timeout: 120_000 },
 )
 
@@ -64,9 +62,6 @@ integrationTest(
 
       expect(found?.id).toBe(group.id)
       expect(groups.some((g) => g.id === group.id)).toBe(true)
-    }).pipe(Effect.ensuring(stack.destroy().pipe(
-      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
-      Effect.ignore,
-    ))),
+    }).pipe(Effect.ensuring(safeDestroy(stack))),
   { timeout: 120_000 },
 )

@@ -13,6 +13,7 @@ import * as GrpcTransportModule from '../../../modules/api-client/GrpcTransport.
 import * as BucketGrpcServiceModule from '../../../modules/api-client/storage.ts'
 import * as GrpcUtilsModule from '../../../modules/api-client/grpc-utils.ts'
 import { runIntegration } from '../../helpers/gate'
+import { redact } from '../../helpers/cleanup'
 
 const { beforeAll, describe, expect, test } = BunTest
 const { AuthProviders } = AlchemyAuthProvider
@@ -274,7 +275,7 @@ describe('StorageGrpcService (bucket)', () => {
               const { bucket: svc } = yield* StorageGrpcService
               yield* svc.delete(createdBucketId).pipe(
                 Effect.tapError((e) =>
-                  Effect.logError(`[cleanup] bucket delete failed: ${String(e)}`),
+                  Effect.logError(`[cleanup] bucket delete failed: ${redact(String(e))}`),
                 ),
                 Effect.ignore,
               )

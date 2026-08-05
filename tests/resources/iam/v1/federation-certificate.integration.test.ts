@@ -2,6 +2,7 @@ import * as Test from 'alchemy/Test/Bun'
 import * as Effect from 'effect/Effect'
 import { expect } from 'bun:test'
 import * as Nebius from '@fllstck/nebius-alchemy'
+import { safeDestroy } from '../../../helpers/cleanup'
 
 const { test } = Test.make({ providers: Nebius.providers() as any })
 
@@ -43,10 +44,7 @@ hGJ6qN8vL2T3wR5sZxVbNmQ9K4c7fL8mN2wR5sZxVbNmQ9K4c7fL8mN2wR5sZxVb
     expect(typeof cert.id).toBe('string')
     expect(cert.description).toBe('Alchemy integration test cert')
   }).pipe(
-    Effect.ensuring(stack.destroy().pipe(
-      Effect.tapError((e) => Effect.logError(`[cleanup] destroy failed: ${String(e)}`)),
-      Effect.ignore,
-    )),
+    Effect.ensuring(safeDestroy(stack)),
   ),
   { timeout: 180_000 },
 )
