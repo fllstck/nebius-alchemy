@@ -93,7 +93,12 @@ const makeTransport = Effect.fn('NebiusGrpcTransport.make')(function* () {
         })
         const channelCreds = grpc.credentials.combineChannelCredentials(sslCreds, authCreds)
 
-        channel = new grpc.Channel(endpoint, channelCreds, {})
+        channel = new grpc.Channel(endpoint, channelCreds, {
+          // TEST (M3): the official gosdk/CLI sends `grpc-go/<ver>`; grpc-js
+          // sends `grpc-node-js/<ver>`. The endpoint sits behind Cloudflare +
+          // Envoy — hypothesis: it routes official-SDK clients differently.
+          'grpc.primary_user_agent': 'grpc-go/1.71.0',
+        })
         channels.set(endpoint, channel)
       }
       return channel
