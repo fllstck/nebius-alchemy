@@ -80,11 +80,11 @@ export const NebiusGroupMembershipProvider = AlchemyProvider.succeed(NebiusGroup
         // The member/parent (typically just-created resources) may not be
         // resolvable by the membership backend yet — Nebius eventually-consistent
         // replication for direct-API-created IAM resources (observed 0s–5min+;
-        // CLI-created resources resolve instantly). Retry NOT_FOUND as a bounded
-        // backstop; first deploy of a fresh identity can take a minute or two.
+        // CLI/gosdk-created resources resolve instantly). Bounded NOT_FOUND
+        // retry as a backstop for the common same-deploy identity flow.
         .pipe(
           Effect.retry({
-            times: 12,
+            times: 6,
             schedule: Schedule.spaced('5 seconds'),
             while: (e) => e instanceof GrpcError && e.code === 5,
           }),

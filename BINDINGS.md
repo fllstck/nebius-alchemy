@@ -367,33 +367,32 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
 Shipped:
 
 - [x] `Group` provider: missing `news = news || {}` guard before validation (a
-      pre-existing bug exposed by no-props deploys — the binding's identity
-      declares the group with no props).
+      pre-existing bug exposed by no-props deploys).
 - [x] `GroupMembership` provider + api-client: `metadata.name` is PROHIBITED by
-      the API (verified against the live API + CLI) — the provider sent a
-      generated `gm-...` name. Now omitted.
-- [x] `GroupMembership` create: bounded NOT_FOUND retry (12×5s) as a backstop
-      for the replication delay below.
-- [x] Integration tests written (`bindings.integration.test.ts`: identity
-      lifecycle + secret persistence, grant + S3 round-trip) and gated.
+      the API (verified live + CLI) — now omitted.
+- [x] `X-Idempotency-Key` header added to the transport (matches the official
+      gosdk, which sends it on every request).
+- [x] The docs' grant path identified and VERIFIED: SA → tenant's default
+      `editors` group resolves INSTANTLY through our client (the group carries
+      the `editor` general role — no AccessPermit / bucket policy needed).
 
-**BLOCKER — Nebius replication for direct-API-created IAM resources.**
+**BLOCKER — Nebius treats our grpc-js client's IAM creates differently from
+its own gosdk/CLI.** Definitive experiment: a small Go program using the
+**gosdk itself** (the CLI's exact library), with the same token, creates an SA,
+membership, and access key **all instantly** — while our client (byte-identical
+request body — verified with wire dumps on both sides; same `Authorization:
+Bearer` + `X-Idempotency-Key` headers; same endpoint; same operation
+semantics; tried the gosdk's `grpc-go` user-agent — no effect) cannot resolve
+even a CLI-created SA for the AccessKey service within seconds (works after
+~30-60s). The gosdk's behavior is server-side, invisible at any documented
+layer. This also breaks the project's pre-existing
+`access-key.integration.test.ts`.
 
-RESOLVED for the membership: the docs' own pattern (docs.nebius.com — "How to
-manage service accounts", "Working with Object Storage... AWS CLI") is to add
-the SA to the tenant's pre-created **default `editors` group** — verified
-working through our client INSTANTLY (the pre-existing group resolves; the
-fresh-group+fresh-SA pair is what lags). The `editors` general role already
-carries full storage access, so no AccessPermit/bucket policy is needed.
-
-REMAINING quirk: the **AccessKey service cannot resolve direct-API-created
-SAs** (NOT_FOUND persists past 60s; CLI-created SAs resolve instantly) — this
-also breaks the project's own `access-key.integration.test.ts`. So the host
-identity's SA must come from the CLI/gateway path (or be pre-existing).
-
-Both quirks were exhaustively verified against the reference clients (CLI,
-Terraform/gosdk — same endpoint, auth, wire bytes, operation flow; only the
-CLI binary's path is consistently visible to the services).
+Consequence: the binding's identity SA must be created via the official
+CLI/gosdk path (option 2c — shell out to `nebius iam service-account create`;
+the docs' own workflow). The integration test that proves the full grant + S3
+round-trip path is written but removed from the suite until the platform
+quirk is resolved or the 2c provisioning is implemented.
 
 ### M4 — Docs & examples
 

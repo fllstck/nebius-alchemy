@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Config from 'effect/Config'
-import * as Schedule from 'effect/Schedule'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -9,7 +8,6 @@ import * as NebiusAccessKeyV2Schema from '../../../../schemas/nebius/iam/v2/acce
 import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access'
 import * as IamGrpc from '../../../api-client/iam'
 import * as ResourceUtils from '../../utilities.ts'
-import { GrpcError } from '../../../api-client/grpc-utils.ts'
 
 import * as AccessKeySchema from './access-key.schema.ts'
 import * as Factory from '../../factory.ts'
@@ -71,32 +69,21 @@ export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, 
           : NebiusAccessKeyV2Schema.SecretDeliveryMode.INLINE
 
     // Step 1: Create the access key (operation-backed, polls internally).
-    // The SA may not be resolvable yet — direct-API-created IAM resources
-    // replicate to the service's resolution view with a variable delay; the
-    // create fails with NOT_FOUND during that window. Retry as a backstop.
     yield* session.note(`Creating access key for service account (${news.serviceAccountId})`)
-    const key = yield* iamGrpcService.accessKeyV2
-      .create({
-        metadata: {
-          parentId,
-          name,
-        },
-        spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
-          account: NebiusAccessSchema.Account.fromPartial({
-            serviceAccount: { id: news.serviceAccountId },
-          }),
-          description: news.description || '',
-          ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
-          secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
+    const key = yield* iamGrpcService.accessKeyV2.create({
+      metadata: {
+        parentId,
+        name,
+      },
+      spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
+        account: NebiusAccessSchema.Account.fromPartial({
+          serviceAccount: { id: news.serviceAccountId },
         }),
-      })
-      .pipe(
-        Effect.retry({
-          times: 12,
-          schedule: Schedule.spaced('5 seconds'),
-          while: (e) => e instanceof GrpcError && e.code === 5,
-        }),
-      )
+        description: news.description || '',
+        ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
+        secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
+      }),
+    })
 
     // Step 2: Fetch the one-time secret (for non-MYSTERY_BOX modes)
     let secret = ''
