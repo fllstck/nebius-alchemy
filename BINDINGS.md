@@ -1,15 +1,14 @@
-# Bindings — cross-cloud typed clients for Nebius resources
+# Bindings — typed Nebius clients for Cloudflare Workers
 
 Implementation plan for adding Alchemy **Bindings** to `@fllstck/nebius-alchemy`:
-typed runtime clients that users bind to **their own** hosts (Cloudflare Worker,
-AWS Lambda/ECS/EKS) — no Nebius Function host.
+typed runtime clients that users bind to **their own Cloudflare Worker** — no
+Nebius Function host. AWS Lambda/ECS/EKS is a documented follow-up (§AWS later).
 
 ## Goal
 
-A user with their own host can write:
+A user with their own Worker can write:
 
 ```ts
-// their Cloudflare Worker
 export default Cloudflare.Worker("Api", { main: import.meta.url },
   Effect.gen(function* () {
     const bucket = yield* Nebius.storage.Bucket("assets")
@@ -20,138 +19,164 @@ export default Cloudflare.Worker("Api", { main: import.meta.url },
 ```
 
 One line derives: (1) deploy-time credential minting + least-privilege grant on
-Nebius, (2) env/config injected into the user's host, (3) a typed runtime client.
+Nebius, (2) env injected into the Worker as `plain_text`/`secret_text` bindings,
+(3) a typed runtime client (s3-lite-client, fetch-based).
 
 ## Non-goals
 
 - No `Nebius.compute.Function` host / custom runtime (explicitly out of scope)
+- **No AWS host support in v1** — the AWS differences are documented in
+  ["Adding AWS hosts later"](#adding-aws-hosts-later) and the design keeps an
+  explicit extension point so it slots in without rework
 - No event sources or sinks (no Nebius-native pub/sub to subscribe to)
-- No AI endpoint bindings (`ChatCompletions`) for now — endpoints are expensive
-  and slow to deploy, making them impractical to test; revisit later
+- No AI endpoint bindings (`ChatCompletions`) — endpoints are expensive/slow to
+  deploy, impractical to test; revisit later
 - No KMS / mysterybox / DNS bindings in the first pass (same pattern, later)
 - No local-dev emulation layers (`*Local`) — dev runs against the real cloud
-- Not proposing changes to `alchemy` itself (though `bindHostEnv` is a candidate
-  for upstreaming later)
+- Not proposing changes to `alchemy` itself (the env-binding helper is a
+  candidate for upstreaming later)
 
 ## Context — verified mechanics (from `node_modules/alchemy@2.0.0-beta.67`)
 
 - A binding = contract (`Binding.Service<Self, Tag, Shape>`) + impl Layer.
   Contract is callable at the call site; impl is provided via `Effect.provide`.
-- `Binding.Host` (= `Self`) resolves the host resource at deploy time, gated by
-  `if (!globalThis.__ALCHEMY_RUNTIME__)`. At runtime the host is absent.
-- `host.bind(data)` (Resource.ts) only pushes `{ sid, data }` onto
-  `stack.bindings[hostFqn]`. **The host provider does all the linking**:
-  - AWS Lambda/ECS/EKS merge `data.env` into function config and
-    `data.policyStatements` into IAM (`Function.ts:938`); user `env` prop wins.
-  - Cloudflare Worker merges `data.bindings` (`WorkerBinding[]`) into script
-    metadata; `secret_text` entries deploy as Cloudflare secrets.
-- **The data shape is per host family** — no universal env shape exists:
-  - AWS family (5 hosts): `{ env, policyStatements }` — narrowed by
-    `isBindingHost` (checks `Type` ∈ Lambda.Function | ECS.Task | ECS.Service |
-    EKS.Deployment | EKS.Job).
-  - Cloudflare: `{ bindings: [{ type: "plain_text"|"secret_text", name, text }] }`
-    — narrowed by `isWorker`.
-- Precedent for the whole approach: Cloudflare `AccountApiToken` — a resource
-  that (a) is declared **lazily from inside a binding impl**
-  (`yield* Token(`${self.LogicalId}Token`)`), (b) persists a **one-time plaintext
-  secret in its output** so later deploys re-read it. Our `iam.v2.AccessKey`
-  already does (b) via `precreate` + preserve-from-output.
-- Public import surface: `alchemy/Binding` subpath works (`./*` → `src/*.ts`);
-  root exports `BindingService` only. `isBindingHost` / `isWorker` exist but live
-  in deep implementation modules — see decision D1.
+- **Cloudflare path (what v1 uses):** alchemy's own CF bindings
+  (`R2/BucketBinding.ts`, `SecretsStore/ReadSecretBinding.ts`) `yield* Worker`
+  (typed host) and `yield* WorkerEnvironment` (runtime env), then register
+  native bindings at deploy time:
+  ```ts
+  if (!globalThis.__ALCHEMY_RUNTIME__) {
+    yield* host.bind`${bucket}`({ bindings: [{ type: "r2_bucket", ... }] })
+  }
+  // runtime: read env[bindingName] off WorkerEnvironment
+  ```
+  `host.bind(data)` (Resource.ts) only pushes `{ sid, data }` onto
+  `stack.bindings[hostFqn]`; the **Worker provider does all the linking** —
+  merges `data.bindings` (`WorkerBinding[]`) into script upload metadata.
+  `WorkerBinding` includes the wire shape `plain_text` / `secret_text` / `json`,
+  so env injection is `{ bindings: [{ type: "plain_text"|"secret_text", name,
+  text }] }`; `secret_text` deploys as a Cloudflare secret.
+- **`__ALCHEMY_RUNTIME__` guard**: deploy-time wiring runs in the CLI process
+  (Node); at runtime (deployed Worker **and** `alchemy dev` local workerd) the
+  guard skips it. The host resource is absent at runtime.
+- **The AWS path differs (noted, not built now):** AWS Lambda/ECS/EKS merge
+  `data.env` into function config and `data.policyStatements` into IAM
+  (`Function.ts:938`); narrowed by `isBindingHost` (checks `Type` ∈
+  Lambda.Function | ECS.Task | ECS.Service | EKS.Deployment | EKS.Job). No
+  universal env shape exists across families — see §AWS later.
+- **Precedent for credential minting:** Cloudflare `AccountApiToken` — a
+  resource (a) declared **lazily from inside a binding impl**
+  (`yield* Token(`${self.LogicalId}Token`)`), (b) persisting a **one-time
+  plaintext secret in its output** so later deploys re-read it. Our
+  `iam.v2.AccessKey` already does (b) via `precreate` + preserve-from-output.
+- **Import surface:** `alchemy/Binding` subpath works (`./*` → `src/*.ts`);
+  `Worker` / `WorkerEnvironment` from `alchemy/Cloudflare/Workers/Worker` are
+  workerd-safe (CF's own modules, fetch-based).
 
 ## Design decisions (locked in)
 
-- **D1 — Duck-typed host narrowing, no deep alchemy imports.** Do NOT import
-  `alchemy/AWS/Lambda/Function` or `alchemy/Cloudflare/Workers/Worker` into
-  binding modules: they drag AWS SDK / Cloudflare runtime code into bundles and
-  cross-contaminate Worker vs Lambda artifact builds. Instead, replicate the
-  tiny checks locally against `host.Type` (`"AWS.Lambda.Function" | "AWS.ECS.Task"
-  | "AWS.ECS.Service" | "AWS.EKS.Deployment" | "AWS.EKS.Job"` vs
-  `"Cloudflare.Worker"`), and cast `host.bind` through one encapsulated helper
-  (approved `any`-encapsulation exception, same spirit as `callMethod<T>()`).
-- **D2 — One contract, two Layers per capability**, mirroring Cloudflare R2's
-  `ReadWriteBucketBinding` / `ReadWriteBucketHttp` split:
-  - `*Http` Layer → AWS family (`{ env }`, no policyStatements — Nebius auth is
-    not IAM)
-  - `*Binding` Layer → Cloudflare (`{ bindings: [plain_text/secret_text] }`)
-  Both satisfy the same contract; users pick by host. A single branching Layer
-  is rejected: two Layers keep type-level enforcement and bundle hygiene clean.
+- **D1 — Typed CF host, no duck-typing in v1.** `yield* Worker` +
+  `WorkerEnvironment` directly (matches alchemy's own CF bindings). The
+  AWS-specific narrowing (`isBindingHost` / `{ env }`) is deferred to §AWS; the
+  env-wiring helper is structured so a sibling AWS arm slots in later.
+- **D2 — One contract, one Layer per capability in v1** (`*Binding`, CF).
+  The `*Http` AWS Layer is the documented extension point (§AWS) — same
+  contract, `Effect.provide` swap.
 - **D3 — One host identity per host, shared across capabilities.** Deploy-time,
   lazily declare (keyed on `host.LogicalId`): one `iam.ServiceAccount` + one
   `iam.AccessKey` (v2, `secretDeliveryMode: 'INLINE'`, secret persists in
-  output). Per-capability **grants** attach separately (bucket policy group grant
-  for storage, see D5). No duplicate SA/key per binding.
+  output). Per-capability **grants** attach separately (storage: bucket policy,
+  see D5). No duplicate SA/key per binding.
 - **D4 — Runtime clients are HTTP-only.** `s3-lite-client` (already a dep,
-  fetch-based) for S3; plain `fetch` for OpenAI-compatible AI endpoints. The
-  gRPC `api-client` services are **deploy-time only** — `@grpc/grpc-js` must not
-  appear in the runtime path of a binding module (Worker bundles would break).
+  fetch-based, workerd-safe) for S3. The gRPC `api-client` services are
+  **deploy-time only**.
 - **D5 — Storage grants via bucket policy, not AccessPermit.** Nebius
   `AccessPermit` requires a group parent and is project/group-scoped. The bucket
-  already supports `bucketPolicy.rules[].groupId` grants (paths + roles +
-  anonymous) — closest thing to per-bucket least privilege. Host identity:
+  supports `bucketPolicy.rules[].groupId` grants (paths + roles + anonymous) —
+  closest thing to per-bucket least privilege. Host identity:
   SA → group (`iam.Group`) → `iam.GroupMembership`; grant: bucket policy entry
   `{ paths: ["*"], roles: ["storage.editor"], groupId }`. Verify role names in
   M2 (open question O4).
 - **D6 — Errors are `Schema.TaggedErrorClass`.** Per AGENTS.md. Runtime failures
   (S3 404/403, endpoint unreachable, missing env) map to tagged errors with
   stable tags, not raw SDK exceptions.
-- **D7 — Env names are namespaced** `NEBIUS_*` and unique per (host, capability)
+- **D7 — Env names are namespaced** `NEBIUS_*`, unique per (host, capability),
   so multiple bindings on one host don't collide.
+- **D8 — Deploy-time provisioning lives in a dynamically-imported module.**
+  Critical for Workers: `@grpc/grpc-js` (Node-only) is statically imported by
+  `api-client` → `iam.AccessKey` etc. Any binding module that statically imports
+  those breaks the workerd bundle at module evaluation. So:
+  - `bindings.ts` (contracts + CF Layer + runtime client) imports **only**
+    workerd-safe modules: `alchemy/Binding`, `alchemy/Cloudflare/Workers/Worker`,
+    `s3-lite-client`, schemas.
+  - `host-identity.ts` (gRPC provisioning + resource declarations) is
+    `await import()`ed **inside** the `!__ALCHEMY_RUNTIME__` guard — evaluated
+    only in the CLI deploy process, never on workerd.
+  - Resource *declarations* (the `yield* Token(...)` calls) may still run
+    unguarded/idempotently at runtime (per Resource.ts "idempotent
+    registration"); it's the *module evaluation* of gRPC that must not reach
+    the bundle. If M0 shows bundlers eagerly evaluate dynamic imports, fall
+    back to declaring the identity resources from `bindings.ts` and keeping
+    only the gRPC *calls* (via a dynamic import of the api-client) behind the
+    guard.
 
 ## Architecture
 
 ### File layout
 
 ```
-modules/resources/shared/bind-host.ts     # D1: host narrowing + bindHostEnv helper
-modules/resources/shared/host-identity.ts # D3: lazy SA + AccessKey + group grant
-modules/resources/storage/v1/bindings.ts  # GetObject / PutObject contracts + 2 Layers each
+modules/resources/shared/bind-host.ts     # D1/D2: bindWorkerEnv — CF env wiring
+modules/resources/shared/host-identity.ts # D3+D8: lazy SA+AccessKey+Group+Membership (gRPC, dynamic import)
+modules/resources/storage/v1/bindings.ts  # GetObject / PutObject contracts + CF Layer + runtime client
 modules/resources/storage/v1/index.ts     # re-export binding namespace members
 tests/resources/shared/bind-host.test.ts
 tests/resources/storage/v1/bindings.test.ts
 tests/resources/storage/v1/bindings.integration.test.ts
-examples/bindings.ts
+examples/bindings.ts                      # Cloudflare Worker stack
 README.md                                 # Bindings section
 ```
 
-Exports (parallel to `AWS.S3.GetObject` naming):
+Exports (v1 — `*Http` reserved for §AWS):
 
 ```ts
 Nebius.storage.GetObject          // contract (callable)
-Nebius.storage.GetObjectHttp      // AWS-family Layer
-Nebius.storage.GetObjectBinding   // Cloudflare Layer
+Nebius.storage.GetObjectBinding   // Cloudflare Worker Layer
+// (future) Nebius.storage.GetObjectHttp  // AWS-family Layer — see §AWS later
 // tags: "Nebius.storage.v1.Bucket.GetObject"
 ```
 
-### `bind-host.ts` — the shared host half
+### `bind-host.ts` — the Worker env half
 
 ```ts
 /** Pure mapping — unit-testable without a host. */
-export const envToHostBindingData = (
-  hostType: string,
+export const envToWorkerBindings = (
   env: Record<string, string | Redacted.Redacted<string>>,
-): { kind: "aws"; data: { env: Record<string, string> } }
-  | { kind: "cloudflare"; data: { bindings: WorkerBindingShape[] } }
-  | { kind: "unsupported"; hostType: string }
+): WorkerBindingShape[] =>
+  Object.entries(env).map(([name, value]) =>
+    Redacted.isRedacted(value)
+      ? { type: "secret_text", name, text: Redacted.value(value) }
+      : { type: "plain_text", name, text: value })
 
-/** Deploy-time: register env on whatever host is present. Dies on unknown hosts. */
-export const bindHostEnv = (env: ...) =>
+/** Deploy-time: register env bindings on the Worker. No-op at runtime. */
+export const bindWorkerEnv = (host: Worker, env: ...) =>
   Effect.fn(function* () {
-    if (globalThis.__ALCHEMY_RUNTIME__) return  // no host at runtime
-    const host = yield* Binding.Host
-    ...narrow via host.Type, yield* host.bind`...`(data)
+    if (globalThis.__ALCHEMY_RUNTIME__) return
+    yield* host.bind`NebiusEnv`({ bindings: envToWorkerBindings(env) })
   })
 ```
 
-`Redacted` values map to `secret_text` on Cloudflare / stay as-is in AWS `env`.
+The `WorkerBindingShape` union is defined locally (only the `plain_text` /
+`secret_text` members we use), so `bind-host.ts` needs no deep alchemy imports.
+The AWS arm later is a sibling `bindFunctionEnv(host, env)` → `{ env }`
+(§AWS), same call shape — that's the extension point.
 
 ### `host-identity.ts` — deploy-time credential provisioning
 
 ```ts
 export const hostIdentity = (hostLogicalId: string) =>
   Effect.fn(function* () {
-    // Lazy, stable per host — mirrors AccountApiToken's `${self.LogicalId}Token`
+    // Runs only in the CLI process (D8). Lazy, stable per host —
+    // mirrors AccountApiToken's `${self.LogicalId}Token` keying.
     const sa = yield* Nebius.iam.ServiceAccount(`${hostLogicalId}BindingSA`)
     const key = yield* Nebius.iam.AccessKey(`${hostLogicalId}BindingKey`, {
       serviceAccountId: sa.id, secretDeliveryMode: "INLINE",
@@ -163,9 +188,10 @@ export const hostIdentity = (hostLogicalId: string) =>
   })
 ```
 
-Grants are capability-specific (storage: bucket policy).
+Grants are capability-specific (storage: bucket policy). Imported from
+`bindings.ts` via `await import("./host-identity.ts")` inside the guard.
 
-### `storage/v1/bindings.ts` — storage bindings
+### `storage/v1/bindings.ts` — storage bindings (CF)
 
 ```ts
 export interface GetObject extends Binding.Service<
@@ -177,20 +203,27 @@ export interface GetObject extends Binding.Service<
 
 export const GetObject = Binding.Service<GetObject>("Nebius.storage.v1.Bucket.GetObject")
 
-export const GetObjectHttp = Layer.effect(GetObject, Effect.gen(function* () {
-  // deploy-time: hostIdentity(host) + bindHostEnv({ NEBIUS_S3_ENDPOINT,
-  //   NEBIUS_ACCESS_KEY_ID, NEBIUS_SECRET_ACCESS_KEY, NEBIUS_BUCKET_NAME,
-  //   NEBIUS_REGION }) + bucketPolicy group grant
+export const GetObjectBinding = Layer.effect(GetObject, Effect.gen(function* () {
+  const host = yield* Worker
   return Effect.fn(function* (bucket: NebiusBucket) {
     const BucketName = yield* bucket.name   // lazy Output, resolved at call time
-    if (!globalThis.__ALCHEMY_RUNTIME__) { /* identity + grant + env */ }
+    if (!globalThis.__ALCHEMY_RUNTIME__) {
+      const { hostIdentity } = yield* Effect.promise(() => import("./host-identity.ts"))
+      const identity = yield* hostIdentity(host.LogicalId)
+      yield* bindWorkerEnv(host, {
+        NEBIUS_S3_ENDPOINT: storageEndpoint(region),   // storage.<region>.nebius.cloud
+        NEBIUS_ACCESS_KEY_ID: identity.accessKeyId,
+        NEBIUS_SECRET_ACCESS_KEY: identity.secretAccessKey,  // Redacted → secret_text
+        NEBIUS_BUCKET_NAME: BucketName,
+        NEBIUS_REGION: region,
+      })
+      // + bucket policy group grant (D5), once per bucket
+    }
     return Effect.fn("Nebius.storage.Bucket.GetObject")(function* (request) {
-      // runtime: s3-lite-client from env; map errors via Schema.TaggedErrorClass
+      // runtime: s3-lite-client from WorkerEnvironment env; map errors (D6)
     })
   })
 }))
-
-export const GetObjectBinding = /* same, but env via { bindings: [secret_text...] } */
 ```
 
 `PutObject` mirrors it. Runtime client is built once per binding from env values
@@ -201,44 +234,47 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
 
 ### M0 — Spike & verification (no code committed)
 
-- [ ] Confirm `import * as Binding from 'alchemy/Binding'` resolves and
-      `Binding.Service` / `Binding.Host` type-check from this package
-- [ ] Confirm `bucket.name` / `endpoint.publicEndpoints` are accessible as lazy
-      `Output`s inside a binding impl Layer (same as `bucket.bucketName` usage in
-      AWS S3 bindings)
-- [ ] Confirm `s3-lite-client` runs on `workerd` (fetch-based) and supports
-      path-style addressing against `storage.<region>.nebius.cloud`
-- [ ] Confirm AWS `binding.data.env` accepts lazy `Output` values (O2 fallback:
-      resolve in the impl — values are available at deploy time)
-- [ ] Prototype `bindHostEnv` with a fake host object; verify the two data shapes
-      are what Lambda/Worker providers consume
+- [ ] Confirm `import * as Binding from 'alchemy/Binding'` and
+      `Worker` / `WorkerEnvironment` from `alchemy/Cloudflare/Workers/Worker`
+      resolve and type-check from this package
+- [ ] Confirm `bucket.name` is accessible as a lazy `Output` inside a binding
+      impl Layer (same as `bucket.bucketName` usage in AWS S3 bindings)
+- [ ] **D8 validation**: prototype the `await import()`-behind-guard pattern;
+      confirm the workerd bundle either (a) omits the gRPC module or (b) never
+      evaluates it at runtime; confirm `@grpc/grpc-js` is genuinely
+      unusable/absent in a deployed Worker (if it were usable, D8 weakens to a
+      style rule)
+- [ ] Confirm `s3-lite-client` runs on workerd and supports path-style
+      addressing against `storage.<region>.nebius.cloud`
+- [ ] Confirm `secret_text`/`plain_text` bindings are honored by the local
+      worker provider in `alchemy dev` (env present in `WorkerEnvironment`)
 - [ ] Verify `AccessKey` output secret survives a second deploy (state restore)
       — already implied by `precreate` + preserve-from-output, but prove it
 
-### M1 — Host wiring core
+### M1 — Worker host wiring core
 
-- [ ] `modules/resources/shared/bind-host.ts`: `envToHostBindingData` (pure) +
-      `bindHostEnv` (Effect.fn, `__ALCHEMY_RUNTIME__` guard, dies on unsupported
-      host type)
+- [ ] `modules/resources/shared/bind-host.ts`: `envToWorkerBindings` (pure) +
+      `bindWorkerEnv` (Effect.fn, `__ALCHEMY_RUNTIME__` guard)
 - [ ] `modules/resources/shared/host-identity.ts`: lazy SA + AccessKey + Group +
       GroupMembership provisioning; returns `{ serviceAccountId, accessKeyId,
-      secretAccessKey }` (Redacted)
+      secretAccessKey }` (Redacted). Statically importable by deploy-time code
+      only; no binding module imports it statically (D8)
 - [ ] Unit tests `tests/resources/shared/bind-host.test.ts` (network-free):
-      AWS shape, CF shape, Redacted→secret_text, unsupported host dies,
-      runtime guard returns early
+      plain vs secret mapping, Redacted→secret_text, runtime guard no-op
 - [ ] `bun run check` clean, `bun test` green
 
 ### M2 — Storage bindings
 
-- [ ] Resolve O4: exact role name + bucket-policy shape for object read/write;
-      confirm whether `storage.viewer`/`storage.editor` are the right roles
+- [ ] Resolve O4: exact role name + bucket-policy group-grant shape for object
+      read/write (`storage.viewer` / `storage.editor`?)
 - [ ] `modules/resources/storage/v1/bindings.ts`:
-      `GetObject` + `PutObject` contracts; `*Http` and `*Binding` Layers each
+      `GetObject` + `PutObject` contracts; `GetObjectBinding` / `PutObjectBinding`
+      CF Layers; runtime client via s3-lite-client reading `WorkerEnvironment`
 - [ ] `Schema.TaggedErrorClass` errors: `BucketNotFound`, `ObjectNotFound`,
       `AccessDenied`, `InvalidCredentials` (env missing), `S3Error` (catch-all)
 - [ ] Re-export from `storage/v1/index.ts`; wire into docs-namespace
-- [ ] Unit tests (network-free): contracts defined, env mapping per host,
-      error mapping from s3-lite errors
+- [ ] Unit tests (network-free): contracts defined, env mapping, error mapping
+      from s3-lite errors
 - [ ] `bun run check` clean, `bun test` green
 
 ### M3 — Integration tests (SLOW_TESTS=1, real Nebius creds)
@@ -246,50 +282,105 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
 - [ ] `tests/resources/storage/v1/bindings.integration.test.ts`:
   - Deploy-time provisioning lifecycle: stack declares host identity
     resources; assert SA + AccessKey created, secret present in output
-  - Runtime client: after deploy, call `GetObject` client against the real
+  - Runtime client: after deploy, call the `GetObject` client against the real
     bucket (put + get round-trip via s3-lite-client)
-- [ ] Optional/stretch: full Cloudflare Worker end-to-end (`alchemy dev` +
-      local Worker provider) — needs CF creds; mark skipped if unavailable
+- [ ] Cloudflare Worker end-to-end via `alchemy dev` local worker provider
+      (real Nebius bucket, local workerd execution) — primary e2e path; real
+      Cloudflare deploy is a stretch (needs CF creds; skip if unavailable)
 - [ ] Uses `integrationTest()` / `safeDestroy()` from `tests/helpers`
 
 ### M4 — Docs & examples
 
-- [ ] `examples/bindings.ts`: one Cloudflare Worker stack + one AWS Lambda
-      stack consuming the same `Nebius.storage.GetObject`
-- [ ] README "Bindings" section: what they are, host support matrix (Lambda /
-      ECS / EKS / Cloudflare Worker), one-line usage, env var reference
+- [ ] `examples/bindings.ts`: Cloudflare Worker stack consuming
+      `Nebius.storage.GetObject` (the Goal snippet, compilable)
+- [ ] README "Bindings" section: what they are, supported host (Cloudflare
+      Worker) + roadmap note (AWS), one-line usage, env var reference
 - [ ] Final: `bun run check` clean, `bun test` green, `SLOW_TESTS=1 bun test`
       passes with credentials
 
+## Adding AWS hosts later
+
+Everything below is **not built in v1** — it's the documented path, and the
+design above leaves the seams for it. When AWS support lands, it's additive:
+new files + one new Layer per capability, zero changes to contracts, runtime
+clients, or `host-identity.ts`.
+
+### What changes
+
+| Aspect | Cloudflare (v1) | AWS (later) |
+|---|---|---|
+| Host access | `yield* Worker` (typed) | `yield* Binding.Host` + `isBindingHost` (checks `Type` ∈ 5 AWS host types) |
+| Bind data | `{ bindings: [plain_text/secret_text] }` | `{ env: {...} }` (policyStatements omitted — Nebius auth isn't IAM) |
+| Env wiring | `bindWorkerEnv` | sibling `bindFunctionEnv(host, env)` — same call shape |
+| Runtime client | s3-lite-client (fetch, workerd-safe) | **same** — s3-lite-client runs on Node too; optionally swap for gRPC api-client (Node-only) |
+| Deploy-time provisioning | `host-identity.ts` via dynamic import (D8) | same module works (CLI is Node); static import becomes safe on Lambda |
+| Dev/local | workerd local worker provider | none — real Lambda deploys |
+
+### AWS-specific things to verify when adding
+
+1. **One new Layer per capability**: `GetObjectHttp` / `PutObjectHttp` =
+   `Layer.effect(GetObject, ...)` pushing `{ env }`; users swap
+   `Effect.provide(GetObjectHttp)` instead of `GetObjectBinding`. Same contract
+   — no call-site changes.
+2. **Lazy `Output`s in `binding.data.env`**: whether Lambda's env merge
+   (`Function.ts:938`) resolves `Output` values or needs pre-resolved strings
+   (fallback: resolve in the impl, as sketched for CF).
+3. **Env value packing**: Lambda env values pass through
+   `packEnvValue`/`unpackEnvValue` (`RuntimeContext.ts`) — confirm strings /
+   Redacted values round-trip (redact before pushing).
+4. **Merge order**: `{...bindingEnv, ...news.env}` — user's `env` prop wins;
+   document for the `*Http` layers.
+5. **No `policyStatements` needed**: Nebius auth is SA/AccessKey-based; the
+   Lambda role needs zero AWS permissions for Nebius calls.
+6. **gRPC at runtime is optional on AWS**: `@grpc/grpc-js` runs fine in a
+   Lambda (Node), so future bindings over KMS/mysterybox gRPC could skip HTTP.
+   Storage keeps s3-lite-client for parity.
+7. **Testing**: no local emulation — data-shape unit tests (the pure
+   `envToWorkerBindings` sibling) + a real Lambda integration deploy.
+
+### Already in place for a smooth landing
+
+- Contracts and runtime clients are host-agnostic (D2) — the Layer is the only
+  host-specific surface.
+- `bind-host.ts` isolates host wiring behind one helper with a documented
+  sibling for the AWS arm.
+- `host-identity.ts` is host-independent (keyed on a string logical id, not a
+  host type) — reusable as-is.
+- Exports reserve the `*Http` names (documented, not yet implemented).
+
 ## Testing strategy
 
-- **Unit (network-free, default `bun test`)**: pure `envToHostBindingData`
-  mapping; contract tag identity; error mapping; response decoding. Uses
+- **Unit (network-free, default `bun test`)**: pure `envToWorkerBindings`
+  mapping; contract tag identity; error mapping from s3-lite errors. Uses
   existing `tests/helpers/provider.ts` style (`runEffect`, no cloud).
 - **Integration (`SLOW_TESTS=1`)**: deploy-time provisioning + runtime client
   round-trip against real Nebius, gated by `tests/helpers/gate.ts`
   (`integrationTest`), cleaned up with `safeDestroy()`.
-- Host-dependent paths (actual Lambda env injection, actual Worker
-  `secret_text` upload) are exercised by alchemy's own provider tests upstream;
-  we verify the *data shapes* in unit tests and, stretch, one CF Worker e2e.
+- **Worker end-to-end**: `alchemy dev` local worker provider (real Nebius
+  bucket, workerd execution) — exercises the full `secret_text`/`plain_text`
+  path without needing Cloudflare credentials. Real CF deploy = stretch.
+- AWS paths (env merge, IAM) are exercised later with a real Lambda deploy
+  (§AWS); data shapes are unit-tested regardless.
 
 ## Open questions / risks
 
 | # | Question | Impact | Resolution target |
 |---|---|---|---|
-| O1 | Do AWS `binding.data.env` values accept lazy `Output`s? | Env wiring ergonomics | M0 spike; fallback = resolve in impl |
+| O1 | Does `alchemy dev`'s local worker provider honor `secret_text`/`plain_text` binding data? | e2e testability without CF creds | M0 spike |
 | O2 | Does `s3-lite-client` work on workerd + path-style Nebius S3? | Storage runtime client | M0 spike |
-| O3 | Is `isBindingHost`/`isWorker` duck-typing stable across alchemy versions? | D1 narrowing | Pin alchemy beta; keep local type list |
+| O3 | Does the workerd bundle tolerate (omit or never-evaluate) the guarded `await import()` of the gRPC module? | D8 approach | M0 spike; fallback documented in D8 |
 | O4 | Exact Nebius role names for bucket object ops (`storage.editor`?) and bucket-policy group-grant shape | Storage grant | M2, verify via Nebius docs/CLI |
-| O5 | Bundle hygiene: ensure no `@grpc/grpc-js` / AWS SDK lands in runtime/binding bundles | Worker deploys | D4 + M2/M3 review of imports |
+| O5 | `AccessKey` output secret survives second deploy (state restore) | Env re-injection across deploys | M0 spike |
 | O6 | One shared host identity vs per-capability keys | Least privilege | D3 decided: shared identity, per-capability grants |
+| O7 | `WorkerBindingShape` local union drifts from alchemy's `WorkerBinding` wire type on upgrade | Bundle correctness | M0 spike pins types; keep local union minimal |
 
 ## Out of scope (noted for later)
 
+- **AWS Lambda/ECS/EKS support** — see [§Adding AWS hosts later](#adding-aws-hosts-later)
 - AI endpoint bindings (`ChatCompletions`) — endpoints are expensive/slow to
   deploy, impractical to test; revisit when testing is cheap
 - KMS Encrypt/Decrypt, mysterybox GetSecretValue, DNS record bindings — same
   pattern once M2/M3 land
 - Event sources / sinks
 - `*Local` dev emulation layers
-- Upstreaming `bindHostEnv` to `alchemy` as a shared env capability
+- Upstreaming the env-binding helper to `alchemy` as a shared capability
