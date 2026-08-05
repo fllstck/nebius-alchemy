@@ -376,28 +376,46 @@ Shipped:
       `editors` group resolves INSTANTLY through our client (the group carries
       the `editor` general role — no AccessPermit / bucket policy needed).
 
-**BLOCKER — unresolved: the failure is environmental to the ALCHEMY STACK, not
-the Nebius backend or the api-client.** A from-scratch grpc-js client AND the
-project's own api-client (standalone, mocked credential) both run the full
-sequence — SA create → editors-group membership → v2 access key → deletes —
-**consistently green across 20+ runs**, including: exact request bytes (wire
-captured both sides), exact call sequence (incl. the membership `listMembers`
-dedup and the key `getSecret`), exact stack request shapes (alchemy labels,
-no description), stack-style long names, 0/2s pacing, metadata-generator vs
-per-call metadata, shared vs separate channels, 30s deadlines, bun-test vs
-bun-script, and the identical 417-char binary token (fingerprinted). Inside
-the alchemy stack (`Test.make` + `Nebius.providers()`) the same calls
-intermittently fail with NOT_FOUND on freshly-created resources — on the
-access-key create OR its delete. Conclusion (per the bisect): the difference
-is in the alchemy stack's service environment; the specific mechanism is
-unidentified from the outside (candidates: the harness's layer/scope
-composition, per-deploy channel lifecycle, or a harness-global affecting the
-calls). Next step: instrument the HTTP/2 frames inside the failing stack
-context, or consult the alchemy maintainers.
+**BLOCKER — conclusively diagnosed (steps 1–4 complete) — the failure is a
+server-side inconsistency triggered by the ALCHEMY HARNESS process context;
+no client-side fix exists.** Final findings, in order:
 
-Mitigation shipped: bounded NOT_FOUND retry on the membership create;
-`X-Idempotency-Key` header; fail-fast elsewhere. This also breaks the
-project's pre-existing `access-key.integration.test.ts`.
+1. **Wire frames** (`[CALL]` status+trailer capture, bisect): the failing
+   access-key create's request bytes are byte-identical to the working
+   standalone; the server's `grpc-status-details-bin` carries
+   `nebius.common.ServiceError { code: ResourceNotFound, retry_type: 3 }` —
+   and `3 = NOTHING` per the proto: **"do not retry, fatal"**. So there is no
+   server retry hint to honor (and the gosdk wouldn't retry these either).
+2. **Channel lifecycle** (`[CH]` capture): the `cpl.iam` channel is created
+   once, reused, closed at scope end — identical to the standalone. No
+   per-deploy recreation.
+3. **Phantom SAs**: the harness's SA create intermittently (≈50% of runs)
+   reports success for an entity that is never committed server-side — the
+   in-process GET returns a phantom projection, but a separate process / fresh
+   connection sees nothing (verified by CLI get + list, minutes later, no
+   cleanup). The phantom is invisible to fresh connections but the provider
+   stores its id.
+4. **Access-key create fails even for real SAs in-process**: v1 AND v2
+   access-key creates return NOT_FOUND for a SA that the CLI resolves
+   (in-flight CLI get: EXISTS) — over any in-process channel (fresh channel
+   retry also failed). The SAME create for the SAME SA from a SEPARATE process
+   succeeds (`create OK`). v1 fails identically.
+5. Ruled out client-side: token (fingerprinted), channel reuse, request bytes
+   (base64-compared), alchemy labels, 63-char names, membership interference,
+   retries (12×5s all fail in-process), v1-vs-v2 service, call options
+   (deadline/waitForReady), full-vs-minimal providers layer (reproduces with
+   only 3 resource providers + api-client layers).
+
+**Conclusion**: the Nebius IAM backend consistently treats requests issued
+from the harness process differently — the create operation reports done but
+is intermittently never committed, and access-key account validation cannot
+resolve a committed SA in-process. Identical requests from any other process
+work every time. This needs a report to Nebius support (operation-reported-
+success-but-uncommitted + per-connection resolution inconsistency) and/or the
+alchemy maintainers (what the harness process does differently at the gRPC
+level). Mitigations attempted and reverted: 12×5s NOT_FOUND retry on the
+access-key create (never helps in-process — all retries fail identically; it
+only delays failure by 60s).
 
 ### M4 — Docs & examples
 

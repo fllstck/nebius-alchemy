@@ -88,6 +88,7 @@ describe('Nebius.quotas.v1.QuotaAllowance', () => {
           news: { name: 'compute.disk.size', region: 'eu-west1' },
           output: undefined,
           session: fakeSession,
+        // oxlint-disable-next-line no-explicit-any — reconcile input mock
         } as any).pipe(Effect.provide(layer), Effect.provide(testConfigLayer)),
       )
 
@@ -123,6 +124,7 @@ describe('Nebius.quotas.v1.QuotaAllowance', () => {
           news: { name: 'compute.disk.size', region: 'eu-west1' },
           output: undefined,
           session: fakeSession,
+        // oxlint-disable-next-line no-explicit-any — reconcile input mock
         } as any).pipe(Effect.provide(layer), Effect.provide(testConfigLayer)),
       )
 

@@ -92,17 +92,17 @@ describe('Nebius.iam.v1.GroupMembership', () => {
       expect(createCalled).toBe(false)
     })
 
-    test('create auto-generates the name from the logical id', async () => {
+    test('create sends parentId + alchemy labels and NO metadata.name (API prohibits it)', async () => {
       const svc = await resolveProvider(Module.NebiusGroupMembership.Provider, Module.NebiusGroupMembershipProvider)
 
-      const createCalls: Array<{ metadata: { name: string; parentId: string } }> = []
+      const createCalls: Array<{ metadata: { name?: string; parentId: string; labels?: Record<string, string> } }> = []
       const layer = mockIamLayer({
         groupMembership: {
           get: () => Effect.fail({ _tag: 'GrpcError', code: 5 }),
           listMembers: () => Effect.succeed([]),
-          create: (req: { metadata: { name: string; parentId: string } }) => {
+          create: (req: { metadata: { name?: string; parentId: string; labels?: Record<string, string> } }) => {
             createCalls.push(req)
-            return Effect.succeed(membershipProto('gm-new', req.metadata.name, req.metadata.parentId, 'member-1'))
+            return Effect.succeed(membershipProto('gm-new', req.metadata.name ?? '', req.metadata.parentId, 'member-1'))
           },
           delete: () => Effect.void,
         },
@@ -120,8 +120,11 @@ describe('Nebius.iam.v1.GroupMembership', () => {
       )
 
       expect(createCalls).toHaveLength(1)
-      expect(createCalls[0]!.metadata.name).toBe('gm-gm-test')
+      // Nebius IAM rejects metadata.name on group-membership creates — the
+      // provider must NOT send it.
+      expect(createCalls[0]!.metadata.name).toBeUndefined()
       expect(createCalls[0]!.metadata.parentId).toBe('group-1')
+      expect(createCalls[0]!.metadata.labels?.['alchemy::id']).toBe('gm_test')
     })
   })
 })

@@ -157,7 +157,7 @@ export const readS3Env = Effect.fn('readS3Env')(function* (
     return yield* Effect.fail(
       new InvalidCredentials({
         missing: [...missing],
-        message: `Missing Nebius S3 env bindings: ${missing.join(', ')}. ` + `Did the binding's deploy-time wiring run?`,
+        message: `Missing Nebius S3 env bindings: ${missing.join(', ')}. Did the binding's deploy-time wiring run?`,
       }),
     )
   }

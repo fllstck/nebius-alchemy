@@ -55,6 +55,7 @@ export const stackLayer = Layer.mergeAll(
 /** Structural fake for the plan-status session passed to reconcile/precreate. */
 export const fakeSession = {
   note: (_message: string) => Effect.void,
+  // oxlint-disable-next-line no-explicit-any — structural test mock
 } as any
 
 // ---------------------------------------------------------------------------

@@ -1,16 +1,13 @@
 import * as Effect from 'effect/Effect'
 import * as Config from 'effect/Config'
-import * as Schedule from 'effect/Schedule'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 
 import * as NebiusAccessKeyV2Schema from '../../../../schemas/nebius/iam/v2/access_key'
-import * as NebiusAccessKeyV2ServiceSchema from '../../../../schemas/nebius/iam/v2/access_key_service'
 import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access'
 import * as IamGrpc from '../../../api-client/iam'
 import * as ResourceUtils from '../../utilities.ts'
-import { GrpcError } from '../../../api-client/grpc-utils.ts'
 
 import * as AccessKeySchema from './access-key.schema.ts'
 import * as Factory from '../../factory.ts'
@@ -72,14 +69,8 @@ export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, 
           : NebiusAccessKeyV2Schema.SecretDeliveryMode.INLINE
 
     // Step 1: Create the access key (operation-backed, polls internally).
-    // The SA may be intermittently unresolvable right after its own create
-    // (Nebius returns ResourceNotFound for a just-created SA; observed in the
-    // alchemy-stack sequence but not standalone — the server marks it fatal,
-    // so this retries the whole create a bounded number of times, not the
-    // failed call).
     yield* session.note(`Creating access key for service account (${news.serviceAccountId})`)
-    console.log(`[AK-DBG] parentId=${parentId} sa=${news.serviceAccountId} name=${name} mode=${secretDeliveryMode}`)
-    const req = NebiusAccessKeyV2ServiceSchema.CreateAccessKeyRequest.fromPartial({
+    const key = yield* iamGrpcService.accessKeyV2.create({
       metadata: {
         parentId,
         name,
@@ -93,18 +84,6 @@ export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, 
         secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
       }),
     })
-    console.log(
-      `[AK-DBG] bytes=${Buffer.from(NebiusAccessKeyV2ServiceSchema.CreateAccessKeyRequest.encode(req).finish()).toString('base64')}`,
-    )
-    const key = yield* iamGrpcService.accessKeyV2
-      .create(req)
-      .pipe(
-        Effect.retry({
-          times: 12,
-          schedule: Schedule.spaced('5 seconds'),
-          while: (e) => e instanceof GrpcError && e.code === 5,
-        }),
-      )
 
     // Step 2: Fetch the one-time secret (for non-MYSTERY_BOX modes)
     let secret = ''

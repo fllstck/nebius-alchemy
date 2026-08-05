@@ -203,6 +203,7 @@ describe('NebiusGrpcTransport', () => {
       )
 
       expect(result).toBeInstanceOf(UnknownServiceError)
+      // oxlint-disable-next-line no-explicit-any — structural field access on the error
       expect((result as any).service).toBe('nebius.nonexistent.v1.FakeService')
     })
   })

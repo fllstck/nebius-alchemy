@@ -5,6 +5,7 @@ import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Layer from 'effect/Layer'
 
 import type { GrpcError, GrpcDeadlineExceededError } from '../../modules/api-client/grpc-utils'
+import { GrpcError as GrpcErrorCtor } from '../../modules/api-client/grpc-utils'
 import { makeTenantScopedList, nameChangeRequiresReplace } from '../../modules/resources/factory.ts'
 
 // ---------------------------------------------------------------------------
@@ -194,7 +195,7 @@ describe('isDefaultResource filtering', () => {
     const failingSvcLayer = Layer.succeed(FailingSvc, FailingSvc.of({
       list: (parentId: string) =>
         parentId === 'proj-fail'
-          ? Effect.fail({ _tag: 'GrpcError', code: 7, message: 'permission denied', details: '' } as any)
+          ? Effect.fail(new GrpcErrorCtor({ code: 7, message: 'permission denied', details: '' }))
           : Effect.succeed([{ metadata: { id: 'res-ok', name: 'my-resource', labels: { 'alchemy::id': 'res-ok' } }, spec: { description: '' } }]),
     }))
 
