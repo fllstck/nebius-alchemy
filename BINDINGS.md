@@ -69,9 +69,13 @@ Nebius, (2) env injected into the Worker as `plain_text`/`secret_text` bindings,
   (`yield* Token(`${self.LogicalId}Token`)`), (b) persisting a **one-time
   plaintext secret in its output** so later deploys re-read it. Our
   `iam.v2.AccessKey` already does (b) via `precreate` + preserve-from-output.
-- **Import surface:** `alchemy/Binding` subpath works (`./*` → `src/*.ts`);
-  `Worker` / `WorkerEnvironment` from `alchemy/Cloudflare/Workers/Worker` are
-  workerd-safe (CF's own modules, fetch-based).
+- **Import surface (M0-verified):** `alchemy/Binding` subpath works (`./*` →
+  `src/*.ts`). `Worker` / `WorkerEnvironment` / `isWorker` / `WorkerBinding`
+  come from **`alchemy/Cloudflare/Workers`** (the namespace index) — NOT from
+  `alchemy/Cloudflare/Workers/Worker`: the exports map routes `./Cloudflare/*`
+  to `*/index.ts` only, so multi-segment CF subpaths do not resolve. All
+  workerd-safe (CF's own modules, fetch-based). (For later: `./AWS/Lambda/*`
+  has a file-level entry, so `alchemy/AWS/Lambda/Function` resolves.)
 
 ## Design decisions (locked in)
 
@@ -234,9 +238,27 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
 
 ### M0 — Spike & verification (no code committed)
 
-- [ ] Confirm `import * as Binding from 'alchemy/Binding'` and
-      `Worker` / `WorkerEnvironment` from `alchemy/Cloudflare/Workers/Worker`
-      resolve and type-check from this package
+**Batch 1 — desk checks: DONE**
+
+- [x] Imports resolve + type-check (verified in `spikes/m0/imports.ts`, tsc 7.0.2
+      clean): `alchemy/Binding` (`Binding.Service`, `Binding.Host`);
+      `alchemy/Cloudflare/Workers` (`Worker`, `WorkerEnvironment`, `isWorker`,
+      `WorkerBinding`). Full pattern type-checks: contract, `Layer.effect` with
+      `yield* Worker`, `host.bind\`...\`({ bindings: [plain_text/secret_text] })`,
+      `__ALCHEMY_RUNTIME__` guard, `isWorker` narrowing.
+      **Finding:** deep CF subpaths don't resolve — import from the namespace
+      index (`alchemy/Cloudflare/Workers`), never `.../Workers/Worker`.
+- [x] `s3-lite-client` is workerd-safe (static analysis): zero runtime deps;
+      global `fetch`; WebCrypto `crypto.subtle` for SigV4; no Node builtins
+      anywhere. Path-style by default (`pathStyle ?? true`); accepts full URL
+      `endPoint` (e.g. `https://storage.eu-north1.nebius.cloud`) + `region` +
+      key/secret. → O2 resolved at the static level.
+- [x] `@grpc/grpc-js` is Node-only (D8 premise confirmed): `net`/`http2`/`tls`/
+      `dns`/`zlib` across ~12 build files, `engines: node >= 12.10.0`. Cannot
+      evaluate on workerd — the gRPC module graph must not reach the bundle.
+
+**Batch 2 — build-pipeline experiments (pending)**
+
 - [ ] Confirm `bucket.name` is accessible as a lazy `Output` inside a binding
       impl Layer (same as `bucket.bucketName` usage in AWS S3 bindings)
 - [ ] **D8 validation**: prototype the `await import()`-behind-guard pattern;
