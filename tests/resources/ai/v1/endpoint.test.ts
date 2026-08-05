@@ -17,6 +17,7 @@ const validEndpointProps = {
   environmentVariables: [],
   ports: [{ containerPort: 80, protocol: 'HTTP' }],
   volumes: [],
+  disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
 }
 
 describe('Nebius.ai.v1.Endpoint', () => {
@@ -71,6 +72,14 @@ describe('Nebius.ai.v1.Endpoint', () => {
           authToken: 'secret-token',
           authTokenMysteryboxSecret: { secretId: 'sec-abc123', versionId: 'ver-abc123' },
         }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects missing disk (required by the API)', async () => {
+      const { disk: _disk, ...withoutDisk } = validEndpointProps
+      const result = await runEffect(
+        SchemaModule.validateEndpointProps(withoutDisk).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
     })

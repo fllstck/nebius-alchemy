@@ -25,6 +25,7 @@ integrationTest(
             environmentVariables: [],
             ports: [{ containerPort: 80, protocol: 'HTTP' }],
             volumes: [],
+            disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
           })
           return { network, subnet, endpoint }
         }),

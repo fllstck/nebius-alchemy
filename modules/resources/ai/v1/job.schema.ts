@@ -142,8 +142,8 @@ export const JobPropsSchema = Schema.Struct({
   ports: Schema.Array(PortSchema),
   /** Volumes to be mounted into the job's container. */
   volumes: Schema.Array(VolumeMountSchema),
-  /** Main disk spec for the job. */
-  disk: Schema.optional(JobDiskSchema),
+  /** Main disk spec for the job. Required by the API. */
+  disk: JobDiskSchema,
   /** Public keys authorized for SSH access to the job. */
   sshAuthorizedKeys: Schema.optional(Schema.Array(Schema.String)),
   /** Restart attempts for the job. */

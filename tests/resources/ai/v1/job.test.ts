@@ -18,6 +18,7 @@ const validJobProps = {
   environmentVariables: [{ name: 'FOO', value: 'bar' }],
   ports: [{ containerPort: 8080, protocol: 'HTTP' }],
   volumes: [],
+  disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
 }
 
 describe('Nebius.ai.v1.Job', () => {
@@ -78,6 +79,14 @@ describe('Nebius.ai.v1.Job', () => {
           ...validJobProps,
           disk: { type: 'NOT_A_TYPE', sizeBytes: 10_737_418_240 },
         }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects missing disk (required by the API)', async () => {
+      const { disk: _disk, ...withoutDisk } = validJobProps
+      const result = await runEffect(
+        SchemaModule.validateJobProps(withoutDisk).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
     })

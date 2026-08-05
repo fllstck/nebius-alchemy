@@ -27,6 +27,7 @@ integrationTest(
             environmentVariables: [{ name: 'TEST', value: '1' }],
             ports: [],
             volumes: [],
+            disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
           })
           return { network, subnet, job }
         }),

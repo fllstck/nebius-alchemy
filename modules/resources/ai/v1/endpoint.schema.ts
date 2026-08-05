@@ -50,8 +50,8 @@ export const EndpointPropsSchema = Schema.Struct({
   ports: Schema.Array(JobSchema.PortSchema),
   /** Volumes to be mounted into the endpoint's container. */
   volumes: Schema.Array(JobSchema.VolumeMountSchema),
-  /** Main disk spec for the endpoint. */
-  disk: Schema.optional(JobSchema.JobDiskSchema),
+  /** Main disk spec for the endpoint. Required by the API. */
+  disk: JobSchema.JobDiskSchema,
   /** Public keys authorized for SSH access to the endpoint. */
   sshAuthorizedKeys: Schema.optional(Schema.Array(Schema.String)),
   /** Shared memory size in bytes for the endpoint's container. */
