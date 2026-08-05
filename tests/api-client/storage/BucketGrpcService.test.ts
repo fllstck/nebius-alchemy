@@ -164,6 +164,11 @@ describe('StorageGrpcService (bucket)', () => {
       const bucketName = `alchemy-test-${Date.now()}`
       const projectId = process.env.NEBIUS_PROJECT_ID ?? ''
 
+      // Tracked OUTSIDE the Effect so the cleanup block — which runs on ANY
+      // exit (success, assertion failure, failed gRPC call) — can attempt
+      // deletion of the bucket this test created.
+      let createdBucketId: string | undefined
+
       const result = await Effect.runPromise(
         Effect.gen(function* () {
           const { bucket: svc } = yield* StorageGrpcService
@@ -188,6 +193,7 @@ describe('StorageGrpcService (bucket)', () => {
           expect(typeof bucket.metadata?.id).toBe('string')
           expect(bucket.metadata!.id.length).toBeGreaterThan(0)
           expect(bucket.status?.domainName).toBeDefined()
+          createdBucketId = bucket.metadata!.id
 
           // Get by simplified id string
           const fetched = yield* svc.get(bucket.metadata!.id).pipe(
@@ -200,7 +206,9 @@ describe('StorageGrpcService (bucket)', () => {
             expect(fetched.value.metadata?.id).toBe(bucket.metadata!.id)
           }
 
-          // Delete by simplified id string
+          // Delete by simplified id string — the actual delete under test.
+          // (The Effect.ensuring cleanup below is the safety net for the case
+          // where this fails or the body aborts before reaching it.)
           const deleteResult = yield* svc.delete(bucket.metadata!.id).pipe(
             Effect.map(() => ({ _tag: 'Right' as const })),
             Effect.catch((error) =>
@@ -213,7 +221,27 @@ describe('StorageGrpcService (bucket)', () => {
           }
           expect(deleteResult.value._tag).toBeDefined()
           return { outcome: 'delete-failed' as const }
-        }).pipe(Effect.provide(integrationLayer), Effect.scoped),
+        }).pipe(
+          // Guaranteed cleanup — mirrors the pattern used by every SLOW_TESTS
+          // resource test. Runs on any exit of the body: success, a failed
+          // assertion, or a failed gRPC call. Idempotent: no-op when the
+          // bucket was never created (create failed). Delete failures are
+          // logged only — they must not mask the body's own outcome.
+          Effect.ensuring(
+            Effect.gen(function* () {
+              if (createdBucketId === undefined) return
+              const { bucket: svc } = yield* StorageGrpcService
+              yield* svc.delete(createdBucketId).pipe(
+                Effect.tapError((e) =>
+                  Effect.logError(`[cleanup] bucket delete failed: ${String(e)}`),
+                ),
+                Effect.ignore,
+              )
+            }),
+          ),
+          Effect.provide(integrationLayer),
+          Effect.scoped,
+        ),
       )
 
       expect(result).toBeDefined()
