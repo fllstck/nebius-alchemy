@@ -116,6 +116,7 @@ describe('Nebius.iam.v1.GroupMembership', () => {
           news: { parentId: 'group-1', memberId: 'member-1' },
           output: undefined,
           session: fakeSession,
+        // oxlint-disable-next-line no-explicit-any — reconcile input mock
         } as any).pipe(Effect.provide(layer), Effect.provide(stackLayer)),
       )
 

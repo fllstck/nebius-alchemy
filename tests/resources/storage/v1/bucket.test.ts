@@ -47,6 +47,7 @@ describe('Nebius.storage.v1.Bucket', () => {
 
     test('unresolved news short-circuits to undefined', async () => {
       const svc = await provider()
+      // oxlint-disable-next-line no-explicit-any — runDiff accepts arbitrary props
       expect(await runDiff(svc, { name: Effect.succeed('x') } as any)).toBeUndefined()
     })
   })

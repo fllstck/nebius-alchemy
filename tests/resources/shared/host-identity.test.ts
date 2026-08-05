@@ -1,39 +1,34 @@
 import { describe, expect, test } from 'bun:test'
-import * as Schema from 'effect/Schema'
+import * as Output from 'alchemy/Output'
 import * as HostIdentityModule from '../../../modules/resources/shared/host-identity'
 
-const ENCODED_IDENTITY = {
-  serviceAccountId: 'serviceaccount-abc123',
-  groupId: 'group-xyz789',
-  awsAccessKeyId: 'AKIAIOSFODNN7EXAMPLE',
-  secretAccessKey: 's3cr3t',
-}
-
 describe('host-identity', () => {
-  test('HostIdentity schema class is defined', () => {
-    expect(HostIdentityModule.HostIdentity).toBeDefined()
-  })
-
   test('hostIdentity provisioning fn is defined', () => {
     expect(typeof HostIdentityModule.hostIdentity).toBe('function')
   })
 
-  describe('HostIdentity schema', () => {
-    test('decodes a plain object identity', () => {
-      const decoded = Schema.decodeUnknownSync(HostIdentityModule.HostIdentity)(ENCODED_IDENTITY)
-      expect(String(decoded.serviceAccountId)).toBe('serviceaccount-abc123')
-      expect(String(decoded.groupId)).toBe('group-xyz789')
-      expect(decoded.awsAccessKeyId).toBe('AKIAIOSFODNN7EXAMPLE')
-      expect(decoded.secretAccessKey).toBe('s3cr3t')
-    })
+  test('grantBucketAccess fn is defined', () => {
+    expect(typeof HostIdentityModule.grantBucketAccess).toBe('function')
+  })
 
-    test('rejects a malformed identity (non-string secret)', () => {
-      expect(() =>
-        Schema.decodeUnknownSync(HostIdentityModule.HostIdentity)({
-          ...ENCODED_IDENTITY,
-          secretAccessKey: 123,
-        }),
-      ).toThrow()
+  describe('HostIdentity shape', () => {
+    // The identity carries the lazily-declared resources' OUTPUT expressions,
+    // not resolved strings: resolving them inline (`yield* yield* sa.id`)
+    // hangs/returns undefined inside a binding impl (the ambient
+    // RuntimeContext during a resource lifecycle is not the resolve context).
+    // alchemy resolves the Outputs where they're consumed — Input props and
+    // binding data run through `Output.evaluate` at apply time.
+    test('fields are Output expressions (deferred resolution)', () => {
+      const identity: HostIdentityModule.HostIdentity = {
+        serviceAccountId: Output.literal('serviceaccount-abc123' as never),
+        groupId: Output.literal('group-xyz789' as never),
+        awsAccessKeyId: Output.literal('AKIAIOSFODNN7EXAMPLE'),
+        secretAccessKey: Output.literal('s3cr3t'),
+      }
+      expect(Output.isOutput(identity.serviceAccountId)).toBe(true)
+      expect(Output.isOutput(identity.groupId)).toBe(true)
+      expect(Output.isOutput(identity.awsAccessKeyId)).toBe(true)
+      expect(Output.isOutput(identity.secretAccessKey)).toBe(true)
     })
   })
 })

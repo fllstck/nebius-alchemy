@@ -21,12 +21,13 @@
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Redacted from 'effect/Redacted'
+import * as Output from 'alchemy/Output'
 import * as Schema from 'effect/Schema'
 import * as Binding from 'alchemy/Binding'
 import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { S3Client, S3Errors, type S3ObjectMetadata } from '@bradenmacdonald/s3-lite-client'
 import * as BindHost from '../../shared/bind-host.ts'
+import type { HostIdentity } from '../../shared/host-identity.ts'
 import type { Region } from '../../regions.schema.ts'
 import type { NebiusBucket } from './bucket.ts'
 
@@ -207,14 +208,14 @@ export const toStorageError = (key: string | undefined, error: unknown): Storage
 
 /** Deploy-time env values injected into the Worker (D7 naming, Redacted secret). */
 const bindingEnv = (
-  bucketName: string,
+  bucketName: Output.Output<string>,
   region: string,
-  identity: { awsAccessKeyId: string; secretAccessKey: string },
+  identity: HostIdentity,
 ): Record<string, BindHost.EnvValue> => ({
   NEBIUS_S3_ENDPOINT: `https://storage.${region}.nebius.cloud`,
   NEBIUS_REGION: region,
   NEBIUS_ACCESS_KEY_ID: identity.awsAccessKeyId,
-  NEBIUS_SECRET_ACCESS_KEY: Redacted.make(identity.secretAccessKey),
+  NEBIUS_SECRET_ACCESS_KEY: identity.secretAccessKey,
   NEBIUS_BUCKET_NAME: bucketName,
 })
 
@@ -236,7 +237,7 @@ export const GetObjectBinding = Layer.effect(
     ): Effect.fn.Return<
       (request: GetObjectRequest) => Effect.Effect<GetObjectResult, StorageError>
     > {
-      const BucketName = yield* yield* bucket.name
+      const BucketName = bucket.name
 
       if (!globalThis.__ALCHEMY_RUNTIME__) {
         const region = yield* Effect.orDie(
@@ -249,7 +250,7 @@ export const GetObjectBinding = Layer.effect(
         yield* grantBucketAccess(
           `${host.LogicalId}${bucket.LogicalId}GetObjectAccess`,
           identity,
-          yield* yield* bucket.id,
+          bucket.id,
           'storage.viewer',
         )
         yield* BindHost.bindWorkerEnv(host, 'Nebius.storage.v1.Bucket.GetObject', bindingEnv(BucketName, region, identity))
@@ -314,7 +315,7 @@ export const PutObjectBinding = Layer.effect(
     ): Effect.fn.Return<
       (request: PutObjectRequest) => Effect.Effect<PutObjectResult, StorageError>
     > {
-      const BucketName = yield* yield* bucket.name
+      const BucketName = bucket.name
 
       if (!globalThis.__ALCHEMY_RUNTIME__) {
         const region = yield* Effect.orDie(
@@ -327,7 +328,7 @@ export const PutObjectBinding = Layer.effect(
         yield* grantBucketAccess(
           `${host.LogicalId}${bucket.LogicalId}PutObjectAccess`,
           identity,
-          yield* yield* bucket.id,
+          bucket.id,
           'storage.editor',
         )
         yield* BindHost.bindWorkerEnv(host, 'Nebius.storage.v1.Bucket.PutObject', bindingEnv(BucketName, region, identity))

@@ -15,22 +15,10 @@
  * @internal — consumed via dynamic import from binding modules only.
  */
 import * as Effect from 'effect/Effect'
-import * as Schema from 'effect/Schema'
+import * as Output from 'alchemy/Output'
 import * as Iam from '../iam/index.ts'
-import * as GroupSchema from '../iam/v1/group.schema.ts'
-import * as ServiceAccountSchema from '../iam/v1/service-account.schema.ts'
-
-/** The per-host credential bundle every binding injects into the Worker env. */
-export class HostIdentity extends Schema.Class<HostIdentity>('nebius/bindings/HostIdentity')({
-  serviceAccountId: ServiceAccountSchema.ServiceAccountId,
-  groupId: GroupSchema.GroupId,
-  /** The AWS-compatible access key ID (S3 credentials). */
-  awsAccessKeyId: Schema.String,
-  /** The one-time secret access key. Only available at creation time. */
-  secretAccessKey: Schema.String,
-}) {}
-
-/**
+import type * as GroupSchema from '../iam/v1/group.schema.ts'
+import type * as ServiceAccountSchema from '../iam/v1/service-account.schema.ts'/**
  * Erase the deploy-time Provider requirements of lazily-declared resources.
  *
  * The Binding.Service contract types binding impl fns with `R = never` (same
@@ -44,6 +32,27 @@ export class HostIdentity extends Schema.Class<HostIdentity>('nebius/bindings/Ho
 // oxlint-disable-next-line no-explicit-any
 const unrequiring = <A>(effect: Effect.Effect<A, never, any>): Effect.Effect<A, never, never> =>
   effect as Effect.Effect<A, never, never>
+
+/**
+ * The per-host credential bundle every binding injects into the Worker env.
+ *
+ * Values are the lazily-declared resources' OUTPUT expressions, NOT resolved
+ * strings: resolving them inline (`yield* yield* sa.id`) hangs / returns
+ * undefined inside a binding impl (the ambient RuntimeContext during a
+ * resource lifecycle is not the resolve context). alchemy resolves Outputs
+ * where they're consumed — Input props (AccessPermit) and binding data
+ * (host.bind) are both run through `Output.evaluate` at apply time.
+ */
+export interface HostIdentity {
+  /** The host's service account id. */
+  serviceAccountId: Output.Output<ServiceAccountSchema.ServiceAccountId>
+  /** The host's group id (grant subject). */
+  groupId: Output.Output<GroupSchema.GroupId>
+  /** The AWS-compatible access key ID (S3 credentials). */
+  awsAccessKeyId: Output.Output<string>
+  /** The one-time secret access key. Only available at creation time. */
+  secretAccessKey: Output.Output<string>
+}
 
 /**
  * Lazily declare (or adopt) the per-host identity: a ServiceAccount holding an
@@ -72,12 +81,12 @@ export const hostIdentity = Effect.fn('hostIdentity')(function* (
     }),
   )
 
-  return new HostIdentity({
-    serviceAccountId: yield* yield* sa.id,
-    groupId: yield* yield* group.id,
-    awsAccessKeyId: yield* yield* key.awsAccessKeyId,
-    secretAccessKey: yield* yield* key.secretAccessKey,
-  })
+  return {
+    serviceAccountId: sa.id,
+    groupId: group.id,
+    awsAccessKeyId: key.awsAccessKeyId,
+    secretAccessKey: key.secretAccessKey,
+  }
 })
 
 /**
@@ -87,11 +96,14 @@ export const hostIdentity = Effect.fn('hostIdentity')(function* (
  * the same bucket get distinct permits. The `iam.AccessPermit` resource
  * dedupes by (parentId, resourceId, role) server-side (provider list check),
  * so re-deploys adopt the existing permit instead of duplicating.
+ *
+ * `identity` and `bucketId` are Output expressions (see {@link HostIdentity});
+ * the AccessPermit props (Input) resolve them at apply time.
  */
 export const grantBucketAccess = Effect.fn('grantBucketAccess')(function* (
   logicalId: string,
   identity: HostIdentity,
-  bucketId: string,
+  bucketId: Output.Output<string>,
   role: string,
 ): Effect.fn.Return<void> {
   yield* unrequiring(
