@@ -11,6 +11,7 @@ import * as DnsGrpc from './api-client/dns'
 import * as MysteryBoxGrpc from './api-client/mysterybox'
 import * as KmsGrpc from './api-client/kms'
 import * as QuotasGrpc from './api-client/quotas'
+import * as AiGrpc from './api-client/ai'
 import * as BucketResource from './resources/storage/v1/bucket'
 import * as TransferResource from './resources/storage/v1/transfer'
 import * as ProjectResource from './resources/iam/v2/project'
@@ -34,6 +35,8 @@ import * as SecretVersionResource from './resources/mysterybox/v1/secret-version
 import * as SymmetricKeyResource from './resources/kms/v1/symmetric-key'
 import * as AsymmetricKeyResource from './resources/kms/v1/asymmetric-key'
 import * as QuotaAllowanceResource from './resources/quotas/v1/quota-allowance'
+import * as JobResource from './resources/ai/v1/job'
+import * as EndpointResource from './resources/ai/v1/endpoint'
 import * as ServiceAccountResource from './resources/iam/v1/service-account'
 import * as StaticKeyResource from './resources/iam/v1/static-key'
 import * as AccessKeyResource from './resources/iam/v2/access-key'
@@ -85,6 +88,8 @@ const resources = AlchemyProvider.collection([
   SymmetricKeyResource.NebiusSymmetricKey,
   AsymmetricKeyResource.NebiusAsymmetricKey,
   QuotaAllowanceResource.NebiusQuotaAllowance,
+  JobResource.NebiusJob,
+  EndpointResource.NebiusEndpoint,
 ])
 
 export const providers = () =>
@@ -125,6 +130,8 @@ export const providers = () =>
     Layer.provideMerge(SymmetricKeyResource.NebiusSymmetricKeyProvider),
     Layer.provideMerge(AsymmetricKeyResource.NebiusAsymmetricKeyProvider),
     Layer.provideMerge(QuotaAllowanceResource.NebiusQuotaAllowanceProvider),
+    Layer.provideMerge(JobResource.NebiusJobProvider),
+    Layer.provideMerge(EndpointResource.NebiusEndpointProvider),
     Layer.provideMerge(StorageGrpc.StorageGrpcServiceLive),
     Layer.provideMerge(IamGrpc.IamGrpcServiceLive),
     Layer.provideMerge(VpcGrpc.VpcGrpcServiceLive),
@@ -133,6 +140,8 @@ export const providers = () =>
     Layer.provideMerge(MysteryBoxGrpc.MysteryBoxGrpcServiceLive),
     Layer.provideMerge(KmsGrpc.KmsGrpcServiceLive),
     Layer.provideMerge(QuotasGrpc.QuotasGrpcServiceLive),
+    Layer.provideMerge(AiGrpc.AiGrpcServiceLive),
+  ).pipe(
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),
     Layer.provideMerge(Credentials.fromAuthProvider),
     Layer.provideMerge(AuthProvider.NebiusAuth),

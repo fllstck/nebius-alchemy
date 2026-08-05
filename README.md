@@ -111,6 +111,14 @@ Deploy GPU-accelerated instances, disks, and managed filesystems.
 - **`Nebius.compute.Filesystem`** — Managed NFS filesystems
 - **`Nebius.compute.DiskSnapshot`** — Point-in-time disk snapshots
 
+### AI
+
+Run containerized AI workloads on Nebius AI Cloud. Neither resource supports
+in-place updates — any spec change (or name change) replaces the resource.
+
+- **`Nebius.ai.Job`** — Run-to-completion container workloads (one run per resource; replace to re-run). Supports private registries, MysteryBox secret injection, injected config files, S3 volume mounts, and SSH access
+- **`Nebius.ai.Endpoint`** — Long-running inference endpoints with public/private addresses, optional auth token (inline or MysteryBox secret), and start/stop lifecycle
+
 ### Networking (VPC)
 
 Build complete software-defined network topologies.
