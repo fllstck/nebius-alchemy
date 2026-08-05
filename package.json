@@ -72,7 +72,7 @@
     "@bradenmacdonald/s3-lite-client": "0.9.6",
     "@bufbuild/protobuf": "2.13.0",
     "@grpc/grpc-js": "^1.14.4",
-    "alchemy": "https://pkg.ing/alchemy/7f6143e",
+    "alchemy": "2.0.0-beta.67",
     "long": "5.3.2"
   }
 }
