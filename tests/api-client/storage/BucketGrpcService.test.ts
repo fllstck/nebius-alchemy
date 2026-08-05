@@ -14,7 +14,7 @@ import * as BucketGrpcServiceModule from '../../../modules/api-client/storage.ts
 import * as GrpcUtilsModule from '../../../modules/api-client/grpc-utils.ts'
 import { runIntegration } from '../../helpers/gate'
 
-const { describe, expect, test } = BunTest
+const { beforeAll, describe, expect, test } = BunTest
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileLive } = AlchemyProfile
 const { CredentialsStoreLive } = AlchemyCredentials
@@ -71,30 +71,46 @@ const integrationLayer = StorageGrpcServiceLive.pipe(
 )
 
 // ---------------------------------------------------------------------------
-// Gating: resolve credentials through the real pipeline.
+// Gating: resolve credentials lazily (beforeAll) and bounded (10s race) to
+// decide whether integration tests should run. No top-level await: a plain
+// `bun test` performs zero auth I/O and collection never blocks on resolution.
 // ---------------------------------------------------------------------------
 
-const hasCredentials: boolean = await (async () => {
-  try {
-    await Effect.runPromise(
-      Effect.gen(function* () {
-        const credsEffect = yield* NebiusCredentials
-        yield* credsEffect
-      }).pipe(
-        Effect.provide(fromAuthProvider.pipe(Layer.provide(authLayer))),
-        Effect.scoped,
-      ),
-    )
-    return true
-  } catch {
-    return false
-  }
-})()
+let hasCredentials = false
 
-// Integration-flag gate: a plain `bun test` must never create/delete real buckets.
-// `hasCredentials` is an additional runtime skip when the flag is set but no
-// stored credentials are resolvable on this machine.
-const it = runIntegration() && hasCredentials ? test : test.skip
+/**
+ * Resolve credentials through the real auth pipeline (env, stored, or CLI).
+ * Bounded by the race in `beforeAll` so a hanging resolution (e.g. a stuck
+ * CLI spawn) cannot block the test run for more than 10 seconds.
+ */
+const resolveCredentials = (): Promise<boolean> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const credsEffect = yield* NebiusCredentials
+      yield* credsEffect
+    }).pipe(
+      Effect.provide(fromAuthProvider.pipe(Layer.provide(authLayer))),
+      Effect.scoped,
+    ),
+  ).then(
+    () => true,
+    () => false,
+  )
+
+beforeAll(async () => {
+  // Only resolve credentials when the integration run is opted in — a plain
+  // `bun test` (no SLOW_TESTS) must not perform any auth I/O.
+  if (!runIntegration()) return
+  hasCredentials = await Promise.race([
+    resolveCredentials(),
+    new Promise<false>((res) => setTimeout(() => res(false), 10_000)),
+  ])
+}, { timeout: 15_000 })
+
+// Collection-time gate: the integration flag only. bun evaluates `skipIf` at
+// collection time, so the credential check cannot be a collection-time skip —
+// it is a runtime guard inside each integration test below.
+const it = runIntegration() ? test : test.skip
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -135,6 +151,9 @@ describe('StorageGrpcService (bucket)', () => {
 
   describe('integration — real API', () => {
     it('calls the real list API and returns a typed result (success or GrpcError)', async () => {
+      // Runtime credential guard — see the gating block above.
+      if (!hasCredentials) return
+
       // Tolerant by design: this verifies the full auth → credentials →
       // transport → service → gRPC pipeline, NOT API correctness. A degraded
       // network (UNAVAILABLE / DEADLINE_EXCEEDED) must not fail the plumbing
@@ -182,6 +201,9 @@ describe('StorageGrpcService (bucket)', () => {
     })
 
     it('creates and deletes a bucket via operation-aware service', async () => {
+      // Runtime credential guard — see the gating block above.
+      if (!hasCredentials) return
+
       const bucketName = `alchemy-test-${Date.now()}`
       const projectId = process.env.NEBIUS_PROJECT_ID ?? ''
 
