@@ -6,9 +6,9 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusSymmetricKeySchema from '../../../../schemas/nebius/kms/v1/symmetric_key'
-import * as IamGrpc from '../../../api-client/iam'
-import * as KmsGrpc from '../../../api-client/kms'
+import * as NebiusSymmetricKeySchema from '../../../../schemas/nebius/kms/v1/symmetric_key.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
+import * as KmsGrpc from '../../../api-client/kms.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as SymmetricKeySchema from './symmetric-key.schema.ts'

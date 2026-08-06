@@ -1,7 +1,7 @@
 import * as Alchemy from 'alchemy'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
-import * as IamGrpc from '../../api-client/iam'
+import * as IamGrpc from '../../api-client/iam.ts'
 import * as Validation from '../validation.ts'
 import * as ProjectModule from './v2/project.ts'
 import * as GroupModule from './v1/group.ts'

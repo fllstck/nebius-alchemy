@@ -1,6 +1,6 @@
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
-import * as IamGrpc from '../../api-client/iam'
+import * as IamGrpc from '../../api-client/iam.ts'
 
 /**
  * Resolve all project IDs under the configured tenant.

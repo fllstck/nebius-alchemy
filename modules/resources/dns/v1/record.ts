@@ -4,8 +4,8 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusRecordSchema from '../../../../schemas/nebius/dns/v1/record'
-import * as DnsGrpc from '../../../api-client/dns'
+import * as NebiusRecordSchema from '../../../../schemas/nebius/dns/v1/record.ts'
+import * as DnsGrpc from '../../../api-client/dns.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as RecordSchema from './record.schema.ts'

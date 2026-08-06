@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
-import * as Module from '../../../../modules/resources/iam/v1/static-key'
-import * as Iam from '../../../../modules/api-client/iam'
-import { resolveProvider, runEffect } from '../../../helpers/provider'
-import { mockIamLayer, testConfigLayer, fakeSession, protoMetadata } from '../../../helpers/mocks'
+import * as Module from '../../../../modules/resources/iam/v1/static-key.ts'
+import * as Iam from '../../../../modules/api-client/iam.ts'
+import { resolveProvider, runEffect } from '../../../helpers/provider.ts'
+import { mockIamLayer, testConfigLayer, fakeSession, protoMetadata } from '../../../helpers/mocks.ts'
 
 /**
  * StaticKey is a NON-STANDARD API: the token is issued once via `Issue`

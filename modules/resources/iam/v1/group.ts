@@ -6,8 +6,8 @@ import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
-import * as NebiusGroupSchema from '../../../../schemas/nebius/iam/v1/group'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusGroupSchema from '../../../../schemas/nebius/iam/v1/group.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as GroupSchema from './group.schema.ts'

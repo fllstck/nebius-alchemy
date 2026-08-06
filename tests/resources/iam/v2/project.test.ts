@@ -1,8 +1,8 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as Module from '../../../../modules/resources/iam/v2/project'
-import * as SchemaModule from '../../../../modules/resources/iam/v2/project.schema'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
+import * as Module from '../../../../modules/resources/iam/v2/project.ts'
+import * as SchemaModule from '../../../../modules/resources/iam/v2/project.schema.ts'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 

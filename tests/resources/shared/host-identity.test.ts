@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import * as Output from 'alchemy/Output'
-import * as HostIdentityModule from '../../../modules/resources/shared/host-identity'
+import * as HostIdentityModule from '../../../modules/resources/shared/host-identity.ts'
 
 describe('host-identity', () => {
   test('hostIdentity provisioning fn is defined', () => {

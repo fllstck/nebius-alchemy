@@ -4,8 +4,8 @@ import * as Context from 'effect/Context'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Layer from 'effect/Layer'
 
-import type { GrpcError, GrpcDeadlineExceededError } from '../../modules/api-client/grpc-utils'
-import { GrpcError as GrpcErrorCtor } from '../../modules/api-client/grpc-utils'
+import type { GrpcError, GrpcDeadlineExceededError } from '../../modules/api-client/grpc-utils.ts'
+import { GrpcError as GrpcErrorCtor } from '../../modules/api-client/grpc-utils.ts'
 import { makeTenantScopedList, nameChangeRequiresReplace } from '../../modules/resources/factory.ts'
 
 // ---------------------------------------------------------------------------

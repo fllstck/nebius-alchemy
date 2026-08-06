@@ -1,8 +1,8 @@
 import * as Effect from 'effect/Effect'
-import { Nebius, test } from '../../../helpers/stack'
+import { Nebius, test } from '../../../helpers/stack.ts'
 import { expect } from 'bun:test'
-import { integrationTest } from '../../../helpers/gate'
-import { safeDestroy } from '../../../helpers/cleanup'
+import { integrationTest } from '../../../helpers/gate.ts'
+import { safeDestroy } from '../../../helpers/cleanup.ts'
 
 integrationTest(test.provider, 'Nebius.vpc.v1.Network lifecycle', (stack) =>
   Effect.gen(function* () {

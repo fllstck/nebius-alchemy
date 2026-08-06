@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import type { ScratchStack } from 'alchemy/Test/Bun'
-import { DestroyFailedError, safeDestroy } from './cleanup'
+import { DestroyFailedError, safeDestroy } from './cleanup.ts'
 
 /**
  * Minimal structural ScratchStack whose destroy() behavior is injected.

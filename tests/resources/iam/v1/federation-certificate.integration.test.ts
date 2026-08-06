@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect'
-import { Nebius, test } from '../../../helpers/stack'
+import { Nebius, test } from '../../../helpers/stack.ts'
 import { expect } from 'bun:test'
-import { safeDestroy } from '../../../helpers/cleanup'
+import { safeDestroy } from '../../../helpers/cleanup.ts'
 
 test.provider.skipIf(true)(
   'Nebius.iam.v1.FederationCertificate lifecycle (requires valid SAML federation + X.509 certificate — not practical for automated testing)',

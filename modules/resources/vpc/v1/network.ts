@@ -6,9 +6,9 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusNetworkSchema from '../../../../schemas/nebius/vpc/v1/network'
-import * as IamGrpc from '../../../api-client/iam'
-import * as VpcGrpc from '../../../api-client/vpc'
+import * as NebiusNetworkSchema from '../../../../schemas/nebius/vpc/v1/network.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
+import * as VpcGrpc from '../../../api-client/vpc.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as NetworkSchema from './network.schema.ts'

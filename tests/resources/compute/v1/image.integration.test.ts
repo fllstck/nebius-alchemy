@@ -1,5 +1,5 @@
 import * as Effect from 'effect/Effect'
-import { test } from '../../../helpers/stack'
+import { test } from '../../../helpers/stack.ts'
 
 // NOTE: Image creation requires a source disk or snapshot (spec.source oneof).
 // A full integration test would need to create a disk first, snapshot it,

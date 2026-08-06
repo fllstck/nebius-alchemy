@@ -1,5 +1,5 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../v2/project.schema'
+import * as ProjectSchema from '../v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
 

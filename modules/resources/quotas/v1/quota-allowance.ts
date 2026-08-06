@@ -4,9 +4,9 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 
-import * as NebiusQuotaAllowanceSchema from '../../../../schemas/nebius/quotas/v1/quota_allowance'
-import * as IamGrpc from '../../../api-client/iam'
-import * as QuotasGrpc from '../../../api-client/quotas'
+import * as NebiusQuotaAllowanceSchema from '../../../../schemas/nebius/quotas/v1/quota_allowance.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
+import * as QuotasGrpc from '../../../api-client/quotas.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as QuotaAllowanceSchema from './quota-allowance.schema.ts'

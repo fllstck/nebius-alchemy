@@ -5,9 +5,9 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusStaticKeySchema from '../../../../schemas/nebius/iam/v1/static_key'
-import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusStaticKeySchema from '../../../../schemas/nebius/iam/v1/static_key.ts'
+import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as StaticKeySchema from './static-key.schema.ts'

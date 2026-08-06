@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect'
-import { Nebius, test } from '../../../helpers/stack'
+import { Nebius, test } from '../../../helpers/stack.ts'
 import { expect } from 'bun:test'
-import { safeDestroy } from '../../../helpers/cleanup'
+import { safeDestroy } from '../../../helpers/cleanup.ts'
 
 test.provider.skipIf(true)(
   'Nebius.compute.v1.Filesystem lifecycle (requires paid tier — quota unavailable for trial accounts)',

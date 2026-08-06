@@ -1,4 +1,4 @@
-import * as ProjectSchema from '../../iam/v2/project.schema'
+import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'

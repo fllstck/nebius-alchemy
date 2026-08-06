@@ -1,5 +1,5 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema'
+import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as Ids from './ids.ts'
 
 import * as JobSchema from './job.schema.ts'

@@ -5,8 +5,8 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusGroupMembershipSchema from '../../../../schemas/nebius/iam/v1/group_membership'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusGroupMembershipSchema from '../../../../schemas/nebius/iam/v1/group_membership.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as GroupMembershipSchema from './group-membership.schema.ts'

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import { S3Errors } from '@bradenmacdonald/s3-lite-client'
-import * as Bindings from '../../../../modules/resources/storage/v1/bindings'
+import * as Bindings from '../../../../modules/resources/storage/v1/bindings.ts'
 
 describe('Nebius.storage.v1 bindings', () => {
   test('GetObject contract is defined', () => {

@@ -7,11 +7,11 @@ import * as PlatformNode from '@effect/platform-node'
 import * as AlchemyAuthProvider from 'alchemy/Auth/AuthProvider'
 import * as AlchemyProfile from 'alchemy/Auth/Profile'
 import * as AlchemyCredentials from 'alchemy/Auth/Credentials'
-import * as NebiusAuthModule from '../../modules/AuthProvider'
-import * as NebiusCredentialsModule from '../../modules/Credentials'
+import * as NebiusAuthModule from '../../modules/AuthProvider.ts'
+import * as NebiusCredentialsModule from '../../modules/Credentials.ts'
 import * as GrpcTransportModule from '../../modules/api-client/GrpcTransport.ts'
 import * as EndpointsModule from '../../modules/endpoints.ts'
-import { runIntegration, INTEGRATION_TIMEOUT_MS } from '../helpers/gate'
+import { runIntegration, INTEGRATION_TIMEOUT_MS } from '../helpers/gate.ts'
 
 const { beforeAll, describe, expect, test } = BunTest
 const { UnknownServiceError } = EndpointsModule

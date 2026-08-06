@@ -1,4 +1,4 @@
-import * as RegionsSchema from '../../regions.schema'
+import * as RegionsSchema from '../../regions.schema.ts'
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'

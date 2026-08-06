@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { redact } from './cleanup'
+import { redact } from './cleanup.ts'
 
 describe('redact', () => {
   test('masks api keys in key=value form', () => {

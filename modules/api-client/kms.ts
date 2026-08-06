@@ -1,26 +1,26 @@
 import * as Effect from 'effect'
-import * as NebiusSymmetricKeyServiceSchema from '../../schemas/nebius/kms/v1/symmetric_key_service'
-import type { SymmetricKey } from '../../schemas/nebius/kms/v1/symmetric_key'
+import * as NebiusSymmetricKeyServiceSchema from '../../schemas/nebius/kms/v1/symmetric_key_service.ts'
+import type { SymmetricKey } from '../../schemas/nebius/kms/v1/symmetric_key.ts'
 import {
   GetSymmetricKeyRequest,
   CreateSymmetricKeyRequest,
   UpdateSymmetricKeyRequest,
   DeleteSymmetricKeyRequest,
   ListSymmetricKeysRequest,
-} from '../../schemas/nebius/kms/v1/symmetric_key_service'
-import * as NebiusAsymmetricKeyServiceSchema from '../../schemas/nebius/kms/v1/asymmetric_key_service'
-import type { AsymmetricKey } from '../../schemas/nebius/kms/v1/asymmetric_key'
+} from '../../schemas/nebius/kms/v1/symmetric_key_service.ts'
+import * as NebiusAsymmetricKeyServiceSchema from '../../schemas/nebius/kms/v1/asymmetric_key_service.ts'
+import type { AsymmetricKey } from '../../schemas/nebius/kms/v1/asymmetric_key.ts'
 import {
   GetAsymmetricKeyRequest,
   CreateAsymmetricKeyRequest,
   UpdateAsymmetricKeyRequest,
   DeleteAsymmetricKeyRequest,
   ListAsymmetricKeysRequest,
-} from '../../schemas/nebius/kms/v1/asymmetric_key_service'
-import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata'
-import * as GrpcUtils from './grpc-utils'
-import { NebiusGrpcTransport } from './GrpcTransport'
-import type { CreateInput, UpdateInput } from './types'
+} from '../../schemas/nebius/kms/v1/asymmetric_key_service.ts'
+import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata.ts'
+import * as GrpcUtils from './grpc-utils.ts'
+import { NebiusGrpcTransport } from './GrpcTransport.ts'
+import type { CreateInput, UpdateInput } from './types.ts'
 
 // ---------------------------------------------------------------------------
 // Shared input types (identical for symmetric and asymmetric keys)

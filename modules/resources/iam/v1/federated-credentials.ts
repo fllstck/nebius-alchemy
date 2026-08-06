@@ -6,8 +6,8 @@ import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
-import * as NebiusFedCredsSchema from '../../../../schemas/nebius/iam/v1/federated_credentials'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusFedCredsSchema from '../../../../schemas/nebius/iam/v1/federated_credentials.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as FedCredsSchema from './federated-credentials.schema.ts'

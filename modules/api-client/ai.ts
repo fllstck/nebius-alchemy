@@ -1,12 +1,12 @@
 import * as Effect from 'effect'
-import * as NebiusJobServiceSchema from '../../schemas/nebius/ai/v1/job_service'
-import type { Job } from '../../schemas/nebius/ai/v1/job'
-import * as NebiusEndpointServiceSchema from '../../schemas/nebius/ai/v1/endpoint_service'
-import type { Endpoint } from '../../schemas/nebius/ai/v1/endpoint'
-import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata'
-import * as GrpcUtils from './grpc-utils'
-import { NebiusGrpcTransport } from './GrpcTransport'
-import type { CreateInput } from './types'
+import * as NebiusJobServiceSchema from '../../schemas/nebius/ai/v1/job_service.ts'
+import type { Job } from '../../schemas/nebius/ai/v1/job.ts'
+import * as NebiusEndpointServiceSchema from '../../schemas/nebius/ai/v1/endpoint_service.ts'
+import type { Endpoint } from '../../schemas/nebius/ai/v1/endpoint.ts'
+import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata.ts'
+import * as GrpcUtils from './grpc-utils.ts'
+import { NebiusGrpcTransport } from './GrpcTransport.ts'
+import type { CreateInput } from './types.ts'
 
 // ---------------------------------------------------------------------------
 // Job service — simplified, operation-aware interface

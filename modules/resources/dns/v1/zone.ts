@@ -6,9 +6,9 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusZoneSchema from '../../../../schemas/nebius/dns/v1/zone'
-import * as IamGrpc from '../../../api-client/iam'
-import * as DnsGrpc from '../../../api-client/dns'
+import * as NebiusZoneSchema from '../../../../schemas/nebius/dns/v1/zone.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
+import * as DnsGrpc from '../../../api-client/dns.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as ZoneSchema from './zone.schema.ts'

@@ -1,13 +1,13 @@
 import * as Effect from 'effect'
-import * as NebiusBucketServiceSchema from '../../schemas/nebius/storage/v1/bucket_service'
-import type { Bucket } from '../../schemas/nebius/storage/v1/bucket'
-import * as NebiusTransferServiceSchema from '../../schemas/nebius/storage/v1/transfer_service'
-import type { Transfer } from '../../schemas/nebius/storage/v1/transfer'
-import type { TransferIteration } from '../../schemas/nebius/storage/v1/transfer'
-import * as GrpcUtils from './grpc-utils'
-import { NebiusGrpcTransport } from './GrpcTransport'
-import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata'
-import type { CreateInput, UpdateInput } from './types'
+import * as NebiusBucketServiceSchema from '../../schemas/nebius/storage/v1/bucket_service.ts'
+import type { Bucket } from '../../schemas/nebius/storage/v1/bucket.ts'
+import * as NebiusTransferServiceSchema from '../../schemas/nebius/storage/v1/transfer_service.ts'
+import type { Transfer } from '../../schemas/nebius/storage/v1/transfer.ts'
+import type { TransferIteration } from '../../schemas/nebius/storage/v1/transfer.ts'
+import * as GrpcUtils from './grpc-utils.ts'
+import { NebiusGrpcTransport } from './GrpcTransport.ts'
+import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata.ts'
+import type { CreateInput, UpdateInput } from './types.ts'
 
 // ---------------------------------------------------------------------------
 // Transfer service — operation-aware with Stop/Resume support

@@ -4,8 +4,8 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusAccessPermitSchema from '../../../../schemas/nebius/iam/v1/access_permit'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusAccessPermitSchema from '../../../../schemas/nebius/iam/v1/access_permit.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as AccessPermitSchema from './access-permit.schema.ts'

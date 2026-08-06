@@ -1,9 +1,9 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as Module from '../../../../modules/resources/iam/v1/access-permit'
-import * as SchemaModule from '../../../../modules/resources/iam/v1/access-permit.schema'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
-import { mockIamLayer, stackLayer, fakeSession, protoMetadata } from '../../../helpers/mocks'
+import * as Module from '../../../../modules/resources/iam/v1/access-permit.ts'
+import * as SchemaModule from '../../../../modules/resources/iam/v1/access-permit.schema.ts'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import { mockIamLayer, stackLayer, fakeSession, protoMetadata } from '../../../helpers/mocks.ts'
 
 const { describe, expect, test } = BunTest
 

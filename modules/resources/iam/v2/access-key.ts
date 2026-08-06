@@ -4,9 +4,9 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 
-import * as NebiusAccessKeyV2Schema from '../../../../schemas/nebius/iam/v2/access_key'
-import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusAccessKeyV2Schema from '../../../../schemas/nebius/iam/v2/access_key.ts'
+import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as AccessKeySchema from './access-key.schema.ts'

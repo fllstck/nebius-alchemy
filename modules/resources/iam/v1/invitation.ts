@@ -5,8 +5,8 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusInvitationSchema from '../../../../schemas/nebius/iam/v1/invitation'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusInvitationSchema from '../../../../schemas/nebius/iam/v1/invitation.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as InvitationSchema from './invitation.schema.ts'

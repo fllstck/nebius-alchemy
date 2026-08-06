@@ -4,8 +4,8 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusSecretVersionSchema from '../../../../schemas/nebius/mysterybox/v1/secret_version'
-import * as MysteryBoxGrpc from '../../../api-client/mysterybox'
+import * as NebiusSecretVersionSchema from '../../../../schemas/nebius/mysterybox/v1/secret_version.ts'
+import * as MysteryBoxGrpc from '../../../api-client/mysterybox.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecretVersionSchema from './secret-version.schema.ts'

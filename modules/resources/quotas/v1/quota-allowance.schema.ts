@@ -1,6 +1,6 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema'
-import * as RegionsSchema from '../../regions.schema'
+import * as ProjectSchema from '../../iam/v2/project.schema.ts'
+import * as RegionsSchema from '../../regions.schema.ts'
 
 import * as Validation from '../../validation.ts'
 

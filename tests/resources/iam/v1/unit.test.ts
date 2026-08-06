@@ -1,12 +1,12 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as ServiceAccountModule from '../../../../modules/resources/iam/v1/service-account'
-import * as ServiceAccountSchema from '../../../../modules/resources/iam/v1/service-account.schema'
-import * as StaticKeyModule from '../../../../modules/resources/iam/v1/static-key'
-import * as StaticKeySchema from '../../../../modules/resources/iam/v1/static-key.schema'
-import * as AccessKeyModule from '../../../../modules/resources/iam/v2/access-key'
-import * as AccessKeySchema from '../../../../modules/resources/iam/v2/access-key.schema'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
+import * as ServiceAccountModule from '../../../../modules/resources/iam/v1/service-account.ts'
+import * as ServiceAccountSchema from '../../../../modules/resources/iam/v1/service-account.schema.ts'
+import * as StaticKeyModule from '../../../../modules/resources/iam/v1/static-key.ts'
+import * as StaticKeySchema from '../../../../modules/resources/iam/v1/static-key.schema.ts'
+import * as AccessKeyModule from '../../../../modules/resources/iam/v2/access-key.ts'
+import * as AccessKeySchema from '../../../../modules/resources/iam/v2/access-key.schema.ts'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 

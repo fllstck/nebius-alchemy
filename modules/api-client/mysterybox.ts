@@ -1,19 +1,19 @@
 import * as Effect from 'effect'
-import * as NebiusSecretServiceSchema from '../../schemas/nebius/mysterybox/v1/secret_service'
-import type { Secret } from '../../schemas/nebius/mysterybox/v1/secret'
-import * as NebiusSecretVersionServiceSchema from '../../schemas/nebius/mysterybox/v1/secret_version_service'
-import type { SecretVersion } from '../../schemas/nebius/mysterybox/v1/secret_version'
+import * as NebiusSecretServiceSchema from '../../schemas/nebius/mysterybox/v1/secret_service.ts'
+import type { Secret } from '../../schemas/nebius/mysterybox/v1/secret.ts'
+import * as NebiusSecretVersionServiceSchema from '../../schemas/nebius/mysterybox/v1/secret_version_service.ts'
+import type { SecretVersion } from '../../schemas/nebius/mysterybox/v1/secret_version.ts'
 import {
   GetSecretRequest,
   CreateSecretRequest,
   UpdateSecretRequest,
   DeleteSecretRequest,
   ListSecretsRequest,
-} from '../../schemas/nebius/mysterybox/v1/secret_service'
-import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata'
-import * as GrpcUtils from './grpc-utils'
-import { NebiusGrpcTransport } from './GrpcTransport'
-import type { CreateInput, UpdateInput } from './types'
+} from '../../schemas/nebius/mysterybox/v1/secret_service.ts'
+import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata.ts'
+import * as GrpcUtils from './grpc-utils.ts'
+import { NebiusGrpcTransport } from './GrpcTransport.ts'
+import type { CreateInput, UpdateInput } from './types.ts'
 
 // ---------------------------------------------------------------------------
 // Secret service — simplified, operation-aware interface

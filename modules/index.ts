@@ -1,4 +1,4 @@
-export * from './Provider'
+export * from './Provider.ts'
 
 import * as storage from './resources/storage/v1/index.ts'
 import * as iam from './resources/iam/index.ts'

@@ -6,8 +6,8 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusServiceAccountSchema from '../../../../schemas/nebius/iam/v1/service_account'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusServiceAccountSchema from '../../../../schemas/nebius/iam/v1/service_account.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as ServiceAccountSchema from './service-account.schema.ts'

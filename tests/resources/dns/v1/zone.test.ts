@@ -1,8 +1,8 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as Module from '../../../../modules/resources/dns/v1/zone'
-import * as SchemaModule from '../../../../modules/resources/dns/v1/zone.schema'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
+import * as Module from '../../../../modules/resources/dns/v1/zone.ts'
+import * as SchemaModule from '../../../../modules/resources/dns/v1/zone.schema.ts'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 

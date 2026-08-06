@@ -6,13 +6,13 @@ import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
-import * as NebiusFilesystemSchema from '../../../../schemas/nebius/compute/v1/filesystem'
-import * as ComputeGrpc from '../../../api-client/compute'
+import * as NebiusFilesystemSchema from '../../../../schemas/nebius/compute/v1/filesystem.ts'
+import * as ComputeGrpc from '../../../api-client/compute.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as FilesystemSchema from './filesystem.schema.ts'
 import * as Factory from '../../factory.ts'
-import * as IamGrpc from '../../../api-client/iam'
+import * as IamGrpc from '../../../api-client/iam.ts'
 
 // ----- RESOURCE TYPES
 

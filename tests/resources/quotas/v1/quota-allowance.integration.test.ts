@@ -1,14 +1,14 @@
 import * as Effect from 'effect/Effect'
-import { test } from '../../../helpers/stack'
+import { test } from '../../../helpers/stack.ts'
 import { expect } from 'bun:test'
 import * as Config from 'effect/Config'
-import * as QuotasGrpc from '../../../../modules/api-client/quotas'
-import * as IamGrpc from '../../../../modules/api-client/iam'
-import * as NebiusQuotaAllowanceSchema from '../../../../schemas/nebius/quotas/v1/quota_allowance'
+import * as QuotasGrpc from '../../../../modules/api-client/quotas.ts'
+import * as IamGrpc from '../../../../modules/api-client/iam.ts'
+import * as NebiusQuotaAllowanceSchema from '../../../../schemas/nebius/quotas/v1/quota_allowance.ts'
 import * as ResourceUtils from '../../../../modules/resources/utilities.ts'
 import * as QuotaAllowanceSchema from '../../../../modules/resources/quotas/v1/quota-allowance.schema.ts'
 import { makeTenantScopedList } from '../../../../modules/resources/factory.ts'
-import { integrationTest } from '../../../helpers/gate'
+import { integrationTest } from '../../../helpers/gate.ts'
 
 const toFriendlyAttributes = (
   raw: NebiusQuotaAllowanceSchema.QuotaAllowance,

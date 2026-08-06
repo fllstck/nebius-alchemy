@@ -1,26 +1,26 @@
 import * as Effect from 'effect'
-import * as NebiusZoneServiceSchema from '../../schemas/nebius/dns/v1/zone_service'
-import type { Zone } from '../../schemas/nebius/dns/v1/zone'
+import * as NebiusZoneServiceSchema from '../../schemas/nebius/dns/v1/zone_service.ts'
+import type { Zone } from '../../schemas/nebius/dns/v1/zone.ts'
 import {
   GetZoneRequest,
   CreateZoneRequest,
   UpdateZoneRequest,
   DeleteZoneRequest,
   ListZonesRequest,
-} from '../../schemas/nebius/dns/v1/zone'
-import * as NebiusRecordServiceSchema from '../../schemas/nebius/dns/v1/record_service'
-import type { Record as DnsRecord } from '../../schemas/nebius/dns/v1/record'
+} from '../../schemas/nebius/dns/v1/zone.ts'
+import * as NebiusRecordServiceSchema from '../../schemas/nebius/dns/v1/record_service.ts'
+import type { Record as DnsRecord } from '../../schemas/nebius/dns/v1/record.ts'
 import {
   GetRecordRequest,
   CreateRecordRequest,
   UpdateRecordRequest,
   DeleteRecordRequest,
   ListRecordsRequest,
-} from '../../schemas/nebius/dns/v1/record'
-import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata'
-import * as GrpcUtils from './grpc-utils'
-import { NebiusGrpcTransport } from './GrpcTransport'
-import type { CreateInput, UpdateInput } from './types'
+} from '../../schemas/nebius/dns/v1/record.ts'
+import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata.ts'
+import * as GrpcUtils from './grpc-utils.ts'
+import { NebiusGrpcTransport } from './GrpcTransport.ts'
+import type { CreateInput, UpdateInput } from './types.ts'
 
 // ---------------------------------------------------------------------------
 // Zone service — simplified, operation-aware interface

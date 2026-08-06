@@ -1,5 +1,5 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema'
+import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
 
 import * as Validation from '../../validation.ts'

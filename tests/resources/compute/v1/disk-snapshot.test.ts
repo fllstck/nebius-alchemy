@@ -1,8 +1,8 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as Module from '../../../../modules/resources/compute/v1/disk-snapshot'
-import * as SchemaModule from '../../../../modules/resources/compute/v1/disk-snapshot.schema'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
+import * as Module from '../../../../modules/resources/compute/v1/disk-snapshot.ts'
+import * as SchemaModule from '../../../../modules/resources/compute/v1/disk-snapshot.schema.ts'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 

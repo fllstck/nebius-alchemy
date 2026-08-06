@@ -3,8 +3,8 @@ import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Alchemy from 'alchemy'
 import * as AlchemyTags from 'alchemy/Tags'
-import type { GrpcError, GrpcDeadlineExceededError } from '../api-client/grpc-utils'
-import { GrpcError as GrpcErrorCtor } from '../api-client/grpc-utils'
+import type { GrpcError, GrpcDeadlineExceededError } from '../api-client/grpc-utils.ts'
+import { GrpcError as GrpcErrorCtor } from '../api-client/grpc-utils.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers

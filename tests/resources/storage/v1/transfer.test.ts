@@ -1,8 +1,8 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as Module from '../../../../modules/resources/storage/v1/transfer'
-import * as SchemaModule from '../../../../modules/resources/storage/v1/transfer.schema'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
+import * as Module from '../../../../modules/resources/storage/v1/transfer.ts'
+import * as SchemaModule from '../../../../modules/resources/storage/v1/transfer.schema.ts'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 

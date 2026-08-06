@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as BucketModule from '../../../../modules/resources/storage/v1/bucket'
+import * as BucketModule from '../../../../modules/resources/storage/v1/bucket.ts'
 import * as NebiusBucketSchema from '../../../../schemas/nebius/storage/v1/bucket.ts'
 import * as NebiusStorageBase from '../../../../schemas/nebius/storage/v1/base.ts'
-import { resolveProvider, runDiff } from '../../../helpers/provider'
+import { resolveProvider, runDiff } from '../../../helpers/provider.ts'
 
 const provider = () => resolveProvider(BucketModule.NebiusBucket.Provider, BucketModule.NebiusBucketProvider)
 

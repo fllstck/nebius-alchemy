@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fakeChannel } from './channel'
+import { fakeChannel } from './channel.ts'
 
 describe('fakeChannel', () => {
   test('is a plain structural mock, not a real grpc.Channel', () => {

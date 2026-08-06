@@ -4,7 +4,7 @@ import * as Layer from 'effect/Layer'
 import * as GrpcTransportModule from '../../../modules/api-client/GrpcTransport.ts'
 import * as TransferGrpcServiceModule from '../../../modules/api-client/storage.ts'
 import * as TransferServiceSchema from '../../../schemas/nebius/storage/v1/transfer_service.ts'
-import { fakeChannel } from '../../helpers/channel'
+import { fakeChannel } from '../../helpers/channel.ts'
 
 const { describe, expect, test } = BunTest
 const { NebiusGrpcTransport } = GrpcTransportModule

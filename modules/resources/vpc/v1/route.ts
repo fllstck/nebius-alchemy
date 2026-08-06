@@ -5,8 +5,8 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusRouteSchema from '../../../../schemas/nebius/vpc/v1/route'
-import * as VpcGrpc from '../../../api-client/vpc'
+import * as NebiusRouteSchema from '../../../../schemas/nebius/vpc/v1/route.ts'
+import * as VpcGrpc from '../../../api-client/vpc.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as RouteSchema from './route.schema.ts'

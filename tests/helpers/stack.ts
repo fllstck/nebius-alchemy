@@ -29,7 +29,7 @@
  */
 import * as Test from 'alchemy/Test/Bun'
 
-import { runIntegration } from './gate'
+import { runIntegration } from './gate.ts'
 
 // The full module type so test bodies type-check against the real namespace.
 // oxlint-disable-next-line no-explicit-any — the type is only used for the

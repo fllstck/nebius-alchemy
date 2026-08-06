@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Redacted from 'effect/Redacted'
 import type { Worker } from 'alchemy/Cloudflare/Workers'
-import * as BindHost from '../../../modules/resources/shared/bind-host'
+import * as BindHost from '../../../modules/resources/shared/bind-host.ts'
 
 /** A minimal Worker-shaped host that records `bind` calls instead of registering. */
 const makeMockHost = () => {

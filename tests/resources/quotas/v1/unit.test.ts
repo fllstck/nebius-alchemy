@@ -1,9 +1,9 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
-import * as QuotaAllowanceModule from '../../../../modules/resources/quotas/v1/quota-allowance'
-import * as SchemaModule from '../../../../modules/resources/quotas/v1/quota-allowance.schema'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider'
-import { mockQuotasLayer, testConfigLayer, fakeSession, protoMetadata, ZERO_LONG } from '../../../helpers/mocks'
+import * as QuotaAllowanceModule from '../../../../modules/resources/quotas/v1/quota-allowance.ts'
+import * as SchemaModule from '../../../../modules/resources/quotas/v1/quota-allowance.schema.ts'
+import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import { mockQuotasLayer, testConfigLayer, fakeSession, protoMetadata, ZERO_LONG } from '../../../helpers/mocks.ts'
 
 const { describe, expect, test } = BunTest
 

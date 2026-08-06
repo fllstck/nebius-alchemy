@@ -13,7 +13,7 @@ import {
   type NebiusAuthConfig,
   NEBIUS_AUTH_PROVIDER_NAME,
   type NebiusResolvedCredentials,
-} from '../modules/AuthProvider'
+} from '../modules/AuthProvider.ts'
 
 // ---------------------------------------------------------------------------
 // Layer construction

@@ -1,16 +1,16 @@
 import * as Effect from 'effect'
-import * as NebiusQuotaAllowanceServiceSchema from '../../schemas/nebius/quotas/v1/quota_allowance_service'
-import type { QuotaAllowance } from '../../schemas/nebius/quotas/v1/quota_allowance'
+import * as NebiusQuotaAllowanceServiceSchema from '../../schemas/nebius/quotas/v1/quota_allowance_service.ts'
+import type { QuotaAllowance } from '../../schemas/nebius/quotas/v1/quota_allowance.ts'
 import {
   GetQuotaAllowanceRequest,
   CreateQuotaAllowanceRequest,
   UpdateQuotaAllowanceRequest,
   DeleteQuotaAllowanceRequest,
   ListQuotaAllowancesRequest,
-} from '../../schemas/nebius/quotas/v1/quota_allowance_service'
-import * as GrpcUtils from './grpc-utils'
-import { NebiusGrpcTransport } from './GrpcTransport'
-import type { CreateInput, UpdateInput } from './types'
+} from '../../schemas/nebius/quotas/v1/quota_allowance_service.ts'
+import * as GrpcUtils from './grpc-utils.ts'
+import { NebiusGrpcTransport } from './GrpcTransport.ts'
+import type { CreateInput, UpdateInput } from './types.ts'
 
 // ---------------------------------------------------------------------------
 // QuotaAllowance service

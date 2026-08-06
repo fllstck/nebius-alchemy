@@ -12,8 +12,8 @@ import * as Layer from 'effect/Layer'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import Long from 'long'
 
-import * as Iam from '../../modules/api-client/iam'
-import * as Quotas from '../../modules/api-client/quotas'
+import * as Iam from '../../modules/api-client/iam.ts'
+import * as Quotas from '../../modules/api-client/quotas.ts'
 import { Stack } from 'alchemy/Stack'
 import { Stage } from 'alchemy/Stage'
 

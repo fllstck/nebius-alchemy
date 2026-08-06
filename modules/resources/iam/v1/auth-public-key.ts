@@ -6,9 +6,9 @@ import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
-import * as NebiusAuthPublicKeySchema from '../../../../schemas/nebius/iam/v1/auth_public_key'
-import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access'
-import * as IamGrpc from '../../../api-client/iam'
+import * as NebiusAuthPublicKeySchema from '../../../../schemas/nebius/iam/v1/auth_public_key.ts'
+import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as AuthPublicKeySchema from './auth-public-key.schema.ts'

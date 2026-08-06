@@ -7,7 +7,7 @@ import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusBucketSchema from '../../../../schemas/nebius/storage/v1/bucket.ts'
-import * as IamGrpc from '../../../api-client/iam'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as StorageGrpc from '../../../api-client/storage.ts'
 import * as ResourceUtils from '../../utilities.ts'
 

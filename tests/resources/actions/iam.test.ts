@@ -1,9 +1,9 @@
 import * as Effect from 'effect/Effect'
-import { Nebius, test } from '../../helpers/stack'
+import { Nebius, test } from '../../helpers/stack.ts'
 import { expect } from 'bun:test'
-import * as Validation from '../../../modules/resources/validation'
-import { integrationTest } from '../../helpers/gate'
-import { safeDestroy } from '../../helpers/cleanup'
+import * as Validation from '../../../modules/resources/validation.ts'
+import { integrationTest } from '../../helpers/gate.ts'
+import { safeDestroy } from '../../helpers/cleanup.ts'
 
 // ── IAM Actions ────────────────────────────────────────────────────────────
 

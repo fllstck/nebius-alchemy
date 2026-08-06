@@ -6,9 +6,9 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusImageSchema from '../../../../schemas/nebius/compute/v1/image'
-import * as IamGrpc from '../../../api-client/iam'
-import * as ComputeGrpc from '../../../api-client/compute'
+import * as NebiusImageSchema from '../../../../schemas/nebius/compute/v1/image.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
+import * as ComputeGrpc from '../../../api-client/compute.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as ImageSchema from './image.schema.ts'

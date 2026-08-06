@@ -1,11 +1,11 @@
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
 import * as grpc from '@grpc/grpc-js'
-import { NebiusGrpcTransport } from './GrpcTransport'
-import { OperationServiceClient, GetOperationRequest } from '../../schemas/nebius/common/v1/operation_service'
-import type { Operation } from '../../schemas/nebius/common/v1/operation'
+import { NebiusGrpcTransport } from './GrpcTransport.ts'
+import { OperationServiceClient, GetOperationRequest } from '../../schemas/nebius/common/v1/operation_service.ts'
+import type { Operation } from '../../schemas/nebius/common/v1/operation.ts'
 import type { UnknownServiceError } from '../endpoints.ts'
-import { Warnings as WarningsProto, warning_CodeToJSON } from '../../schemas/nebius/common/v1/warning'
+import { Warnings as WarningsProto, warning_CodeToJSON } from '../../schemas/nebius/common/v1/warning.ts'
 
 // ---------------------------------------------------------------------------
 // gRPC error type
@@ -552,7 +552,7 @@ export const wrapWithOperationPolling = <
  *
  * @example
  * ```ts
- * import { BucketServiceClient } from '../../schemas/nebius/storage/v1/bucket_service'
+ * import { BucketServiceClient } from '../../schemas/nebius/storage/v1/bucket_service.ts'
  *
  * export const StorageGrpcServiceLive = Layer.effect(
  *   StorageGrpcService,

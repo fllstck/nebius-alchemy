@@ -6,9 +6,9 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
-import * as NebiusJobSchema from '../../../../schemas/nebius/ai/v1/job'
-import * as IamGrpc from '../../../api-client/iam'
-import * as AiGrpc from '../../../api-client/ai'
+import * as NebiusJobSchema from '../../../../schemas/nebius/ai/v1/job.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
+import * as AiGrpc from '../../../api-client/ai.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as JobSchema from './job.schema.ts'

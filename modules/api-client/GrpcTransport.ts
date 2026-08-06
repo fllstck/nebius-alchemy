@@ -4,7 +4,7 @@ import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
 import { randomUUID } from 'node:crypto'
 import * as grpc from '@grpc/grpc-js'
-import * as NebiusCredentials from '../Credentials'
+import * as NebiusCredentials from '../Credentials.ts'
 import * as Endpoints from '../endpoints.ts'
 import type { UnknownServiceError } from '../endpoints.ts'
 
