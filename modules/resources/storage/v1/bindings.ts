@@ -219,6 +219,30 @@ const bindingEnv = (
   NEBIUS_BUCKET_NAME: bucketName,
 })
 
+/**
+ * The shared host-identity env must be injected ONCE per host: Cloudflare
+ * rejects duplicate binding names on a single upload, and every capability
+ * (GetObject, PutObject, …) injects the same `NEBIUS_S3_*` values. The first
+ * capability registers them; later ones skip the already-registered names.
+ *
+ * A module-level set is effectively per-deploy: `alchemy deploy` runs one
+ * deploy per process, and `alchemy dev` restarts the exec child per reload.
+ */
+const registeredEnvNames = new Set<string>()
+
+const registerEnvOnce = Effect.fn('registerEnvOnce')(function* (
+  host: Worker,
+  sid: string,
+  env: Record<string, BindHost.EnvValue>,
+): Effect.fn.Return<void> {
+  const fresh = Object.fromEntries(
+    Object.entries(env).filter(([name]) => !registeredEnvNames.has(`${host.LogicalId}:${name}`)),
+  )
+  if (Object.keys(fresh).length === 0) return
+  for (const name of Object.keys(fresh)) registeredEnvNames.add(`${host.LogicalId}:${name}`)
+  yield* BindHost.bindWorkerEnv(host, sid, fresh)
+})
+
 // ---------------------------------------------------------------------------
 // Implementation Layers (Cloudflare Worker host)
 // ---------------------------------------------------------------------------
@@ -253,7 +277,7 @@ export const GetObjectBinding = Layer.effect(
           bucket.id,
           'storage.viewer',
         )
-        yield* BindHost.bindWorkerEnv(host, 'Nebius.storage.v1.Bucket.GetObject', bindingEnv(BucketName, region, identity))
+        yield* registerEnvOnce(host, 'Nebius.storage.v1.Bucket.GetObject', bindingEnv(BucketName, region, identity))
       }
 
       let client: S3Client | undefined
@@ -331,7 +355,7 @@ export const PutObjectBinding = Layer.effect(
           bucket.id,
           'storage.editor',
         )
-        yield* BindHost.bindWorkerEnv(host, 'Nebius.storage.v1.Bucket.PutObject', bindingEnv(BucketName, region, identity))
+        yield* registerEnvOnce(host, 'Nebius.storage.v1.Bucket.PutObject', bindingEnv(BucketName, region, identity))
       }
 
       let client: S3Client | undefined
