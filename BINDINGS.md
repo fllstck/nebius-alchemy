@@ -423,8 +423,8 @@ Shipped fixes in this milestone:
 - [x] **Idempotent deletes**: `makeCrudDelete` swallows `GrpcError` code 5
       (NOT_FOUND) — a delete of an already-gone resource is success. Applies
       to every CRUD resource provider.
-- [x] **`bindings.integration.test.ts` reinstated + completed** — two tests,
-      both stable across repeated runs:
+- [x] **`bindings.integration.test.ts` reinstated + completed** — three tests,
+      stable across repeated runs:
       1. *Identity lifecycle* (SA → default editors-group membership → v2
          access key with INLINE secret) — create + destroy.
       2. *S3 round-trip*: the full binding chain — bucket + SA → editors
@@ -432,6 +432,19 @@ Shipped fixes in this milestone:
          binding Layer builds: full-URL `endPoint`, path-style,
          region-scoped key) → `PutObject`/`GetObject` round-trip against real
          Nebius S3, object cleaned before bucket destroy.
+      3. *Binding impl end-to-end (mocked host)*: runs the REAL
+         `GetObjectBinding`/`PutObjectBinding` layers with a mocked `Worker`
+         host (via the `Self` service) — asserts the deploy-time wiring
+         (hostIdentity chain → both AccessPermits → the 5 `NEBIUS_S3_*` env
+         bindings recorded on the mock) and runs a PUT+GET round-trip through
+         the binding's own runtime client (readS3Env → s3-lite-client) against
+         real Nebius S3.
+- [x] **`AccessPermit` `metadata.name` removal** — the API rejects it (same
+      rule as GroupMembership); provider + `CreateAccessPermitInput` omit it.
+- [x] **Access key created in `reconcile`, not `precreate`** — precreate
+      receives raw props (unresolved refs), so the key couldn't be declared in
+      the same deploy as its SA; reconcile runs after ref resolution, so the
+      one-deploy hostIdentity chain works (secret capture unchanged).
 - [x] **Pre-existing `access-key.integration.test.ts` fixed** with the staged
       pattern — 3/3 green (it was broken by the same partial-redeploy bug).
 - [x] `Group` provider `news = news || {}` guard; `GroupMembership`
@@ -470,39 +483,58 @@ number of `stack.deploy` calls.
       `bun test` green (385), `SLOW_TESTS=1` integration green for the
       bindings + access-key + bucket suites (4/4).
 
-### M4 e2e findings (the `alchemy dev` stretch — attempted, two findings)
+### M4 e2e findings (the `alchemy dev` stretch — deploy-time wiring RESOLVED; runtime blocked)
 
 Running `alchemy dev examples/bindings.ts` (workerd local-worker e2e) surfaced
-TWO issues:
+THREE issues. Two are fixed and the deploy-time wiring is now proven in a real
+dev deploy; the third (the workerd runtime itself) remains with the alchemy
+maintainers.
 
-1. **`alchemy dev` CLI hangs in this environment** (reported for the
-alchemy maintainers): the RPC spawner's sidecar process
-(`alchemy/src/Cloudflare/Local.ts`) crashes with
-`TypeError: The "paths[0]" property must be of type string, got undefined` at
-`path.join(dotAlchemy, "local")` (reproduced by running the sidecar entry
-manually), and the CLI waits forever for its RPC address. It worked on the
-first ever run, then broke — looks like stale state / an environment quirk.
-The local-workerd e2e remains blocked on this.
+1. **A REAL bug in the bindings' deploy-time wiring — FIXED.** The deploy
+   failed with `Error: Expected string at ["serviceAccountId"]` from
+   `new HostIdentity(...)`: the impl resolved lazily-declared resource
+   outputs via `yield* yield* sa.id`, which returns `undefined` in the
+   binding-impl context (the ambient `RuntimeContext` during a resource
+   lifecycle is not the resolve context). The alchemy-blessed pattern (R2
+   `BucketHttp` precedent): pass the **Output/Accessor expressions through**
+   — never resolve inline via double-yield.
+   Applied: `HostIdentity` now holds Outputs; `grantBucketAccess`/
+   `bindingEnv` pass Outputs into AccessPermit props + `bindWorkerEnv` env
+   values (resolved by `Output.evaluate` at apply); `bind-host.ts` accepts
+   Output env values. Validated: the one-deploy hostIdentity chain
+   (SA+group+membership+key) deploys and destroys cleanly, and the
+   **mocked-host impl test** (`bindings.integration.test.ts` test 3) runs the
+   real `GetObjectBinding`/`PutObjectBinding` layers — deploy-time wiring
+   (hostIdentity → grant → env bindings recorded on a mocked `Worker` host
+   via `Self`) + the runtime client (PUT+GET through the binding against real
+   Nebius S3).
+2. **`AccessPermit` sent `metadata.name` — FIXED.** The API rejects it
+   (`3 INVALID_ARGUMENT: metadata.name is not supported`, same rule as
+   GroupMembership). Provider + `CreateAccessPermitInput` now omit it.
+3. **Access-key creation moved from `precreate` to `reconcile`.** A
+   precreate receives RAW props (refs unresolved), so the key could never be
+   declared in the same deploy as its SA (the hostIdentity chain). Reconcile
+   runs after `waitForDeps`/`Output.evaluate` — refs resolve — the one-deploy
+   chain works, secret capture unchanged.
+4. **`examples/bindings.ts`: no `main` for an Effect-native Worker.**
+   `main: import.meta.url` bundled the whole stack module into the worker
+   script (dragging in the workerd lib whose `require.resolve` shim fails
+   under workerd — `Uncaught TypeError: e.resolve is not a function`). The
+   impl IS the entry — omit `main`.
+5. **The dev-deploy result**: the full wiring now executes against real
+   Nebius in `alchemy dev` — hostIdentity chain, bucket, both AccessPermits,
+   the Worker resource, `workerUrl` up. The bindings' deploy-time wiring is
+   PROVEN.
 
-2. **A REAL bug in the bindings' deploy-time wiring** (the first dev run
-exposed it): the deploy fails with
-`Error: Expected string at ["serviceAccountId"]` from `new HostIdentity(...)`.
-The impl resolves lazily-declared resource outputs via
-`yield* yield* sa.id` — and that returns `undefined` in the binding-impl
-context (the ambient `RuntimeContext` during a resource lifecycle is not the
-resolve context; a scratch-stack probe of the same pattern HANGS — 120s
-timeout). The alchemy-blessed pattern (R2 `BucketHttp` precedent): pass the
-**Output/Accessor expressions through** — `yield* bucket.bucketName` yields an
-`Effect<string>` accessor that the runtime client resolves later — never
-resolve inline via double-yield.
-
-**Fix (not yet applied)**: restructure `HostIdentity` to hold Outputs
-(not resolved strings), pass the outputs into the `AccessPermit` props
-(Input resolves refs — the M3-validated path) and into `bindWorkerEnv`'s env
-values (the Worker provider resolves Output expressions in bind data, as R2's
-`bucketName: bucket.bucketName` does); update the M1 host-identity/bind-host
-tests; validate via the M3-style harness path. Until then the bindings are
-M3-tested at the provider level but NOT deploy-time proven.
+**Remaining (alchemy maintainers)**: the workerd RUNTIME doesn't serve
+requests. The RPC bridge connection dies (`CLOSE_WAIT`), the watch restarts
+sidecars on new ports while workerd stays on the dead bridge, and it does not
+respawn after a kill — `curl` hangs. Reproducer: `CI=1
+CLOUDFLARE_API_TOKEN=<32-hex> CLOUDFLARE_ACCOUNT_ID=<32-hex> bun
+node_modules/alchemy/bin/alchemy.js dev examples/bindings.ts` (the local
+worker needs a resolvable Cloudflare profile — `~/.alchemy/profiles.json`
+gained `"Cloudflare": { "method": "env" }`; the token is never actually
+used for local workerd).
 
 ## Adding AWS hosts later
 
