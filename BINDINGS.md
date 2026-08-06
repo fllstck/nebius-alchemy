@@ -485,6 +485,24 @@ number of `stack.deploy` calls.
 
 ### M4 e2e findings (the `alchemy dev` stretch — deploy-time wiring RESOLVED; runtime blocked)
 
+**UPDATE — PRODUCTION VERIFIED ✅ (real Cloudflare deploy).** The example
+deploys to real Cloudflare + real Nebius and serves the full round-trip:
+`POST /` (putObject) and `GET /` (getObject) through the binding's runtime
+client on Cloudflare workerd against Nebius S3 — bucket verified server-side
+with the object present. Two more real bugs found + fixed along the way:
+- **Duplicate binding names**: every capability injected the same `NEBIUS_S3_*`
+  env names → Cloudflare rejected the upload (`Binding name 'NEBIUS_ACCESS_KEY_ID'
+already in use`). Fixed with `registerEnvOnce` — the shared host-identity env
+  is registered once per host (deduped by host + name; module-level set ≈
+  per-deploy since each deploy runs in a fresh process).
+- **The remote provider requires an entry**: the Effect-native worker needs
+  `main` pointing at its own file for real deploys (the dev local provider
+  accepted impl-only). The example now uses a separate entry
+  (`examples/bindings-worker.ts`) with `main: import.meta.url` there — the
+  entry imports only contracts + effect runtime, not the stack machinery.
+
+Earlier findings (still true, context):
+
 Running `alchemy dev examples/bindings.ts` (workerd local-worker e2e) surfaced
 THREE issues. Two are fixed and the deploy-time wiring is now proven in a real
 dev deploy; the third (the workerd runtime itself) remains with the alchemy
