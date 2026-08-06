@@ -5,6 +5,7 @@ export {
   GetObjectBinding,
   PutObject,
   PutObjectBinding,
+  wireAsyncBindings,
   ObjectNotFound,
   BucketNotFound,
   AccessDenied,

@@ -25,12 +25,12 @@ import * as Output from 'alchemy/Output'
 import * as Schema from 'effect/Schema'
 import * as Binding from 'alchemy/Binding'
 import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
+import { Self } from 'alchemy/Self'
 import { S3Client, S3Errors, type S3ObjectMetadata } from '@bradenmacdonald/s3-lite-client'
 import * as BindHost from '../../shared/bind-host.ts'
 import type { HostIdentity } from '../../shared/host-identity.ts'
 import type { Region } from '../../regions.schema.ts'
 import type { NebiusBucket } from './bucket.ts'
-
 // ---------------------------------------------------------------------------
 // Errors (D6) — Schema.TaggedErrorClass, catchable by tag
 // ---------------------------------------------------------------------------
@@ -391,3 +391,41 @@ export const PutObjectBinding = Layer.effect(
     })
   }),
 )
+
+// ---------------------------------------------------------------------------
+// Async-host wiring helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the deploy-time binding wiring for an ASYNC (non-Effect) Worker host.
+ *
+ * An Effect-native worker consumes the `*Binding` layers inside its impl,
+ * where `Self`/`WorkerEnvironment` are in scope. An async worker (`main` +
+ * plain `fetch`) can't — so this runs the same layers against the deployed
+ * host directly: mints the host identity (SA → editors grant → access key),
+ * injects the `NEBIUS_S3_*` env bindings, and registers the bucket grants.
+ * The worker then reads `env` at runtime with s3-lite-client.
+ *
+ * Deploy-time only. The runtime side of the layers is unused by async
+ * workers.
+ */
+export const wireAsyncBindings = Effect.fn('Nebius.storage.v1.Bucket.wireAsyncBindings')(function* (
+  host: Worker,
+  bucket: NebiusBucket,
+): Effect.fn.Return<void> {
+  // The layers' impls yield the Worker host via `Self`; provide it with the
+  // deployed host. The WorkerEnvironment is only consumed by the layers'
+  // runtime side, which async workers don't use — a dummy satisfies the build.
+  // The `as` cast erases the layer requirements (Worker/WorkerEnvironment —
+  // provided here) plus the contract's Provider requirements, which the
+  // stack's providers satisfy at runtime.
+  const provideHost = <A, E>(effect: Effect.Effect<A, E, any>): Effect.Effect<A, E, never> =>
+    effect.pipe(
+      Effect.provide(Layer.mergeAll(GetObjectBinding, PutObjectBinding)),
+      Effect.provide(Layer.succeed(Self('Cloudflare.Worker'), host)),
+      Effect.provide(Layer.succeed(WorkerEnvironment, {})),
+    ) as Effect.Effect<A, E, never>
+
+  yield* provideHost(GetObject(bucket))
+  yield* provideHost(PutObject(bucket))
+})
