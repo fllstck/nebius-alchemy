@@ -34,7 +34,8 @@ import {
 } from '@fllstck/nebius-alchemy/resources/storage/v1/bindings.ts'
 
 const Api = Cloudflare.Worker('Api', {
-  main: './bindings-async-worker.ts',
+  // Resolve relative to this file (the stack lives in examples/), not the CWD.
+  main: import.meta.resolve('./bindings-async-worker.ts', import.meta.url),
 })
 
 export default Alchemy.Stack(
