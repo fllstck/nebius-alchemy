@@ -67,9 +67,7 @@ export default Cloudflare.Worker(
           return HttpServerResponse.text('stored', { status: 201 })
         }
 
-        const read = yield* Effect.exit(
-          getObject({ key: 'hello.txt' }).pipe(Effect.flatMap((result) => result.text)),
-        )
+        const read = yield* Effect.exit(getObject({ key: 'hello.txt' }).pipe(Effect.flatMap((result) => result.text)))
 
         if (Exit.isFailure(read)) return HttpServerResponse.text(`error: ${String(read.cause)}`, { status: 500 })
 
