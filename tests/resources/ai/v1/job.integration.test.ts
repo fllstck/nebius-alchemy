@@ -3,6 +3,34 @@ import { Nebius, test } from '../../../helpers/stack'
 import { expect } from 'bun:test'
 import { integrationTest } from '../../../helpers/gate'
 import { safeDestroy } from '../../../helpers/cleanup'
+import * as VpcGrpc from '../../../../modules/api-client/vpc.ts'
+import * as AiGrpc from '../../../../modules/api-client/ai.ts'
+
+const PROJECT = process.env.NEBIUS_PROJECT_ID!
+
+/** Post-destroy leak verification — see endpoint.integration.test.ts. */
+const verifyNoLeaks = Effect.gen(function* () {
+  const vpc = yield* VpcGrpc.VpcGrpcService
+  const ai = yield* AiGrpc.AiGrpcService
+  const leaked: string[] = []
+
+  const networks = yield* vpc.network.list(PROJECT)
+  for (const n of networks) {
+    if (n.metadata?.name?.startsWith('nebius-ai-v1-')) leaked.push(`network ${n.metadata.name}`)
+  }
+  const subnets = yield* vpc.subnet.list(PROJECT)
+  for (const s of subnets) {
+    if (s.metadata?.name?.startsWith('nebius-ai-v1-')) leaked.push(`subnet ${s.metadata.name}`)
+  }
+  const jobs = yield* ai.job.list(PROJECT)
+  for (const j of jobs) {
+    if (j.metadata?.name?.startsWith('nebius-ai-v1-')) leaked.push(`job ${j.metadata.name}`)
+  }
+
+  if (leaked.length > 0) {
+    return yield* Effect.fail(new Error(`LEAKED after destroy: ${leaked.join(', ')}`))
+  }
+})
 
 integrationTest(
   test.provider,
@@ -36,10 +64,12 @@ integrationTest(
       expect(job.id).toBeDefined()
       expect(typeof job.id).toBe('string')
       expect(job.name).toBeDefined()
-      // Run-to-completion: accept any non-empty state — the job may already
-      // have finished (COMPLETED/FAILED) by the time the operation polls out.
-      expect(job.state).toBeDefined()
-      expect(job.state.length).toBeGreaterThan(0)
-    }).pipe(safeDestroy(stack)),
-  { timeout: 120_000 },
+      // Jobs are short-lived — accept any terminal/in-flight state.
+      expect(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']).toContain(job.state)
+    }).pipe(
+      // Long timeout: the job's VM must settle before the destroy runs
+      // (a mid-create destroy is the historical leak path).
+      safeDestroy(stack, verifyNoLeaks),
+    ),
+  { timeout: 360_000 },
 )

@@ -97,7 +97,10 @@ export class DestroyFailedError extends Schema.TaggedErrorClass<DestroyFailedErr
  *     safeDestroy(stack),
  *   )
  */
-export const safeDestroy = (stack: ScratchStack) =>
+export const safeDestroy = (
+  stack: ScratchStack,
+  verify?: Effect.Effect<unknown, unknown, any>,
+) =>
   <A, E, R>(body: Effect.Effect<A, E, R>): Effect.Effect<A, E | DestroyFailedError, R> =>
     Effect.gen(function* () {
       const exit = yield* Effect.exit(body)
@@ -113,6 +116,18 @@ export const safeDestroy = (stack: ScratchStack) =>
           ),
           Effect.ignore,
         )
+        if (verify) {
+          // Still check for leaks — log loudly (the body's failure wins).
+          yield* Effect.exit(verify).pipe(
+            Effect.tap((v) =>
+              Exit.isFailure(v)
+                ? Effect.logError(
+                    `[cleanup] LEAK VERIFICATION FAILED (body already failed): ${redact(String(v.cause))}`,
+                  )
+                : Effect.void,
+            ),
+          )
+        }
         // Re-raise the original failure (or interruption) unchanged.
         return yield* Effect.failCause(exit.cause)
       }
@@ -126,5 +141,16 @@ export const safeDestroy = (stack: ScratchStack) =>
           (e) => new DestroyFailedError({ message: redact(String(e)) }),
         ),
       )
+      if (verify) {
+        // Any leftover resource after a successful destroy is a leak — fail.
+        yield* verify.pipe(
+          Effect.tapError((e) =>
+            Effect.logError(`[cleanup] LEAK VERIFICATION FAILED: ${redact(String(e))}`),
+          ),
+          Effect.mapError(
+            (e) => new DestroyFailedError({ message: redact(String(e)) }),
+          ),
+        )
+      }
       return exit.value
     })
