@@ -248,10 +248,31 @@ const registerEnvOnce = Effect.fn('registerEnvOnce')(function* (
 // ---------------------------------------------------------------------------
 
 /**
- * GetObject — read an object's content and metadata by key.
+ * Shared scaffolding for the `*Http` storage binding layers — the
+ * `make…HttpBinding` factory pattern from alchemy (cf.
+ * `AWS/IoTWireless/BindingHttp.ts`).
+ *
+ * The whole per-binding chain lives here once: host + `WorkerEnvironment`
+ * resolution, the guarded deploy-time provisioning (host identity → bucket
+ * grant → env injection), and the memoized S3 client. Each capability is a
+ * thin `Layer.effect` over this factory, supplying the sid/span name, the
+ * grant role, and its operation. (Factory returns `Effect.gen` alchemy-style;
+ * the ops themselves are `Effect.fn` so every request traces.)
  */
-export const GetObjectHttp = Layer.effect(
-  GetObject,
+const makeStorageHttpBinding = <Req, A>(options: {
+  /** Short capability name — binding sid, grant id, and span names. */
+  capability: string
+  /** AccessPermit role granted on the bucket (D5: viewer/editor). */
+  role: 'storage.viewer' | 'storage.editor'
+  /**
+   * Build the runtime operation from the memoized client resolver. The op fn
+   * owns the request span (`Nebius.storage.Bucket.<capability>`); the bucket
+   * is baked into the client, so the request carries no resource id.
+   */
+  makeRequest: (
+    getClient: () => Effect.Effect<S3Client, StorageError, never>,
+  ) => (request: Req) => Effect.Effect<A, StorageError, never>
+}) =>
   Effect.gen(function* () {
     const host = yield* Worker
     const env = yield* WorkerEnvironment
@@ -259,7 +280,7 @@ export const GetObjectHttp = Layer.effect(
     return Effect.fn(function* (
       bucket: NebiusBucket,
     ): Effect.fn.Return<
-      (request: GetObjectRequest) => Effect.Effect<GetObjectResult, StorageError>
+      (request: Req) => Effect.Effect<A, StorageError, never>
     > {
       const BucketName = bucket.name
 
@@ -272,16 +293,20 @@ export const GetObjectHttp = Layer.effect(
         )
         const identity = yield* hostIdentity(host.LogicalId)
         yield* grantBucketAccess(
-          `${host.LogicalId}${bucket.LogicalId}GetObjectAccess`,
+          `${host.LogicalId}${bucket.LogicalId}${options.capability}Access`,
           identity,
           bucket.id,
-          'storage.viewer',
+          options.role,
         )
-        yield* registerEnvOnce(host, 'Nebius.storage.v1.Bucket.GetObject', bindingEnv(BucketName, region, identity))
+        yield* registerEnvOnce(
+          host,
+          `Nebius.storage.v1.Bucket.${options.capability}`,
+          bindingEnv(BucketName, region, identity),
+        )
       }
 
       let client: S3Client | undefined
-      const getClient = Effect.fn('GetObject.getClient')(function* (): Effect.fn.Return<S3Client, StorageError> {
+      const getClient = Effect.fn(`${options.capability}.getClient`)(function* (): Effect.fn.Return<S3Client, StorageError> {
         if (client !== undefined) return client
         const values = yield* readS3Env(env)
         const next = yield* Effect.try({
@@ -296,99 +321,85 @@ export const GetObjectHttp = Layer.effect(
         return next
       })
 
-      return Effect.fn('Nebius.storage.Bucket.GetObject')(function* (
-        request: GetObjectRequest,
-      ): Effect.fn.Return<GetObjectResult, StorageError> {
-        const c = yield* getClient()
-        const response = yield* Effect.tryPromise({
-          try: () => c.getObject(request.key),
-          catch: (e) => toStorageError(request.key, e),
-        })
-        const length = response.headers.get('content-length')
-        return {
-          key: request.key,
-          contentType: response.headers.get('content-type'),
-          etag: response.headers.get('etag'),
-          size: length === null ? null : Number(length),
-          body: response.body as ReadableStream<Uint8Array>,
-          text: Effect.tryPromise({
-            try: () => response.text(),
-            catch: (e) => toStorageError(request.key, e),
-          }),
-          bytes: Effect.tryPromise({
-            try: () => response.arrayBuffer(),
-            catch: (e) => toStorageError(request.key, e),
-          }).pipe(Effect.map((buffer) => new Uint8Array(buffer))),
-        }
-      })
+      return options.makeRequest(getClient)
     })
+  })
+
+/**
+ * GetObject operation — read an object's content and metadata by key.
+ */
+const getObjectRequest = (
+  getClient: () => Effect.Effect<S3Client, StorageError, never>,
+) =>
+  Effect.fn('Nebius.storage.Bucket.GetObject')(function* (
+    request: GetObjectRequest,
+  ): Effect.fn.Return<GetObjectResult, StorageError> {
+    const c = yield* getClient()
+    const response = yield* Effect.tryPromise({
+      try: () => c.getObject(request.key),
+      catch: (e) => toStorageError(request.key, e),
+    })
+    const length = response.headers.get('content-length')
+    return {
+      key: request.key,
+      contentType: response.headers.get('content-type'),
+      etag: response.headers.get('etag'),
+      size: length === null ? null : Number(length),
+      body: response.body as ReadableStream<Uint8Array>,
+      text: Effect.tryPromise({
+        try: () => response.text(),
+        catch: (e) => toStorageError(request.key, e),
+      }),
+      bytes: Effect.tryPromise({
+        try: () => response.arrayBuffer(),
+        catch: (e) => toStorageError(request.key, e),
+      }).pipe(Effect.map((buffer) => new Uint8Array(buffer))),
+    }
+  })
+
+/**
+ * PutObject operation — write an object's content by key.
+ */
+const putObjectRequest = (
+  getClient: () => Effect.Effect<S3Client, StorageError, never>,
+) =>
+  Effect.fn('Nebius.storage.Bucket.PutObject')(function* (
+    request: PutObjectRequest,
+  ): Effect.fn.Return<PutObjectResult, StorageError> {
+    const c = yield* getClient()
+    const options: S3ClientPutOptions = {}
+    if (request.contentType !== undefined) {
+      options.metadata = { 'Content-Type': request.contentType }
+    }
+    const info = yield* Effect.tryPromise({
+      try: () => c.putObject(request.key, request.value, options),
+      catch: (e) => toStorageError(request.key, e),
+    })
+    return { etag: info.etag, versionId: info.versionId }
+  })
+
+/**
+ * GetObjectHttp — read an object's content and metadata by key (Cloudflare
+ * Worker host: deploy-time grant + env wiring, s3-lite-client at runtime).
+ */
+export const GetObjectHttp = Layer.effect(
+  GetObject,
+  makeStorageHttpBinding({
+    capability: 'GetObject',
+    role: 'storage.viewer',
+    makeRequest: getObjectRequest,
   }),
 )
 
 /**
- * PutObject — write an object's content by key.
+ * PutObjectHttp — write an object's content by key (Cloudflare Worker host).
  */
 export const PutObjectHttp = Layer.effect(
   PutObject,
-  Effect.gen(function* () {
-    const host = yield* Worker
-    const env = yield* WorkerEnvironment
-
-    return Effect.fn(function* (
-      bucket: NebiusBucket,
-    ): Effect.fn.Return<
-      (request: PutObjectRequest) => Effect.Effect<PutObjectResult, StorageError>
-    > {
-      const BucketName = bucket.name
-
-      if (!globalThis.__ALCHEMY_RUNTIME__) {
-        const region = yield* Effect.orDie(
-          Config.string('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION)),
-        )
-        const { hostIdentity, grantBucketAccess } = yield* Effect.promise(
-          () => import('../../shared/host-identity.ts'),
-        )
-        const identity = yield* hostIdentity(host.LogicalId)
-        yield* grantBucketAccess(
-          `${host.LogicalId}${bucket.LogicalId}PutObjectAccess`,
-          identity,
-          bucket.id,
-          'storage.editor',
-        )
-        yield* registerEnvOnce(host, 'Nebius.storage.v1.Bucket.PutObject', bindingEnv(BucketName, region, identity))
-      }
-
-      let client: S3Client | undefined
-      const getClient = Effect.fn('PutObject.getClient')(function* (): Effect.fn.Return<S3Client, StorageError> {
-        if (client !== undefined) return client
-        const values = yield* readS3Env(env)
-        const next = yield* Effect.try({
-          try: () => makeS3Client(values),
-          catch: (e) =>
-            new S3Error({
-              code: 'InvalidClientConfig',
-              message: e instanceof Error ? e.message : String(e),
-            }),
-        })
-        client = next
-        return next
-      })
-
-      return Effect.fn('Nebius.storage.Bucket.PutObject')(function* (
-        request: PutObjectRequest,
-      ): Effect.fn.Return<PutObjectResult, StorageError> {
-        const c = yield* getClient()
-        const options: S3ClientPutOptions = {}
-        if (request.contentType !== undefined) {
-          options.metadata = { 'Content-Type': request.contentType }
-        }
-        const info = yield* Effect.tryPromise({
-          try: () => c.putObject(request.key, request.value, options),
-          catch: (e) => toStorageError(request.key, e),
-        })
-        return { etag: info.etag, versionId: info.versionId }
-      })
-    })
+  makeStorageHttpBinding({
+    capability: 'PutObject',
+    role: 'storage.editor',
+    makeRequest: putObjectRequest,
   }),
 )
 
