@@ -49,59 +49,70 @@ const toFriendlyAttributes = (
 
 // ----- PROVIDER
 
-export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, {
-  // precreate creates the key and fetches the one-time secret to store in output.
-  precreate: Effect.fn('Nebius.iam.v2.AccessKey.precreate')(function* ({ id, news, session }) {
-    news = yield* AccessKeySchema.validateAccessKeyProps(news)
+interface CreateInput {
+  id: string
+  news: AccessKeySchema.AccessKeyProps
+  session: { note(message: string): Effect.Effect<void> }
+}
 
-    const iamGrpcService = yield* IamGrpc.IamGrpcService
-    const parentId = yield* Config.string('NEBIUS_PROJECT_ID')
+/** Create the key + capture the one-time secret (shared by the create path). */
+const create = Effect.fn('Nebius.iam.v2.AccessKey.create')(function* ({
+  id,
+  news,
+  session,
+}: CreateInput) {
+  news = yield* AccessKeySchema.validateAccessKeyProps(news)
 
-    // Auto-generate name
-    const name = `ak-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
+  const iamGrpcService = yield* IamGrpc.IamGrpcService
+  const parentId = yield* Config.string('NEBIUS_PROJECT_ID')
 
-    // Map secretDeliveryMode string to proto enum
-    const secretDeliveryMode: NebiusAccessKeyV2Schema.SecretDeliveryMode =
-      news.secretDeliveryMode === 'MYSTERY_BOX'
-        ? NebiusAccessKeyV2Schema.SecretDeliveryMode.MYSTERY_BOX
-        : news.secretDeliveryMode === 'EXPLICIT'
-          ? NebiusAccessKeyV2Schema.SecretDeliveryMode.EXPLICIT
-          : NebiusAccessKeyV2Schema.SecretDeliveryMode.INLINE
+  // Auto-generate name
+  const name = `ak-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
 
-    // Step 1: Create the access key (operation-backed, polls internally).
-    yield* session.note(`Creating access key for service account (${news.serviceAccountId})`)
-    const key = yield* iamGrpcService.accessKeyV2.create({
-      metadata: {
-        parentId,
-        name,
-      },
-      spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
-        account: NebiusAccessSchema.Account.fromPartial({
-          serviceAccount: { id: news.serviceAccountId },
-        }),
-        description: news.description || '',
-        ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
-        secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
+  // Map secretDeliveryMode string to proto enum
+  const secretDeliveryMode: NebiusAccessKeyV2Schema.SecretDeliveryMode =
+    news.secretDeliveryMode === 'MYSTERY_BOX'
+      ? NebiusAccessKeyV2Schema.SecretDeliveryMode.MYSTERY_BOX
+      : news.secretDeliveryMode === 'EXPLICIT'
+        ? NebiusAccessKeyV2Schema.SecretDeliveryMode.EXPLICIT
+        : NebiusAccessKeyV2Schema.SecretDeliveryMode.INLINE
+
+  // Step 1: Create the access key (operation-backed, polls internally).
+  yield* session.note(`Creating access key for service account (${news.serviceAccountId})`)
+  const key = yield* iamGrpcService.accessKeyV2.create({
+    metadata: {
+      parentId,
+      name,
+    },
+    spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
+      account: NebiusAccessSchema.Account.fromPartial({
+        serviceAccount: { id: news.serviceAccountId },
       }),
-    })
+      description: news.description || '',
+      ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
+      secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
+    }),
+  })
 
-    // Step 2: Fetch the one-time secret (for non-MYSTERY_BOX modes)
-    let secret = ''
-    if (secretDeliveryMode !== NebiusAccessKeyV2Schema.SecretDeliveryMode.MYSTERY_BOX) {
-      secret = yield* iamGrpcService.accessKeyV2.getSecret(key.metadata!.id)
-    }
+  // Step 2: Fetch the one-time secret (for non-MYSTERY_BOX modes)
+  let secret = ''
+  if (secretDeliveryMode !== NebiusAccessKeyV2Schema.SecretDeliveryMode.MYSTERY_BOX) {
+    secret = yield* iamGrpcService.accessKeyV2.getSecret(key.metadata!.id)
+  }
 
-    return toFriendlyAttributes(key, secret)
-  }),
+  return toFriendlyAttributes(key, secret)
+})
 
-  reconcile: Effect.fn('Nebius.iam.v2.AccessKey.reconcile')(function* ({ id: _, news, output, session }) {
+export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, {
+  reconcile: Effect.fn('Nebius.iam.v2.AccessKey.reconcile')(function* ({ id, news, output, session }) {
     // Access keys are largely immutable — only description can be updated.
-    // precreate always runs before reconcile for greenfield deployments.
+    // Creation happens HERE (in reconcile) — not in a precreate — because
+    // reconcile runs after waitForDeps + Output.evaluate, so the SA ref in
+    // the props is RESOLVED. A precreate would receive raw props with an
+    // unresolved `serviceAccountId` and fail whenever the key is declared in
+    // the same deploy as its SA (the binding hostIdentity chain).
     if (!output) {
-      return yield* Effect.die(
-        `Nebius.iam.v2.AccessKey.reconcile: output is undefined. ` +
-          `Access keys must be created via precreate.`,
-      )
+      return yield* create({ id, news, session })
     }
 
     news = news || {}
@@ -116,7 +127,7 @@ export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, 
 
     if (!key) {
       return yield* Effect.die(
-        `Nebius.iam.v2.AccessKey.reconcile: key ${output.id} disappeared after precreate. ` +
+        `Nebius.iam.v2.AccessKey.reconcile: key ${output.id} disappeared. ` +
           `Access keys cannot be re-created (secret is lost). Replace the resource to get a new key.`,
       )
     }

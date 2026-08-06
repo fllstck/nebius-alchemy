@@ -91,5 +91,5 @@ export default Alchemy.Stack(
       quotas,
       quota,
     }
-  }) as any,
+  }) as any, // oxlint-disable-line no-explicit-any — stack output cast
 )

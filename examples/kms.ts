@@ -51,5 +51,5 @@ export default Alchemy.Stack(
       asymmetricKeyState: asymmetricKey.state,
       asymmetricKeyAlgorithm: asymmetricKey.algorithm,
     }
-  }) as any,
+  }) as any, // oxlint-disable-line no-explicit-any — stack output cast
 )

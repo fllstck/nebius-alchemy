@@ -99,6 +99,7 @@ export class DestroyFailedError extends Schema.TaggedErrorClass<DestroyFailedErr
  */
 export const safeDestroy = (
   stack: ScratchStack,
+  // oxlint-disable-next-line no-explicit-any — verify effect's R varies by test
   verify?: Effect.Effect<unknown, unknown, any>,
 ) =>
   <A, E, R>(body: Effect.Effect<A, E, R>): Effect.Effect<A, E | DestroyFailedError, R> =>

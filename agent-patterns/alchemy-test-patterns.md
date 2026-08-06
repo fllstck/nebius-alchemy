@@ -61,6 +61,15 @@ Rules that fall out of this:
    another resource's id (e.g. an access key needs its service account) can
    NEVER be created in the same deploy as that resource — the dependency must
    already exist (deploy it first, or it must already be in state).
+
+   **The robust fix for providers**: create in `reconcile`, not `precreate`.
+   Reconcile runs after `waitForDeps` + `Output.evaluate`, so refs in the
+   props are RESOLVED — a resource declared in the same deploy as its
+   dependency just works (`reconcile` creates when `output` is undefined;
+   observe/update otherwise). The one-time-secret capture works identically
+   in reconcile. (Applied to `iam.v2.AccessKey` — this is what makes the
+   binding `hostIdentity` chain — SA + group + membership + key — deployable
+   in a single effect.)
 3. **Reference dependencies via the in-effect resource instance** (`sa.id`),
    not a plain string copied from a previous deploy's output. The ref
    declares the dependency edge in the plan, which the destroy phase uses to
