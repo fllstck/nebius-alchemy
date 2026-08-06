@@ -66,7 +66,10 @@ export const NebiusAccessPermitProvider = AlchemyProvider.succeed(NebiusAccessPe
 
       yield* session.note(`Creating Nebius.iam.v1.AccessPermit (${name})`)
       permit = yield* iam.accessPermit.create({
-        metadata: { parentId: news.parentId, name, labels },
+        // Nebius IAM rejects metadata.name on AccessPermit creates (verified
+        // live — same API rule as GroupMembership). The name is only used as
+        // the physical resource name locally; omit it from the request.
+        metadata: { parentId: news.parentId, labels },
         spec: NebiusAccessPermitSchema.AccessPermitSpec.fromJSON({
           resourceId: news.resourceId,
           role: news.role,

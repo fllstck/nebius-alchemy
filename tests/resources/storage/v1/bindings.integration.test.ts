@@ -6,6 +6,9 @@
  * 2. S3 round-trip: the full binding chain — bucket + SA → editors grant →
  *    access key → s3-lite-client (the same client the Worker binding uses) →
  *    PutObject/GetObject round-trip against real Nebius S3.
+ * 3. Binding impl end-to-end: the REAL GetObjectBinding/PutObjectBinding
+ *    layers with a mocked Worker host — deploy-time wiring (hostIdentity →
+ *    grant → env bindings) + the runtime client (readS3Env → s3-lite-client).
  *
  * PATTERN (see agent-patterns/alchemy-test-patterns.md): the scratch stack
  * re-plans on every deploy and DELETES resources absent from the new effect.
@@ -14,8 +17,11 @@
  * resource instance.
  */
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import { expect } from 'bun:test'
 import { S3Client } from '@bradenmacdonald/s3-lite-client'
+import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
+import { Self } from 'alchemy/Self'
 import { Nebius, test } from '../../../helpers/stack'
 import { integrationTest } from '../../../helpers/gate'
 import { safeDestroy } from '../../../helpers/cleanup'
@@ -171,4 +177,177 @@ integrationTest(
       console.log('[RT] cleanup ok')
     }).pipe(safeDestroy(stack)),
   { timeout: 180_000 },
+)
+
+// ---------------------------------------------------------------------------
+// Test 3 — the real binding impl: deploy-time wiring + runtime client
+// ---------------------------------------------------------------------------
+
+const BIND_KEY = 'bindings/impl-roundtrip.txt'
+const BIND_PAYLOAD = 'through the binding impl'
+
+/** The Worker resource's Self service — the mock host satisfies it. */
+// oxlint-disable-next-line no-explicit-any — mock host satisfies the Worker shape
+const mockSelf = (host: any) => Layer.succeed(Self('Cloudflare.Worker'), host)
+
+integrationTest(
+  test.provider,
+  'Nebius.storage bindings — GetObjectBinding impl end-to-end (mocked host)',
+  (stack) =>
+    Effect.gen(function* () {
+      // Stage 1: bucket + a test SA (the SA gives us key material for the
+      // runtime env — the worker would receive these values via bindings).
+      const { bucket, sa } = yield* stack.deploy(
+        Effect.gen(function* () {
+          const bucket = yield* Nebius.storage.Bucket('ImplBucket', {
+            versioningPolicy: 'DISABLED',
+            defaultStorageClass: 'STANDARD',
+            objectAuditLogging: 'NONE',
+            forceStorageClass: false,
+          })
+          const sa = yield* Nebius.iam.ServiceAccount('ImplSA', {
+            description: 'binding impl test SA',
+          })
+          return { bucket, sa }
+        }),
+      )
+      console.log(`[IMPL] bucket: ${bucket.name} sa: ${sa.id}`)
+
+      // Stage 2: a test key for the runtime env (the impl's own hostIdentity
+      // creates a second identity — that is the wiring under test). The
+      // bucket is re-declared (noop) so the re-plan doesn't delete it.
+      const keyOut = yield* stack.deploy(
+        Effect.gen(function* () {
+          yield* Nebius.storage.Bucket('ImplBucket', {
+            versioningPolicy: 'DISABLED',
+            defaultStorageClass: 'STANDARD',
+            objectAuditLogging: 'NONE',
+            forceStorageClass: false,
+          })
+          const sa = yield* Nebius.iam.ServiceAccount('ImplSA', {
+            description: 'binding impl test SA',
+          })
+          yield* Nebius.iam.GroupMembership('ImplMembership', {
+            parentId: EDITORS_GROUP_ID as never,
+            memberId: sa.id,
+          })
+          const key = yield* Nebius.iam.AccessKey('ImplKey', {
+            serviceAccountId: sa.id,
+            secretDeliveryMode: 'INLINE',
+          })
+          return { key }
+        }),
+      )
+      console.log(`[IMPL] test key: ${keyOut.key.awsAccessKeyId}`)
+
+      // Stage 3: run the REAL binding layers with a mocked Worker host.
+      // The impl's deploy-time branch executes: hostIdentity (declares the
+      // mock host's SA+group+membership+key in the same effect),
+      // grantBucketAccess, bindWorkerEnv → recorded on the mock host.
+      // The runtime branch reads the provided WorkerEnvironment (real key
+      // values, as a deployed worker would receive them) and round-trips.
+      const hostCalls: Array<{ sid: string; data: unknown }> = []
+      const mockHost = {
+        LogicalId: 'ImplMockHost',
+        bind: (sid: string, data: unknown) => {
+          hostCalls.push({ sid, data })
+          return Effect.void
+        },
+      } as unknown as Worker
+
+      const runtimeEnv = {
+        NEBIUS_S3_ENDPOINT: `https://storage.${REGION}.nebius.cloud`,
+        NEBIUS_REGION: REGION,
+        NEBIUS_ACCESS_KEY_ID: keyOut.key.awsAccessKeyId,
+        NEBIUS_SECRET_ACCESS_KEY: keyOut.key.secretAccessKey,
+        NEBIUS_BUCKET_NAME: bucket.name,
+      }
+
+      const { readBack } = yield* stack.deploy(
+        Effect.gen(function* () {
+          // Re-declare the FULL resource set (noops) — the re-plan would
+          // otherwise DELETE anything not in this effect (partial-redeploy
+          // rule), including the test key we still need for the cleanup.
+          yield* Nebius.storage.Bucket('ImplBucket', {
+            versioningPolicy: 'DISABLED',
+            defaultStorageClass: 'STANDARD',
+            objectAuditLogging: 'NONE',
+            forceStorageClass: false,
+          })
+          const sa = yield* Nebius.iam.ServiceAccount('ImplSA', {
+            description: 'binding impl test SA',
+          })
+          yield* Nebius.iam.GroupMembership('ImplMembership', {
+            parentId: EDITORS_GROUP_ID as never,
+            memberId: sa.id,
+          })
+          yield* Nebius.iam.AccessKey('ImplKey', {
+            serviceAccountId: sa.id,
+            secretDeliveryMode: 'INLINE',
+          })
+          const bucket = yield* Nebius.storage.Bucket('ImplBucket', {
+            versioningPolicy: 'DISABLED',
+            defaultStorageClass: 'STANDARD',
+            objectAuditLogging: 'NONE',
+            forceStorageClass: false,
+          })
+          const getObject = yield* Nebius.storage.GetObject(bucket).pipe(
+            Effect.provide(Nebius.storage.GetObjectBinding),
+            Effect.provide(mockSelf(mockHost)),
+            Effect.provide(Layer.succeed(WorkerEnvironment, runtimeEnv)),
+          )
+          const putObject = yield* Nebius.storage.PutObject(bucket).pipe(
+            Effect.provide(Nebius.storage.PutObjectBinding),
+            Effect.provide(mockSelf(mockHost)),
+            Effect.provide(Layer.succeed(WorkerEnvironment, runtimeEnv)),
+          )
+
+          // PUT + GET through the binding's own runtime client.
+          yield* putObject({ key: BIND_KEY, value: BIND_PAYLOAD, contentType: 'text/plain' })
+          const read = yield* getObject({ key: BIND_KEY })
+          const text = yield* read.text
+          return { readBack: text }
+        }),
+      )
+
+      expect(readBack).toBe(BIND_PAYLOAD)
+      console.log('[IMPL] runtime round-trip through the binding impl OK')
+
+      // The deploy-time wiring must have registered both capabilities on the
+      // mock host with the full NEBIUS_S3_* env binding set.
+      expect(hostCalls.length).toBeGreaterThanOrEqual(2)
+      const sids = hostCalls.map((c) => c.sid)
+      expect(sids).toContain('Nebius.storage.v1.Bucket.GetObject')
+      expect(sids).toContain('Nebius.storage.v1.Bucket.PutObject')
+      const names = hostCalls.flatMap((c) =>
+        // oxlint-disable-next-line no-explicit-any — mock host data shape
+        ((c.data as any)?.bindings ?? []).map((b: { name: string }) => b.name),
+      )
+      for (const expected of [
+        'NEBIUS_S3_ENDPOINT',
+        'NEBIUS_REGION',
+        'NEBIUS_ACCESS_KEY_ID',
+        'NEBIUS_SECRET_ACCESS_KEY',
+        'NEBIUS_BUCKET_NAME',
+      ]) {
+        expect(names).toContain(expected)
+      }
+      console.log(`[IMPL] wiring recorded ${hostCalls.length} bind calls`)
+
+      // Clean the object so the bucket can be destroyed.
+      yield* Effect.tryPromise({
+        try: () =>
+          new S3Client({
+            endPoint: `https://storage.${REGION}.nebius.cloud`,
+            region: REGION,
+            accessKey: keyOut.key.awsAccessKeyId,
+            secretKey: keyOut.key.secretAccessKey,
+            bucket: bucket.name,
+            pathStyle: true,
+          }).deleteObject(BIND_KEY),
+        catch: (e) => Effect.fail(new Error(`deleteObject failed: ${String(e)}`)),
+      })
+      console.log('[IMPL] cleanup ok')
+    }).pipe(safeDestroy(stack)),
+  { timeout: 240_000 },
 )

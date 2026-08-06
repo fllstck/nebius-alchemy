@@ -341,7 +341,8 @@ export interface GroupMembershipService {
 // ---------------------------------------------------------------------------
 
 export interface CreateAccessPermitInput {
-  readonly metadata: { parentId: string; name: string; labels?: Record<string, string> }
+  /** Nebius IAM rejects metadata.name on AccessPermit creates — never send it. */
+  readonly metadata: { parentId: string; name?: string; labels?: Record<string, string> }
   readonly spec: {}
 }
 
