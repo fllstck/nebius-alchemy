@@ -12,15 +12,26 @@ import * as Exit from 'effect/Exit'
 import { HttpServerRequest } from 'effect/unstable/http/HttpServerRequest'
 import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
 import * as Layer from 'effect/Layer'
-import * as Nebius from '@fllstck/nebius-alchemy'
+// Narrow subpath imports for OUR package — a namespace import of
+// `@fllstck/nebius-alchemy` drags the whole surface (providers) into the
+// worker bundle, defeating tree-shaking.
+import { NebiusBucket } from '@fllstck/nebius-alchemy/resources/storage/v1/bucket.ts'
+import {
+  GetObject,
+  GetObjectBinding,
+  PutObject,
+  PutObjectBinding,
+} from '@fllstck/nebius-alchemy/resources/storage/v1/bindings.ts'
 
 export default Cloudflare.Worker(
   'Api',
   // The entry file itself — bundling `import.meta.url` here is safe: this
   // module only imports the contracts + effect runtime, not the stack.
-  { main: import.meta.url },
+  // Full minification: alchemy defaults to "dce-only", which ships ~2× the
+  // bytes of a minified bundle.
+  { main: import.meta.url, build: { output: { minify: true } } },
   Effect.gen(function* () {
-    const bucket = yield* Nebius.storage.Bucket('assets', {
+    const bucket = yield* NebiusBucket('assets', {
       versioningPolicy: 'DISABLED',
       defaultStorageClass: 'STANDARD',
       objectAuditLogging: 'NONE',
@@ -30,8 +41,8 @@ export default Cloudflare.Worker(
     // Typed runtime clients — one per capability. The `*Binding` layers
     // provide the implementations (deploy-time grant + env wiring + the
     // s3-lite-client runtime); Effect.provide at the end supplies them.
-    const getObject = yield* Nebius.storage.GetObject(bucket)
-    const putObject = yield* Nebius.storage.PutObject(bucket)
+    const getObject = yield* GetObject(bucket)
+    const putObject = yield* PutObject(bucket)
 
     return {
       // GET /    → read 'dir/hello.txt' from the bucket and return it.
@@ -74,6 +85,6 @@ export default Cloudflare.Worker(
     }
   }).pipe(
     // The binding implementations — swap for `*Http` layers on AWS later.
-    Effect.provide(Layer.mergeAll(Nebius.storage.GetObjectBinding, Nebius.storage.PutObjectBinding)),
+    Effect.provide(Layer.mergeAll(GetObjectBinding, PutObjectBinding)),
   ),
 )
