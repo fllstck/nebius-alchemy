@@ -1,10 +1,16 @@
 /**
- * The bindings example Worker — Effect-native entry.
+ * The bindings example Worker — Effect-native entry (inline implementation).
  *
  * This file IS the Worker: it declares the bucket and consumes the typed
- * runtime clients. The stack (`bindings.ts`) deploys it via
- * `main: './bindings-worker.ts'` — keeping the entry separate from the stack
- * so the deployed bundle doesn't drag in the provider/runtime machinery.
+ * runtime clients, and the inline `Effect.gen` implementation is passed
+ * directly to `Cloudflare.Worker`. The stack (`bindings.ts`) imports this
+ * construct and `yield*`s it, keeping the entry separate from the stack so
+ * the deployed bundle doesn't drag in the provider/runtime machinery.
+ *
+ * ⚠️ Keep imports narrow: a namespace import of `@fllstck/nebius-alchemy`
+ * (or `alchemy/Cloudflare`) drags the whole surface (providers, local
+ * workerd runtime) into the worker bundle. Deep subpath imports let
+ * rolldown tree-shake everything the handler doesn't use.
  */
 import * as Cloudflare from 'alchemy/Cloudflare'
 import * as Effect from 'effect/Effect'
@@ -12,9 +18,6 @@ import * as Exit from 'effect/Exit'
 import { HttpServerRequest } from 'effect/unstable/http/HttpServerRequest'
 import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
 import * as Layer from 'effect/Layer'
-// Narrow subpath imports for OUR package — a namespace import of
-// `@fllstck/nebius-alchemy` drags the whole surface (providers) into the
-// worker bundle, defeating tree-shaking.
 import { NebiusBucket } from '@fllstck/nebius-alchemy/resources/storage/v1/bucket.ts'
 import {
   GetObject,
@@ -45,42 +48,32 @@ export default Cloudflare.Worker(
     const putObject = yield* PutObject(bucket)
 
     return {
-      // GET /    → read 'dir/hello.txt' from the bucket and return it.
-      // POST /   → write the request body to 'dir/hello.txt'.
+      // GET /    → read 'hello.txt' from the bucket and return it.
+      // POST /   → write the request body to 'hello.txt'.
       fetch: Effect.gen(function* () {
         const request = yield* HttpServerRequest
 
-        try {
-          if (request.method === 'POST') {
-            const body = yield* Effect.exit(request.text)
-            if (Exit.isFailure(body)) {
-              return HttpServerResponse.text(`error reading body: ${String(body.cause)}`, {
-                status: 400,
-              })
-            }
-            const outcome = yield* Effect.exit(
-              putObject({
-                key: 'dir/hello.txt',
-                value: body.value ?? '',
-                contentType: 'text/plain',
-              }),
-            )
-            if (Exit.isFailure(outcome)) {
-              return HttpServerResponse.text(`error: ${String(outcome.cause)}`, { status: 500 })
-            }
-            return HttpServerResponse.text('stored', { status: 201 })
-          }
+        if (request.method === 'POST') {
+          const body = yield* Effect.exit(request.text)
+          if (Exit.isFailure(body))
+            return HttpServerResponse.text(`error reading body: ${String(body.cause)}`, { status: 400 })
 
-          const read = yield* Effect.exit(
-            getObject({ key: 'dir/hello.txt' }).pipe(Effect.flatMap((result) => result.text)),
+          const outcome = yield* Effect.exit(
+            putObject({ key: 'hello.txt', value: body.value ?? '', contentType: 'text/plain' }),
           )
-          if (Exit.isFailure(read)) {
-            return HttpServerResponse.text(`error: ${String(read.cause)}`, { status: 500 })
-          }
-          return HttpServerResponse.text(read.value, { status: 200 })
-        } catch (error) {
-          return HttpServerResponse.text(`handler error: ${String(error)}`, { status: 500 })
+          if (Exit.isFailure(outcome))
+            return HttpServerResponse.text(`error: ${String(outcome.cause)}`, { status: 500 })
+
+          return HttpServerResponse.text('stored', { status: 201 })
         }
+
+        const read = yield* Effect.exit(
+          getObject({ key: 'hello.txt' }).pipe(Effect.flatMap((result) => result.text)),
+        )
+
+        if (Exit.isFailure(read)) return HttpServerResponse.text(`error: ${String(read.cause)}`, { status: 500 })
+
+        return HttpServerResponse.text(read.value, { status: 200 })
       }),
     }
   }).pipe(
