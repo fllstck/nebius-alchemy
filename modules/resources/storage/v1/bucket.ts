@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -52,7 +53,24 @@ const specDrifted = (current: NebiusBucketSchema.BucketSpec, desired: NebiusBuck
 
 // ----- PROVIDER
 
-export const NebiusBucketProvider = AlchemyProvider.succeed(NebiusBucket, {
+/**
+ * Guard so the bundler's `__ALCHEMY_RUNTIME__` fold DCEs the deploy-time
+ * provider (gRPC clients, protobuf schemas, factory helpers) out of Worker
+ * bundles. A Worker only imports the construct for registration — it never
+ * invokes the provider — but the module-scope `AlchemyProvider.succeed(...)`
+ * call kept the whole deploy graph alive. At deploy time the flag is
+ * undefined and the real provider is registered; in a bundled Worker the
+ * fold turns this into `undefined` and the branch (and every grpc/schema
+ * import it references) is eliminated. Mirrors the D8 bundle-safety pattern
+ * in `resources/storage/v1/bindings.ts`.
+ */
+export const NebiusBucketProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusBucket>,
+  never,
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusBucket>, never, any>)
+  : AlchemyProvider.succeed(NebiusBucket, {
   // Observe → Ensure → Sync → Return
   // (see https://v2.alchemy.run/infrastructure-as-code/custom-provider/#implement-reconcile)
   reconcile: Effect.fn('Nebius.storage.v1.Bucket.reconcile')(function* ({ id, news, output, session }) {
