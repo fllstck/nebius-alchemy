@@ -2,7 +2,10 @@ version: v2
 
 inputs:
   - git_repo: https://github.com/nebius/api.git
-    branch: main
+    # Pinned to a specific commit for reproducible schema generation.
+    # Bump deliberately when new API definitions are needed:
+    #   git ls-remote https://github.com/nebius/api.git refs/heads/main
+    ref: 3e4a6ce862c555d2dc1cc4bd8c16e618870f42bc
 
 plugins:
   - remote: buf.build/community/stephenh-ts-proto
