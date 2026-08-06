@@ -29,7 +29,10 @@ import { safeDestroy } from '../../../helpers/cleanup.ts'
 
 const EDITORS_GROUP_ID = 'group-e00ee03sdm7ht85b9m'
 const REGION = process.env.NEBIUS_REGION ?? 'eu-north1'
-const PROJECT = process.env.NEBIUS_PROJECT_ID!
+// Empty string → the server's default project scope (the profile's project,
+// where these tests deploy). NEBIUS_PROJECT_ID, if set, MUST be that same
+// project — pointing it elsewhere silently blinds the leak check below.
+const PROJECT = process.env.NEBIUS_PROJECT_ID ?? ''
 
 /**
  * Post-destroy leak verification for buckets: any `nebius-storage-*` bucket
@@ -169,29 +172,37 @@ integrationTest(
         pathStyle: true,
       })
 
-      // PutObject → GetObject round-trip.
-      yield* Effect.tryPromise({
-        try: () => client.putObject(OBJECT_KEY, PAYLOAD),
-        catch: (e) => Effect.fail(new Error(`putObject failed: ${String(e)}`)),
-      })
-      console.log('[RT] putObject ok')
+      // PutObject → GetObject round-trip. The object delete runs in a
+      // finally: any failure (PUT, GET, body read, assertion) must not leave
+      // the bucket non-empty — a non-empty bucket is undeletable → silent
+      // leak (the delete has no force option).
+      yield* Effect.gen(function* () {
+        yield* Effect.tryPromise({
+          try: () => client.putObject(OBJECT_KEY, PAYLOAD),
+          catch: (e) => Effect.fail(new Error(`putObject failed: ${String(e)}`)),
+        })
+        console.log('[RT] putObject ok')
 
-      const response = yield* Effect.tryPromise({
-        try: () => client.getObject(OBJECT_KEY),
-        catch: (e) => Effect.fail(new Error(`getObject failed: ${String(e)}`)),
-      })
-      const text = yield* Effect.tryPromise({
-        try: () => response.text(),
-        catch: (e) => Effect.fail(new Error(`reading body failed: ${String(e)}`)),
-      })
-      expect(text).toBe(PAYLOAD)
-      console.log('[RT] getObject round-trip OK')
-
-      // Clean the object so the bucket can be destroyed.
-      yield* Effect.tryPromise({
-        try: () => client.deleteObject(OBJECT_KEY),
-        catch: (e) => Effect.fail(new Error(`deleteObject failed: ${String(e)}`)),
-      })
+        const response = yield* Effect.tryPromise({
+          try: () => client.getObject(OBJECT_KEY),
+          catch: (e) => Effect.fail(new Error(`getObject failed: ${String(e)}`)),
+        })
+        const text = yield* Effect.tryPromise({
+          try: () => response.text(),
+          catch: (e) => Effect.fail(new Error(`reading body failed: ${String(e)}`)),
+        })
+        expect(text).toBe(PAYLOAD)
+        console.log('[RT] getObject round-trip OK')
+      }).pipe(
+        Effect.ensuring(
+          Effect.tryPromise({
+            try: () => client.deleteObject(OBJECT_KEY),
+            catch: (e) => Effect.fail(new Error(`deleteObject failed: ${String(e)}`)),
+            // Swallow cleanup errors: verifyNoBucketLeaks after destroy is the
+            // backstop, and a cleanup failure must not mask the test outcome.
+          }).pipe(Effect.catchCause(() => Effect.void)),
+        ),
+      )
       console.log('[RT] cleanup ok')
     }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
   { timeout: 180_000 },
@@ -320,12 +331,32 @@ integrationTest(
             Effect.provide(Layer.succeed(WorkerEnvironment, runtimeEnv)),
           )
 
-          // PUT + GET through the binding's own runtime client.
+          // PUT + GET through the binding's own runtime client. The object
+          // delete runs in a finally: any failure (PUT, GET, body read, or
+          // the assertions below) must not leave the bucket non-empty — a
+          // non-empty bucket is undeletable → silent leak.
           yield* putObject({ key: BIND_KEY, value: BIND_PAYLOAD, contentType: 'text/plain' })
           const read = yield* getObject({ key: BIND_KEY })
           const text = yield* read.text
           return { readBack: text }
-        }),
+        }).pipe(
+          Effect.ensuring(
+            Effect.tryPromise({
+              try: () =>
+                new S3Client({
+                  endPoint: `https://storage.${REGION}.nebius.cloud`,
+                  region: REGION,
+                  accessKey: keyOut.key.awsAccessKeyId,
+                  secretKey: keyOut.key.secretAccessKey,
+                  bucket: bucket.name,
+                  pathStyle: true,
+                }).deleteObject(BIND_KEY),
+              catch: (e) => Effect.fail(new Error(`deleteObject failed: ${String(e)}`)),
+              // Swallow cleanup errors: verifyNoBucketLeaks after destroy is
+              // the backstop, and a cleanup failure must not mask the result.
+            }).pipe(Effect.catchCause(() => Effect.void)),
+          ),
+        ),
       )
 
       expect(readBack).toBe(BIND_PAYLOAD)
@@ -354,21 +385,6 @@ integrationTest(
         expect(names).toContain(expected)
       }
       console.log(`[IMPL] wiring recorded ${hostCalls.length} bind calls`)
-
-      // Clean the object so the bucket can be destroyed.
-      yield* Effect.tryPromise({
-        try: () =>
-          new S3Client({
-            endPoint: `https://storage.${REGION}.nebius.cloud`,
-            region: REGION,
-            accessKey: keyOut.key.awsAccessKeyId,
-            secretKey: keyOut.key.secretAccessKey,
-            bucket: bucket.name,
-            pathStyle: true,
-          }).deleteObject(BIND_KEY),
-        catch: (e) => Effect.fail(new Error(`deleteObject failed: ${String(e)}`)),
-      })
-      console.log('[IMPL] cleanup ok')
     }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
   { timeout: 240_000 },
 )
