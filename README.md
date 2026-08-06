@@ -221,7 +221,8 @@ Currently available (Cloudflare Workers):
 | `Nebius.storage.PutObject` | `Nebius.storage.PutObjectHttp` | s3-lite-client (`PUT object`) |
 
 **Roadmap**: AWS Lambda/ECS/EKS hosts are a documented extension point — the
-same contracts with `*Http` layers pushing `{ env }` instead of CF bindings.
+same contracts with `*FunctionHttp` layers pushing `{ env }` instead of
+Worker `*Http` bindings.
 AI endpoint bindings (`ChatCompletions`) are deferred.
 
 ### Bindings env reference

@@ -113,7 +113,7 @@ describe('Nebius.iam.v1.AccessPermit', () => {
       expect(createCalled).toBe(false)
     })
 
-    test('create auto-generates the name — user-provided name is ignored', async () => {
+    test('create omits metadata.name — the API rejects it (verified live)', async () => {
       const svc = await resolveProvider(Module.NebiusAccessPermit.Provider, Module.NebiusAccessPermitProvider)
 
       const createCalls: Array<{ metadata: { name: string; parentId: string } }> = []
@@ -141,8 +141,10 @@ describe('Nebius.iam.v1.AccessPermit', () => {
       )
 
       expect(createCalls).toHaveLength(1)
-      // Auto-generated from the logical id, NOT the user's name.
-      expect(createCalls[0]!.metadata.name).toBe('ap-ap-test')
+      // Nebius IAM rejects metadata.name on AccessPermit creates (same rule as
+      // GroupMembership) — the provider omits it; the name is only used
+      // locally as the physical resource name.
+      expect(createCalls[0]!.metadata.name).toBeUndefined()
       expect(createCalls[0]!.metadata.parentId).toBe('group-1')
     })
   })

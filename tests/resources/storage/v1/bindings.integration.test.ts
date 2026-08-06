@@ -331,12 +331,15 @@ integrationTest(
       expect(readBack).toBe(BIND_PAYLOAD)
       console.log('[IMPL] runtime round-trip through the binding impl OK')
 
-      // The deploy-time wiring must have registered both capabilities on the
-      // mock host with the full NEBIUS_S3_* env binding set.
-      expect(hostCalls.length).toBeGreaterThanOrEqual(2)
+      // The deploy-time wiring must have registered the shared host-identity
+      // env on the mock host. registerEnvOnce dedupes by (host, name): the
+      // first capability (GetObject) registers all 5 NEBIUS_S3_* names and
+      // PutObject's attempt is a no-op (Cloudflare rejects duplicate binding
+      // names on a single upload). PutObject's grant is still declared — as
+      // an AccessPermit resource in the deploy effect, not a host.bind call.
+      expect(hostCalls.length).toBeGreaterThanOrEqual(1)
       const sids = hostCalls.map((c) => c.sid)
       expect(sids).toContain('Nebius.storage.v1.Bucket.GetObject')
-      expect(sids).toContain('Nebius.storage.v1.Bucket.PutObject')
       const names = hostCalls.flatMap((c) =>
         // oxlint-disable-next-line no-explicit-any — mock host data shape
         ((c.data as any)?.bindings ?? []).map((b: { name: string }) => b.name),
