@@ -14,7 +14,7 @@ export default Cloudflare.Worker("Api", { main: import.meta.url },
     const bucket = yield* Nebius.storage.Bucket("assets")
     const getObject = yield* Nebius.storage.Bucket.GetObject(bucket)
     return { fetch: /* uses getObject */ }
-  }).pipe(Effect.provide(Nebius.storage.Bucket.GetObjectBinding)),
+  }).pipe(Effect.provide(Nebius.storage.GetObjectHttp)),
 )
 ```
 
@@ -149,12 +149,13 @@ examples/bindings.ts                      # Cloudflare Worker stack
 README.md                                 # Bindings section
 ```
 
-Exports (v1 — `*Http` reserved for §AWS):
+Exports (v1 — `*Http` = HTTP-backed credential binding; the AWS arm reserves
+`*FunctionHttp` for §AWS):
 
 ```ts
 Nebius.storage.GetObject          // contract (callable)
-Nebius.storage.GetObjectBinding   // Cloudflare Worker Layer
-// (future) Nebius.storage.GetObjectHttp  // AWS-family Layer — see §AWS later
+Nebius.storage.GetObjectHttp      // Cloudflare Worker Layer
+// (future) Nebius.storage.GetObjectFunctionHttp  // AWS-family Layer — see §AWS later
 // tags: "Nebius.storage.v1.Bucket.GetObject"
 ```
 
@@ -217,7 +218,7 @@ export interface GetObject extends Binding.Service<
 
 export const GetObject = Binding.Service<GetObject>("Nebius.storage.v1.Bucket.GetObject")
 
-export const GetObjectBinding = Layer.effect(GetObject, Effect.gen(function* () {
+export const GetObjectHttp = Layer.effect(GetObject, Effect.gen(function* () {
   const host = yield* Worker
   return Effect.fn(function* (bucket: NebiusBucket) {
     // Attribute access is lazy: `bucket.name` is an Effect yielding an
@@ -337,7 +338,7 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
       from the action→role table; grant via `iam.AccessPermit` on the bucket
       (D5 updated).
 - [x] `modules/resources/storage/v1/bindings.ts`: `GetObject` + `PutObject`
-      contracts; `GetObjectBinding` / `PutObjectBinding` CF Layers
+      contracts; `GetObjectHttp` / `PutObjectHttp` CF Layers
       (hostIdentity → grantBucketAccess → bindWorkerEnv → s3-lite-client
       runtime client reading `WorkerEnvironment`; client memoized per binding;
       bucket name via the client's default-bucket option, so the request type
@@ -433,7 +434,7 @@ Shipped fixes in this milestone:
          region-scoped key) → `PutObject`/`GetObject` round-trip against real
          Nebius S3, object cleaned before bucket destroy.
       3. *Binding impl end-to-end (mocked host)*: runs the REAL
-         `GetObjectBinding`/`PutObjectBinding` layers with a mocked `Worker`
+         `GetObjectHttp`/`PutObjectHttp` layers with a mocked `Worker`
          host (via the `Self` service) — asserts the deploy-time wiring
          (hostIdentity chain → both AccessPermits → the 5 `NEBIUS_S3_*` env
          bindings recorded on the mock) and runs a PUT+GET round-trip through
@@ -522,7 +523,7 @@ maintainers.
    Output env values. Validated: the one-deploy hostIdentity chain
    (SA+group+membership+key) deploys and destroys cleanly, and the
    **mocked-host impl test** (`bindings.integration.test.ts` test 3) runs the
-   real `GetObjectBinding`/`PutObjectBinding` layers — deploy-time wiring
+   real `GetObjectHttp`/`PutObjectHttp` layers — deploy-time wiring
    (hostIdentity → grant → env bindings recorded on a mocked `Worker` host
    via `Self`) + the runtime client (PUT+GET through the binding against real
    Nebius S3).
@@ -574,10 +575,13 @@ clients, or `host-identity.ts`.
 
 ### AWS-specific things to verify when adding
 
-1. **One new Layer per capability**: `GetObjectHttp` / `PutObjectHttp` =
+1. **One new Layer per capability**: `GetObjectFunctionHttp` /
+   `PutObjectFunctionHttp` =
    `Layer.effect(GetObject, ...)` pushing `{ env }`; users swap
-   `Effect.provide(GetObjectHttp)` instead of `GetObjectBinding`. Same contract
-   — no call-site changes.
+   `Effect.provide(GetObjectFunctionHttp)` instead of `GetObjectHttp`. Same
+   contract — no call-site changes. (Named for alchemy's "Function" host
+   family — `isBindingHost` checks Lambda.Function | ECS.Task | ECS.Service |
+   EKS.Deployment | EKS.Job — to distinguish them from the CF `*Http` layers.)
 2. **Lazy `Output`s in `binding.data.env`**: whether Lambda's env merge
    (`Function.ts:938`) resolves `Output` values or needs pre-resolved strings
    (fallback: resolve in the impl, as sketched for CF).

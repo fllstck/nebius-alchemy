@@ -21,9 +21,9 @@ import * as Layer from 'effect/Layer'
 import { NebiusBucket } from '@fllstck/nebius-alchemy/resources/storage/v1/bucket.ts'
 import {
   GetObject,
-  GetObjectBinding,
+  GetObjectHttp,
   PutObject,
-  PutObjectBinding,
+  PutObjectHttp,
 } from '@fllstck/nebius-alchemy/resources/storage/v1/bindings.ts'
 
 export default Cloudflare.Worker(
@@ -41,7 +41,7 @@ export default Cloudflare.Worker(
       forceStorageClass: false,
     })
 
-    // Typed runtime clients — one per capability. The `*Binding` layers
+    // Typed runtime clients — one per capability. The `*Http` layers
     // provide the implementations (deploy-time grant + env wiring + the
     // s3-lite-client runtime); Effect.provide at the end supplies them.
     const getObject = yield* GetObject(bucket)
@@ -75,7 +75,7 @@ export default Cloudflare.Worker(
       }),
     }
   }).pipe(
-    // The binding implementations — swap for `*Http` layers on AWS later.
-    Effect.provide(Layer.mergeAll(GetObjectBinding, PutObjectBinding)),
+    // The binding implementations — the AWS arm (`*FunctionHttp`) lands later.
+    Effect.provide(Layer.mergeAll(GetObjectHttp, PutObjectHttp)),
   ),
 )

@@ -6,7 +6,7 @@
  * 2. S3 round-trip: the full binding chain — bucket + SA → editors grant →
  *    access key → s3-lite-client (the same client the Worker binding uses) →
  *    PutObject/GetObject round-trip against real Nebius S3.
- * 3. Binding impl end-to-end: the REAL GetObjectBinding/PutObjectBinding
+ * 3. Binding impl end-to-end: the REAL GetObjectHttp/PutObjectHttp
  *    layers with a mocked Worker host — deploy-time wiring (hostIdentity →
  *    grant → env bindings) + the runtime client (readS3Env → s3-lite-client).
  *
@@ -210,7 +210,7 @@ const mockSelf = (host: any) => Layer.succeed(Self('Cloudflare.Worker'), host)
 
 integrationTest(
   test.provider,
-  'Nebius.storage bindings — GetObjectBinding impl end-to-end (mocked host)',
+  'Nebius.storage bindings — GetObjectHttp impl end-to-end (mocked host)',
   (stack) =>
     Effect.gen(function* () {
       // Stage 1: bucket + a test SA (the SA gives us key material for the
@@ -310,12 +310,12 @@ integrationTest(
             forceStorageClass: false,
           })
           const getObject = yield* Nebius.storage.GetObject(bucket).pipe(
-            Effect.provide(Nebius.storage.GetObjectBinding),
+            Effect.provide(Nebius.storage.GetObjectHttp),
             Effect.provide(mockSelf(mockHost)),
             Effect.provide(Layer.succeed(WorkerEnvironment, runtimeEnv)),
           )
           const putObject = yield* Nebius.storage.PutObject(bucket).pipe(
-            Effect.provide(Nebius.storage.PutObjectBinding),
+            Effect.provide(Nebius.storage.PutObjectHttp),
             Effect.provide(mockSelf(mockHost)),
             Effect.provide(Layer.succeed(WorkerEnvironment, runtimeEnv)),
           )

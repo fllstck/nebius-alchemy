@@ -2,9 +2,9 @@ export { NebiusBucket as Bucket, NebiusBucketProvider as BucketProvider, type Ne
 export { NebiusTransfer as Transfer, NebiusTransferProvider as TransferProvider, type NebiusTransfer as TransferResource } from './transfer.ts'
 export {
   GetObject,
-  GetObjectBinding,
+  GetObjectHttp,
   PutObject,
-  PutObjectBinding,
+  PutObjectHttp,
   wireAsyncBindings,
   ObjectNotFound,
   BucketNotFound,

@@ -56,7 +56,7 @@ export default Cloudflare.Worker('Api', { main: import.meta.url },
     const bucket = yield* Nebius.storage.Bucket('assets', …)
     const getObject = yield* Nebius.storage.GetObject(bucket)
     return { fetch: … }
-  }).pipe(Effect.provide(Layer.mergeAll(GetObjectBinding, PutObjectBinding))))
+  }).pipe(Effect.provide(Layer.mergeAll(GetObjectHttp, PutObjectHttp))))
 
 // examples/bindings.ts — the stack
 import Api from './bindings-worker.ts'

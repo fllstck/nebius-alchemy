@@ -250,7 +250,7 @@ const registerEnvOnce = Effect.fn('registerEnvOnce')(function* (
 /**
  * GetObject — read an object's content and metadata by key.
  */
-export const GetObjectBinding = Layer.effect(
+export const GetObjectHttp = Layer.effect(
   GetObject,
   Effect.gen(function* () {
     const host = yield* Worker
@@ -328,7 +328,7 @@ export const GetObjectBinding = Layer.effect(
 /**
  * PutObject — write an object's content by key.
  */
-export const PutObjectBinding = Layer.effect(
+export const PutObjectHttp = Layer.effect(
   PutObject,
   Effect.gen(function* () {
     const host = yield* Worker
@@ -399,7 +399,7 @@ export const PutObjectBinding = Layer.effect(
 /**
  * Run the deploy-time binding wiring for an ASYNC (non-Effect) Worker host.
  *
- * An Effect-native worker consumes the `*Binding` layers inside its impl,
+ * An Effect-native worker consumes the `*Http` layers inside its impl,
  * where `Self`/`WorkerEnvironment` are in scope. An async worker (`main` +
  * plain `fetch`) can't — so this runs the same layers against the deployed
  * host directly: mints the host identity (SA → editors grant → access key),
@@ -421,7 +421,7 @@ export const wireAsyncBindings = Effect.fn('Nebius.storage.v1.Bucket.wireAsyncBi
   // stack's providers satisfy at runtime.
   const provideHost = <A, E>(effect: Effect.Effect<A, E, any>): Effect.Effect<A, E, never> =>
     effect.pipe(
-      Effect.provide(Layer.mergeAll(GetObjectBinding, PutObjectBinding)),
+      Effect.provide(Layer.mergeAll(GetObjectHttp, PutObjectHttp)),
       Effect.provide(Layer.succeed(Self('Cloudflare.Worker'), host)),
       Effect.provide(Layer.succeed(WorkerEnvironment, {})),
     ) as Effect.Effect<A, E, never>

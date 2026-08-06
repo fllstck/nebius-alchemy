@@ -8,16 +8,16 @@ describe('Nebius.storage.v1 bindings', () => {
     expect(Bindings.GetObject).toBeDefined()
   })
 
-  test('GetObjectBinding layer is defined', () => {
-    expect(Bindings.GetObjectBinding).toBeDefined()
+  test('GetObjectHttp layer is defined', () => {
+    expect(Bindings.GetObjectHttp).toBeDefined()
   })
 
   test('PutObject contract is defined', () => {
     expect(Bindings.PutObject).toBeDefined()
   })
 
-  test('PutObjectBinding layer is defined', () => {
-    expect(Bindings.PutObjectBinding).toBeDefined()
+  test('PutObjectHttp layer is defined', () => {
+    expect(Bindings.PutObjectHttp).toBeDefined()
   })
 
   describe('tagged errors', () => {

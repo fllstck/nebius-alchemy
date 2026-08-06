@@ -207,8 +207,8 @@ const Api = Cloudflare.Worker(
     const putObject = yield* Nebius.storage.PutObject(bucket)
     return { fetch: /* getObject/putObject */ }
   }).pipe(Effect.provide(Layer.mergeAll(
-    Nebius.storage.GetObjectBinding,
-    Nebius.storage.PutObjectBinding,
+    Nebius.storage.GetObjectHttp,
+    Nebius.storage.PutObjectHttp,
   ))),
 )
 ```
@@ -217,8 +217,8 @@ Currently available (Cloudflare Workers):
 
 | Contract                  | Layer                          | Runtime                          |
 | ------------------------- | ------------------------------ | -------------------------------- |
-| `Nebius.storage.GetObject` | `Nebius.storage.GetObjectBinding` | s3-lite-client (`GET object`) |
-| `Nebius.storage.PutObject` | `Nebius.storage.PutObjectBinding` | s3-lite-client (`PUT object`) |
+| `Nebius.storage.GetObject` | `Nebius.storage.GetObjectHttp` | s3-lite-client (`GET object`) |
+| `Nebius.storage.PutObject` | `Nebius.storage.PutObjectHttp` | s3-lite-client (`PUT object`) |
 
 **Roadmap**: AWS Lambda/ECS/EKS hosts are a documented extension point — the
 same contracts with `*Http` layers pushing `{ env }` instead of CF bindings.
