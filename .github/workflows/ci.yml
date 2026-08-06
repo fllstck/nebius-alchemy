@@ -33,6 +33,14 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      # schemas/ is gitignored (generated via buf from nebius/api) — must be
+      # regenerated on a fresh checkout before tsc/effect-tsgo can resolve imports.
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: '1.71.0'
+      - name: Generate schemas
+        run: bun run generate:schemas
       - name: Typecheck + lint
         run: bun run check
 
@@ -52,6 +60,14 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      # schemas/ is gitignored (generated via buf from nebius/api) — must be
+      # regenerated on a fresh checkout before tests can import generated clients.
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: '1.71.0'
+      - name: Generate schemas
+        run: bun run generate:schemas
       # Network-free by design — integration tests gate behind SLOW_TESTS=1
       # (see tests/helpers/gate.ts); this job intentionally never sets it.
       - name: Unit tests
