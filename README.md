@@ -238,6 +238,13 @@ Injected into the Worker at deploy time (names are stable):
 
 See [`examples/bindings.ts`](examples/bindings.ts) for the full pattern.
 
+**Small-bundle variant**: the Effect-native worker bundles alchemy's runtime
+(~2 MB). If bundle size matters more than the typed contracts, use
+[`examples/bindings-async.ts`](examples/bindings-async.ts) — the same
+deploy-time wiring, but a plain async worker (`main` + `fetch`) that reads
+the injected `NEBIUS_S3_*` env with s3-lite-client directly (typically
+~50-150 KB).
+
 ## Examples
 
 | Example                                            | What it demonstrates                                                  |
