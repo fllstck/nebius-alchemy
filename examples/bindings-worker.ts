@@ -39,33 +39,37 @@ export default Cloudflare.Worker(
       fetch: Effect.gen(function* () {
         const request = yield* HttpServerRequest
 
-        if (request.method === 'POST') {
-          const body = yield* Effect.exit(request.text)
-          if (Exit.isFailure(body)) {
-            return HttpServerResponse.text(`error reading body: ${String(body.cause)}`, {
-              status: 400,
-            })
+        try {
+          if (request.method === 'POST') {
+            const body = yield* Effect.exit(request.text)
+            if (Exit.isFailure(body)) {
+              return HttpServerResponse.text(`error reading body: ${String(body.cause)}`, {
+                status: 400,
+              })
+            }
+            const outcome = yield* Effect.exit(
+              putObject({
+                key: 'dir/hello.txt',
+                value: body.value ?? '',
+                contentType: 'text/plain',
+              }),
+            )
+            if (Exit.isFailure(outcome)) {
+              return HttpServerResponse.text(`error: ${String(outcome.cause)}`, { status: 500 })
+            }
+            return HttpServerResponse.text('stored', { status: 201 })
           }
-          const outcome = yield* Effect.exit(
-            putObject({
-              key: 'dir/hello.txt',
-              value: body.value ?? '',
-              contentType: 'text/plain',
-            }),
-          )
-          if (Exit.isFailure(outcome)) {
-            return HttpServerResponse.text(`error: ${String(outcome.cause)}`, { status: 500 })
-          }
-          return HttpServerResponse.text('stored', { status: 201 })
-        }
 
-        const read = yield* Effect.exit(
-          getObject({ key: 'dir/hello.txt' }).pipe(Effect.flatMap((result) => result.text)),
-        )
-        if (Exit.isFailure(read)) {
-          return HttpServerResponse.text(`error: ${String(read.cause)}`, { status: 500 })
+          const read = yield* Effect.exit(
+            getObject({ key: 'dir/hello.txt' }).pipe(Effect.flatMap((result) => result.text)),
+          )
+          if (Exit.isFailure(read)) {
+            return HttpServerResponse.text(`error: ${String(read.cause)}`, { status: 500 })
+          }
+          return HttpServerResponse.text(read.value, { status: 200 })
+        } catch (error) {
+          return HttpServerResponse.text(`handler error: ${String(error)}`, { status: 500 })
         }
-        return HttpServerResponse.text(read.value, { status: 200 })
       }),
     }
   }).pipe(
