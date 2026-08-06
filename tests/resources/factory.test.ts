@@ -96,7 +96,7 @@ describe('isDefaultResource filtering', () => {
       makeTestIam(projects),
       makeTestSvc(resources),
     ).pipe(
-      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
+      Layer.provideMerge(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
     )
 
     const result = await runPromise(
@@ -129,7 +129,7 @@ describe('isDefaultResource filtering', () => {
       makeTestIam(projects),
       makeTestSvc(resources),
     ).pipe(
-      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
+      Layer.provideMerge(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
     )
 
     const result = await runPromise(
@@ -156,7 +156,7 @@ describe('isDefaultResource filtering', () => {
       makeTestIam(projects),
       makeTestSvc(resources),
     ).pipe(
-      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
+      Layer.provideMerge(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
     )
 
     const result = await runPromise(
@@ -203,7 +203,7 @@ describe('isDefaultResource filtering', () => {
       makeTestIam(projects),
       failingSvcLayer,
     ).pipe(
-      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
+      Layer.provideMerge(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
     )
 
     const result = await runPromise(
