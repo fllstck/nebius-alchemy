@@ -22,12 +22,30 @@ import { expect } from 'bun:test'
 import { S3Client } from '@bradenmacdonald/s3-lite-client'
 import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Self } from 'alchemy/Self'
+import * as StorageGrpc from '../../../../modules/api-client/storage.ts'
 import { Nebius, test } from '../../../helpers/stack'
 import { integrationTest } from '../../../helpers/gate'
 import { safeDestroy } from '../../../helpers/cleanup'
 
 const EDITORS_GROUP_ID = 'group-e00ee03sdm7ht85b9m'
 const REGION = process.env.NEBIUS_REGION ?? 'eu-north1'
+const PROJECT = process.env.NEBIUS_PROJECT_ID!
+
+/**
+ * Post-destroy leak verification for buckets: any `nebius-storage-*` bucket
+ * surviving the destroy is a leak (the bucket delete has no force option — a
+ * non-empty bucket is undeletable, so leftovers accumulate silently).
+ */
+const verifyNoBucketLeaks = Effect.gen(function* () {
+  const storage = yield* StorageGrpc.StorageGrpcService
+  const buckets = yield* storage.bucket.list(PROJECT)
+  const leaked = buckets.filter((b) => b.metadata?.name?.startsWith('nebius-storage-'))
+  if (leaked.length > 0) {
+    return yield* Effect.fail(
+      new Error(`LEAKED buckets after destroy: ${leaked.map((b) => b.metadata?.name).join(', ')}`),
+    )
+  }
+})
 
 // ---------------------------------------------------------------------------
 // Test 1 — identity lifecycle
@@ -75,7 +93,7 @@ integrationTest(
       expect(key.secretAccessKey.length).toBeGreaterThan(0)
       expect(key.secretDeliveryMode).toBe('INLINE')
       console.log(`[BIND] SA: ${sa.id} key: ${key.awsAccessKeyId}`)
-    }).pipe(safeDestroy(stack)),
+    }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
   { timeout: 120_000 },
 )
 
@@ -175,7 +193,7 @@ integrationTest(
         catch: (e) => Effect.fail(new Error(`deleteObject failed: ${String(e)}`)),
       })
       console.log('[RT] cleanup ok')
-    }).pipe(safeDestroy(stack)),
+    }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
   { timeout: 180_000 },
 )
 
@@ -348,6 +366,6 @@ integrationTest(
         catch: (e) => Effect.fail(new Error(`deleteObject failed: ${String(e)}`)),
       })
       console.log('[IMPL] cleanup ok')
-    }).pipe(safeDestroy(stack)),
+    }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
   { timeout: 240_000 },
 )

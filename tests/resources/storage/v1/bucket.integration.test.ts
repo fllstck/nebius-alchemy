@@ -3,6 +3,21 @@ import { Nebius, test } from '../../../helpers/stack'
 import { expect } from 'bun:test'
 import { integrationTest } from '../../../helpers/gate'
 import { safeDestroy } from '../../../helpers/cleanup'
+import * as StorageGrpc from '../../../../modules/api-client/storage.ts'
+
+const PROJECT = process.env.NEBIUS_PROJECT_ID!
+
+/** Post-destroy leak check: no `nebius-storage-*` bucket may survive. */
+const verifyNoBucketLeaks = Effect.gen(function* () {
+  const storage = yield* StorageGrpc.StorageGrpcService
+  const buckets = yield* storage.bucket.list(PROJECT)
+  const leaked = buckets.filter((b) => b.metadata?.name?.startsWith('nebius-storage-'))
+  if (leaked.length > 0) {
+    return yield* Effect.fail(
+      new Error(`LEAKED buckets after destroy: ${leaked.map((b) => b.metadata?.name).join(', ')}`),
+    )
+  }
+})
 
 integrationTest(test.provider, 'Nebius.storage.v1.Bucket lifecycle', (stack) =>
   Effect.gen(function* () {
@@ -34,7 +49,7 @@ integrationTest(test.provider, 'Nebius.storage.v1.Bucket lifecycle', (stack) =>
     expect(updated.id).toBe(created.id)
     expect(updated.versioningPolicy).toBe('ENABLED')
   }).pipe(
-    safeDestroy(stack),
+    safeDestroy(stack, verifyNoBucketLeaks),
   ),
   { timeout: 120_000 },
 )
