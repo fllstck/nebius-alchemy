@@ -36,7 +36,11 @@ import * as Nebius from '@fllstck/nebius-alchemy'
 /** The Worker + the bindings it consumes. */
 const Api = Cloudflare.Worker(
   'Api',
-  { main: import.meta.url },
+  // Effect-native Worker: the impl below IS the entry — no `main` file. A
+  // `main: import.meta.url` here would bundle the whole stack module into the
+  // worker script (dragging in the alchemy runtime + the workerd lib, whose
+  // `require.resolve` shim fails under workerd).
+  {},
   Effect.gen(function* () {
     const bucket = yield* Nebius.storage.Bucket('assets', {
       versioningPolicy: 'DISABLED',
