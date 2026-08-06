@@ -44,7 +44,9 @@
     "lint": "oxlint modules/ tests/ examples/",
     "typecheck:effect": "effect-tsgo diagnostics --project tsconfig.json",
     "typecheck:ts": "tsc --noEmit --skipLibCheck --project tsconfig.json",
-    "typecheck": "bun run typecheck:ts && bun run typecheck:effect"
+    "typecheck": "bun run typecheck:ts && bun run typecheck:effect",
+    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
+    "version": "conventional-changelog -p angular -i CHANGELOG.md -s && git add CHANGELOG.md"
   },
   "prettier": {
     "printWidth": 120,
@@ -56,12 +58,13 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.1",
+    "@effect/platform-node": "4.0.0-beta.103",
+    "@effect/tsgo": "0.31.0",
     "@types/bun": "latest",
+    "conventional-changelog-cli": "^5.0.0",
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
-    "typescript": "^7.0.0",
-    "@effect/tsgo": "0.31.0",
-    "@effect/platform-node": "4.0.0-beta.103"
+    "typescript": "^7.0.0"
   },
   "peerDependencies": {
     "typescript": "^7",
