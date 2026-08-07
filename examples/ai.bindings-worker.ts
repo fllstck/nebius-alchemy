@@ -36,46 +36,44 @@ export default Cloudflare.Worker(
     const network = yield* NebiusNetwork('Network', {})
     const subnet = yield* NebiusSubnet('Subnet', { networkId: network.id })
 
-    // A minimal inference endpoint. The proven combo (matches the repo's own
-    // endpoint integration test): nginx on cpu-d3 — validates the FULL
-    // binding chain (endpoint RUNNING → public URL wired → Worker env →
-    // runtime client). nginx isn't OpenAI-compatible, so a chat call returns
-    // the binding's EndpointNotFound (404) — proof the runtime + error
-    // mapping works end-to-end.
-    //
-    // For a real chat round-trip, swap in an OpenAI-compatible container and
-    // a model (commented below). Note: `cpu-e2`/`2vcpu-8gb` is eu-north1-only
-    // and may lack quota in your project — the operation failed with a
-    // generic internal error when it was used.
+    // The canonical Nebius LLM endpoint (from the official Serverless AI
+    // cookbook's Qwen3-0.6B template): vLLM (OpenAI-compatible) serving
+    // Qwen/Qwen3-0.6B on an L40S GPU. Requires an eu-north1 project — the
+    // account's GPU/VM quota lives there and `gpu-l40s-a` doesn't exist in
+    // eu-west1. Auth is enabled with a bearer token — the binding injects it
+    // into the Worker as a Cloudflare `secret_text` binding at deploy time.
     const endpoint = yield* NebiusEndpoint('llm', {
-      image: 'nginx:alpine',
-      platform: 'cpu-d3',
-      preset: '4vcpu-16gb',
+      image: 'vllm/vllm-openai:v0.19.1',
+      // The template's exact command, split per the cookbook's CLI convention
+      // (--container-command / --args): python3 -m vllm.entrypoints.openai.api_server
+      containerCommand: 'python3',
+      args: '-m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --host 0.0.0.0 --port 8000',
+      platform: 'gpu-l40s-a',
+      preset: '1gpu-8vcpu-32gb',
       subnetId: subnet.id,
       publicIp: true,
-      preemptible: false,
+      preemptible: true,
       environmentVariables: [],
-      ports: [{ containerPort: 80, protocol: 'HTTP' }],
+      ports: [{ containerPort: 8000, protocol: 'HTTP' }],
       volumes: [],
-      disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+      disk: { type: 'NETWORK_SSD', sizeBytes: 536_870_912_000 }, // 500 GiB (template value)
+      shmSizeBytes: 17_179_869_184, // 16 GiB (vLLM needs large shared memory)
       authToken: 'replace-with-a-real-token',
     })
-    // ── Real chat alternative ──────────────────────────────────────────────
-    // Ultra-compact llama.cpp server (<12 MB), OpenAI-compatible, downloads
-    // a tiny Qwen3-0.6B GGUF from HuggingFace at startup; listen on 8080;
-    // the chat request below uses the LLAMA_ARG_ALIAS model name.
+    // ── Wiring-validation alternative (no GPU / quota needed) ─────────────
+    // nginx on cpu-d3 (the repo's integration-test combo): fast and cheap,
+    // proves the full binding chain (endpoint RUNNING → public URL wired →
+    // Worker env → runtime client). Not OpenAI-compatible — a chat call
+    // returns the binding's EndpointNotFound (404).
     // const endpoint = yield* NebiusEndpoint('llm', {
-    //   image: 'samueltallet/alpine-llama-cpp-server',
+    //   image: 'nginx:alpine',
     //   platform: 'cpu-d3',
     //   preset: '4vcpu-16gb',
     //   subnetId: subnet.id,
     //   publicIp: true,
     //   preemptible: false,
-    //   environmentVariables: [
-    //     { name: 'LLAMA_ARG_HF_REPO', value: 'unsloth/Qwen3-0.6B-GGUF' },
-    //     { name: 'LLAMA_ARG_ALIAS', value: 'qwen3-0.6b' },
-    //   ],
-    //   ports: [{ containerPort: 8080, protocol: 'HTTP' }],
+    //   environmentVariables: [],
+    //   ports: [{ containerPort: 80, protocol: 'HTTP' }],
     //   volumes: [],
     //   disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
     //   authToken: 'replace-with-a-real-token',
@@ -96,9 +94,8 @@ export default Cloudflare.Worker(
         const outcome = yield* Effect.exit(
           chat(
             new ChatCompletionRequest({
-              // With the llama.cpp alternative below, this must match its
-              // LLAMA_ARG_ALIAS; nginx ignores the model name.
-              model: 'qwen3-0.6b',
+              // Must match the container's --model (vLLM rejects others).
+              model: 'Qwen/Qwen3-0.6B',
               messages: [{ role: 'user', content: 'Hello from the Worker!' }],
             }),
           ),
