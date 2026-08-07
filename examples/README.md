@@ -61,6 +61,10 @@ The Worker entry ([bindings-worker.ts](bindings-worker.ts)) is a `Cloudflare.Wor
 
 Same deploy-time wiring as `bindings.ts`, but the Worker entry ([bindings-async-worker.ts](bindings-async-worker.ts)) is a plain async function with no Effect runtime — it reads `env` and drives s3-lite-client directly. Deployed size is a fraction of the Effect-native variant (~50–150 KB vs ~2 MB). The trade: you lose the typed `GetObject`/`PutObject` contracts inside the worker.
 
+### [ai-bindings.ts](ai-bindings.ts) — AI endpoint ChatCompletions
+
+The Worker entry ([ai-bindings-worker.ts](ai-bindings-worker.ts)) declares an inference endpoint (network + subnet + vLLM-style container) and consumes the typed `ChatCompletions` runtime client: deploy-time `NEBIUS_ENDPOINT_URL`/`NEBIUS_ENDPOINT_AUTH_TOKEN` injection (the token deploys as a Cloudflare secret), a fetch-based OpenAI-compatible client at runtime. Auth is a bearer token — unlike the S3 bindings there is no identity minting or IAM grant. The deploy fails fast with `EndpointNotRunning` if the endpoint isn't RUNNING yet. See [AI_BINDINGS.md](../AI_BINDINGS.md) for the design.
+
 ## Companion Files
 
 - [.env.example](.env.example) — optional default tenant/project IDs for the examples

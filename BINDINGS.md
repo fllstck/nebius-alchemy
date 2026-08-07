@@ -29,8 +29,8 @@ Nebius, (2) env injected into the Worker as `plain_text`/`secret_text` bindings,
   ["Adding AWS hosts later"](#adding-aws-hosts-later) and the design keeps an
   explicit extension point so it slots in without rework
 - No event sources or sinks (no Nebius-native pub/sub to subscribe to)
-- No AI endpoint bindings (`ChatCompletions`) — endpoints are expensive/slow to
-  deploy, impractical to test; revisit later
+- No AI endpoint bindings in the first pass — **shipped since, see
+  [AI_BINDINGS.md](AI_BINDINGS.md)** (ChatCompletions, mock-first tests)
 - No KMS / mysterybox / DNS bindings in the first pass (same pattern, later)
 - No local-dev emulation layers (`*Local`) — dev runs against the real cloud
 - Not proposing changes to `alchemy` itself (the env-binding helper is a
@@ -642,8 +642,9 @@ clients, or `host-identity.ts`.
 ## Out of scope (noted for later)
 
 - **AWS Lambda/ECS/EKS support** — see [§Adding AWS hosts later](#adding-aws-hosts-later)
-- AI endpoint bindings (`ChatCompletions`) — endpoints are expensive/slow to
-  deploy, impractical to test; revisit when testing is cheap
+- AI endpoint bindings: shipped — see [AI_BINDINGS.md](AI_BINDINGS.md);
+  the real-endpoint e2e (SLOW_TESTS) is the remaining milestone, the runtime
+  client is covered by local-mock tests
 - KMS Encrypt/Decrypt, mysterybox GetSecretValue, DNS record bindings — same
   pattern once M2/M3 land
 - Event sources / sinks

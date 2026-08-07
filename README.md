@@ -245,10 +245,23 @@ export const Api = Cloudflare.Worker(
 
 Currently available (Cloudflare Workers):
 
-| Contract                   | Layer                          | Runtime                       |
-| -------------------------- | ------------------------------ | ----------------------------- |
-| `Nebius.storage.GetObject` | `Nebius.storage.GetObjectHttp` | s3-lite-client (`GET object`) |
-| `Nebius.storage.PutObject` | `Nebius.storage.PutObjectHttp` | s3-lite-client (`PUT object`) |
+| Contract                      | Layer                             | Runtime                                        |
+| ----------------------------- | --------------------------------- | ---------------------------------------------- |
+| `Nebius.storage.GetObject`    | `Nebius.storage.GetObjectHttp`    | s3-lite-client (`GET object`)                  |
+| `Nebius.storage.PutObject`    | `Nebius.storage.PutObjectHttp`    | s3-lite-client (`PUT object`)                  |
+| `Nebius.ai.ChatCompletions`   | `Nebius.ai.ChatCompletionsHttp`   | fetch OpenAI-compatible `POST /v1/chat/completions` |
+
+### AI endpoint bindings
+
+`Nebius.ai.ChatCompletions(endpoint)` derives the endpoint's public URL and
+bearer token at deploy time and gives the Worker a typed, fetch-based
+OpenAI-compatible client (`ChatCompletionRequest` → `ChatCompletion`, or an
+SSE stream of `ChatCompletionChunk`s with `stream: true`). The token deploys
+as a Cloudflare `secret_text` binding; auth is a bearer token, so — unlike
+the S3 bindings — there is no identity minting or IAM grant. The deploy
+fails fast with `EndpointNotRunning` when the endpoint has no public endpoint
+yet (it must be RUNNING). See [AI_BINDINGS.md](AI_BINDINGS.md) for the design
+and [`examples/ai-bindings.ts`](examples/ai-bindings.ts) for a full example.
 
 ### Bindings env reference
 
@@ -261,6 +274,8 @@ Injected into the Worker at deploy time (names are stable):
 | `NEBIUS_ACCESS_KEY_ID`     | AWS-style access key id (plain text)          |
 | `NEBIUS_SECRET_ACCESS_KEY` | Secret access key (deployed as `secret_text`) |
 | `NEBIUS_BUCKET_NAME`       | The bound bucket's name                       |
+| `NEBIUS_ENDPOINT_URL`      | The endpoint's first public URL (AI bindings) |
+| `NEBIUS_ENDPOINT_AUTH_TOKEN` | The endpoint's bearer token (`secret_text`; `''` when auth disabled) |
 
 See [`examples/bindings.ts`](examples/bindings.ts) for the full pattern.
 
@@ -279,6 +294,7 @@ See [`examples/bindings.ts`](examples/bindings.ts) for the full pattern.
 | [`examples/mysterybox.ts`](examples/mysterybox.ts) | Versioned secret with payload rotation                                |
 | [`examples/actions.ts`](examples/actions.ts)       | Read-only discovery actions for IAM, VPC, and quotas                  |
 | [`examples/bindings.ts`](examples/bindings.ts)     | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)           |
+| [`examples/ai-bindings.ts`](examples/ai-bindings.ts) | Nebius AI endpoint bindings for a Cloudflare Worker (ChatCompletions) |
 
 ## Usage
 

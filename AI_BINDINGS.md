@@ -191,27 +191,31 @@ present; falls back to status text.
 
 ## Milestones
 
-- **M1 — Provider change (AD1).** `authToken` in `EndpointAttributesSchema` +
-  reconcile returns it from `news`. Unit/integration tests keep existing
-  endpoint behavior green.
-- **M2 — Schemas + SSE parser.** `bindings.schema.ts` (request, response,
-  chunk — Schema.Class) + the `TransformStream` parser. Unit tests incl.
-  parser torture (split lines, CRLF, keepalives, `[DONE]`, malformed JSON).
-- **M3 — Runtime client + errors.** `readAiEnv`, fetch client, error mapping.
-  Integration tests against `tests/helpers/openai-mock.ts`: round-trip, Bearer
-  header assertion, 401/404/429/500, streaming end-to-end. Zero cloud.
-- **M4 — Contract + layer.** `ChatCompletions` + `ChatCompletionsHttp`;
-  hoist `registerEnvOnce` into `shared/bind-host.ts` (storage refactor, keep
+Status: M1–M4 **done** (0 errors, full suite green). M5 done (examples +
+ docs). M6 pending (SLOW_TESTS).
+
+- **M1 — Provider change (AD1). ✅** `authToken` in `EndpointAttributesSchema` +
+  reconcile returns it from `news`. Unit + integration coverage.
+- **M2 — Schemas + SSE parser. ✅** `bindings.schema.ts` (request, response,
+  chunk — Schema.Class) + the `TransformStream` parser. Parser torture suite
+  (split lines, CRLF, keepalives, `[DONE]`, malformed JSON).
+- **M3 — Runtime client + errors. ✅** `readAiEnv`, fetch client, error mapping,
+  the full tagged error union. Local-mock integration tests (Bun.serve
+  OpenAI-compatible mock, zero cloud).
+- **M4 — Contract + layer. ✅** `ChatCompletions` + `ChatCompletionsHttp`;
+  `registerEnvOnce` hoisted into `shared/bind-host.ts` (storage refactor,
   storage tests green); impl runtime-side test with `__ALCHEMY_RUNTIME__`
-  pre-set `true` + `WorkerEnvironment` layer; bundle check (zero gRPC markers).
-- **M5 — Exports, examples, docs.** Re-exports through `ai/v1/index.ts`;
-  `examples/ai-bindings.ts` + `ai-bindings-worker.ts`; update `BINDINGS.md`
-  §Out of scope and `README.md`.
-- **M6 — (deferred, SLOW_TESTS=1) Real-endpoint e2e.** Deploy a cheap CPU
+  pre-set `true` + mocked host. Bundle check: the module is statically
+  workerd-safe by construction (no gRPC, no dynamic import).
+- **M5 — Exports, examples, docs. ✅** Re-exports through `ai/v1/index.ts`;
+  `examples/ai-bindings.ts` + `ai-bindings-worker.ts`; `BINDINGS.md`
+  §Out of scope and `README.md` updated.
+- **M6 — (pending, SLOW_TESTS=1) Real-endpoint e2e.** Deploy a cheap CPU
   endpoint (smallest preset + tiny OpenAI-compatible image), full deploy-time
   wiring (real `publicEndpoints` attrs) + real chat round-trip through the
   binding. Money + 5–30 min, gated behind `integrationTest`/`safeDestroy` like
-  the storage M3 tests.
+  the storage M3 tests. Also verifies the AD7 apply-time failure surfaces as a
+  clean deploy error.
 
 ## Testing strategy
 
