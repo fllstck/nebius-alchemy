@@ -7,8 +7,10 @@ Build Nebius cloud infrastructure as typed [Effect](https://effect.website) prog
 You need [a Nebius account](https://nebius.com/).
 
 ```bash
-bun add @fllstck/nebius-alchemy alchemy@next effect@beta @effect/platform-bun@beta @effect/platform-node@beta typescript
+bun add @fllstck/nebius-alchemy alchemy@next effect@4.0.0-beta.103 @effect/platform-bun@4.0.0-beta.103 @effect/platform-node@4.0.0-beta.103 typescript
 ```
+
+> **Effect version is pinned to `4.0.0-beta.103`** — `effect@beta` (104+) renames `Schema.TaggedErrorClass`, which alchemy 2.0.0-beta.70 still uses internally. Bump this pin when a new alchemy release supports the newer betas.
 
 ```ts
 // alchemy.run.ts

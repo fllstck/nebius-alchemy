@@ -98,3 +98,46 @@ jobs:
       # in the baseline, so this only trips on genuinely dangerous findings.
       - name: Fail on critical advisories
         run: bun audit --audit-level=critical
+
+  smoke-test:
+    name: Consumer smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      # schemas/ is gitignored (generated via buf from nebius/api) — the
+      # tarball must contain it, so generate before packing.
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: '1.71.0'
+      - name: Generate schemas
+        run: bun run generate:schemas
+      - name: Pack tarball
+        run: echo "TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" | tail -1)" >> "$GITHUB_ENV"
+      - name: Install tarball into scratch project
+        run: |
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP/$TARBALL" \
+            effect@4.0.0-beta.103 \
+            @effect/platform-bun@4.0.0-beta.103 \
+            @effect/platform-node@4.0.0-beta.103 \
+            typescript@7
+      - name: Compile README quick-start
+        run: |
+          cd "$RUNNER_TEMP/consumer"
+          cp "$GITHUB_WORKSPACE/.github/smoke/smoke.ts" .
+          cp "$GITHUB_WORKSPACE/.github/smoke/tsconfig.json" .
+          ./node_modules/.bin/tsc --noEmit
