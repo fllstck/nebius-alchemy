@@ -334,10 +334,23 @@ describe('contract', () => {
 })
 
 describe('env derivation (AD7/AD6)', () => {
-  test('publicEndpointUrl takes the first public endpoint', () => {
+  test('publicEndpointUrl prefers the absolute https URL over raw IP:port entries', () => {
+    expect(
+      Bindings.publicEndpointUrl([
+        '89.169.121.158:8000',
+        'https://port8000-abc.tunnel.applications.eu-north1.nebius.cloud',
+      ]),
+    ).toBe('https://port8000-abc.tunnel.applications.eu-north1.nebius.cloud')
+  })
+
+  test('publicEndpointUrl takes the first https entry when several exist', () => {
     expect(Bindings.publicEndpointUrl(['https://a.example.com', 'https://b.example.com'])).toBe(
       'https://a.example.com',
     )
+  })
+
+  test('publicEndpointUrl is null when only raw IP:port entries exist (not URL-constructible)', () => {
+    expect(Bindings.publicEndpointUrl(['89.169.121.158:8000'])).toBeNull()
   })
 
   test('publicEndpointUrl is null when the endpoint is not RUNNING', () => {

@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Alchemy from 'alchemy'
@@ -130,15 +131,30 @@ export const makeCrudDelete = <STag extends Context.Service<any, any>, E>(config
       yield* session.note(`Deleting ${config.resourceLabel} (${output.id})`)
     }
     const svc = yield* config.service
-    // Idempotent delete: NOT_FOUND means the resource is already gone (it may
-    // have been cascaded away by the server, e.g. deleting a service account
-    // removes its group memberships and access keys) — treat it as success.
-    yield* config.deleteById(svc, output.id).pipe(
-      Effect.catchIf(
-        // oxlint-disable-next-line no-explicit-any — error type is generic over E
-        (e: any): e is GrpcError => e instanceof GrpcErrorCtor && e.code === 5,
-        () => Effect.void,
+    const started = yield* Clock.currentTimeMillis
+    // The delete operation (e.g. tearing down a VM-backed endpoint) is polled
+    // to completion and can take minutes — race it with a progress ticker so
+    // the session shows the deploy is still working instead of falling silent.
+    // The first tick is at 30s, so fast deletes emit nothing extra; the ticker
+    // is interrupted when the delete finishes (or fails).
+    yield* Effect.race(
+      // Idempotent delete: NOT_FOUND means the resource is already gone (it may
+      // have been cascaded away by the server, e.g. deleting a service account
+      // removes its group memberships and access keys) — treat it as success.
+      config.deleteById(svc, output.id).pipe(
+        Effect.catchIf(
+          // oxlint-disable-next-line no-explicit-any — error type is generic over E
+          (e: any): e is GrpcError => e instanceof GrpcErrorCtor && e.code === 5,
+          () => Effect.void,
+        ),
       ),
+      Effect.gen(function* () {
+        for (;;) {
+          yield* Effect.sleep(30_000)
+          const elapsedSec = Math.round(((yield* Clock.currentTimeMillis) - started) / 1000)
+          yield* session.note(`Still deleting ${config.resourceLabel ?? 'resource'} (${output.id}) — ${elapsedSec}s elapsed`)
+        }
+      }),
     )
   })
 

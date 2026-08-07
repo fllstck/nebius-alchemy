@@ -312,7 +312,7 @@ export const chatCompletions = (values: AiEnv) =>
       // fails when the endpoint has no public endpoint; if an empty URL still
       // reaches the worker, fail the call with the same tagged error.
       return yield* new EndpointNotRunning({
-        message: 'NEBIUS_ENDPOINT_URL is empty — the endpoint had no public endpoint at deploy time (was it RUNNING?)',
+        message: 'NEBIUS_ENDPOINT_URL is empty — the endpoint had no HTTPS public endpoint at deploy time (was it RUNNING, and does it expose an HTTP port?)',
       })
     }
     const url = new URL('/v1/chat/completions', values.NEBIUS_ENDPOINT_URL)
@@ -369,9 +369,14 @@ export const chatCompletions = (values: AiEnv) =>
 // Deploy-time env derivation + contract + layer (M4)
 // ---------------------------------------------------------------------------
 
-/** Pure: the endpoint's first public endpoint, or `null` when it is not RUNNING (AD7). */
+/**
+ * Pure: the endpoint's public URL for the runtime client. Prefers an
+ * absolute `http(s)://` entry — the stable managed tunnel URL — over raw
+ * `IP:port` entries, which are NOT URL-constructible (`new URL(path, '1.2.3.4:8000')`
+ * throws). Null when the endpoint isn't RUNNING or exposes no https endpoint.
+ */
 export const publicEndpointUrl = (publicEndpoints: readonly string[]): string | null =>
-  publicEndpoints[0] ?? null
+  publicEndpoints.find((endpoint) => /^https?:\/\//i.test(endpoint)) ?? null
 
 /** Pure: the `authToken` attribute → env value (`''` when auth is disabled). */
 export const tokenToEnv = (token: string | undefined): string => token ?? ''
