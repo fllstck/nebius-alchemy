@@ -54,6 +54,10 @@ export class EndpointNotReady extends Schema.TaggedErrorClass<EndpointNotReady>(
   message: Schema.String,
 }) {}
 
+/** The platform's own progress detail (stateDetails.message), when present. */
+const stateDetail = (endpoint: NebiusEndpointSchema.Endpoint): string | undefined =>
+  endpoint.status?.stateDetails?.message
+
 /**
  * Poll a freshly-created endpoint until its state is RUNNING — i.e.
  * `publicEndpoints` is populated. The binding's deploy-time env derivation
@@ -62,9 +66,14 @@ export class EndpointNotReady extends Schema.TaggedErrorClass<EndpointNotReady>(
  * fail the worker's env evaluation with EndpointNotRunning (the AI_BINDINGS
  * O1 hit). Existing endpoints are NOT awaited — a STOPPED endpoint should
  * fail fast via the binding, not hang the deploy for the full deadline.
+ *
+ * Progress is surfaced via `note` (the session): state transitions and the
+ * platform's own stateDetails messages (image pulls, quota failures, …), so
+ * a multi-minute provisioning isn't a silent "Creating".
  */
 const waitUntilRunning = Effect.fn('Nebius.ai.v1.Endpoint.waitUntilRunning')(function* (
   endpointId: string,
+  note: (message: string) => Effect.Effect<void>,
 ): Effect.fn.Return<
   NebiusEndpointSchema.Endpoint,
   GrpcError | GrpcDeadlineExceededError | EndpointNotReady,
@@ -72,23 +81,41 @@ const waitUntilRunning = Effect.fn('Nebius.ai.v1.Endpoint.waitUntilRunning')(fun
 > {
   const aiGrpcService = yield* AiGrpc.AiGrpcService
   const started = yield* Clock.currentTimeMillis
+  let lastState: string | undefined
+  let lastDetail: string | undefined
   for (;;) {
     const current = yield* aiGrpcService.endpoint.get(endpointId)
     const state = toFriendlyAttributes(current).state
+    const detail = stateDetail(current)
+
+    // Note state transitions (PROVISIONING → STARTING → RUNNING) with the
+    // elapsed time, and the platform's progress detail when it changes.
+    if (state !== lastState) {
+      const elapsedSec = Math.round(((yield* Clock.currentTimeMillis) - started) / 1000)
+      yield* note(`Endpoint ${endpointId}: ${state}${lastState === undefined ? '' : ` (was ${lastState})`} after ${elapsedSec}s`)
+      lastState = state
+    }
+    if (detail !== undefined && detail !== lastDetail) {
+      yield* note(`Endpoint ${endpointId}: ${detail}`)
+      lastDetail = detail
+    }
+
     if (state === 'RUNNING') return current
     if (state === 'ERROR') {
+      const reason = detail !== undefined ? ` — ${detail}` : ''
       return yield* new EndpointNotReady({
         id: endpointId,
         state,
-        message: `Endpoint ${endpointId} entered ERROR while waiting for RUNNING`,
+        message: `Endpoint ${endpointId} entered ERROR while waiting for RUNNING${reason}`,
       })
     }
     const elapsed = (yield* Clock.currentTimeMillis) - started
     if (elapsed > READY_DEADLINE_MS) {
+      const reason = detail !== undefined ? ` (last detail: ${detail})` : ''
       return yield* new EndpointNotReady({
         id: endpointId,
         state,
-        message: `Endpoint ${endpointId} did not reach RUNNING within 20 minutes (state: ${state})`,
+        message: `Endpoint ${endpointId} did not reach RUNNING within 20 minutes (state: ${state})${reason}`,
       })
     }
     yield* Effect.sleep(READY_POLL_INTERVAL_MS)
@@ -187,14 +214,15 @@ export const NebiusEndpointProvider: Layer.Layer<
     // the deploy.
     const readyState = toFriendlyAttributes(endpoint).state
     if (readyState === 'ERROR') {
+      const reason = stateDetail(endpoint) !== undefined ? ` — ${stateDetail(endpoint)}` : ''
       return yield* new EndpointNotReady({
         id: endpoint.metadata!.id,
         state: readyState,
-        message: `Endpoint ${endpoint.metadata!.id} is in ERROR state — check its logs/state details in the Nebius console, then fix or replace it`,
+        message: `Endpoint ${endpoint.metadata!.id} is in ERROR state${reason} — check the Nebius console, then fix or replace it`,
       })
     }
     if (isFresh || readyState === 'PROVISIONING' || readyState === 'STARTING' || readyState === 'IMAGE_PULLING') {
-      endpoint = yield* waitUntilRunning(endpoint.metadata!.id)
+      endpoint = yield* waitUntilRunning(endpoint.metadata!.id, (message) => session.note(message))
     }
 
     // 3. Return — fresh Attributes. `authToken` is a one-time value (like the
