@@ -178,14 +178,21 @@ export const NebiusEndpointProvider: Layer.Layer<
         )
     }
 
-    // 2.5 — Wait for RUNNING (public endpoints populated) when the endpoint
-    // is freshly created OR observed in a transient provisioning state (a
-    // previous deploy may have crashed mid-provisioning). The binding's env
-    // derivation reads publicEndpoints at apply time, so the resource isn't
-    // ready until the VM is up (AI_BINDINGS.md O1 resolution). STOPPED/ERROR
-    // endpoints are NOT awaited — they fail fast via the binding's
-    // EndpointNotRunning instead of hanging the deploy for the deadline.
+    // 2.5 — Readiness: the binding's env derivation reads publicEndpoints at
+    // apply time, so the resource isn't ready until the VM is up
+    // (AI_BINDINGS.md O1 resolution). Fresh/transient endpoints are awaited
+    // to RUNNING; an observed ERROR is a real container failure — fail with a
+    // clear message instead of binding an empty URL; STOPPED endpoints bind
+    // '' and fail fast at runtime (EndpointNotRunning) rather than hanging
+    // the deploy.
     const readyState = toFriendlyAttributes(endpoint).state
+    if (readyState === 'ERROR') {
+      return yield* new EndpointNotReady({
+        id: endpoint.metadata!.id,
+        state: readyState,
+        message: `Endpoint ${endpoint.metadata!.id} is in ERROR state — check its logs/state details in the Nebius console, then fix or replace it`,
+      })
+    }
     if (isFresh || readyState === 'PROVISIONING' || readyState === 'STARTING' || readyState === 'IMAGE_PULLING') {
       endpoint = yield* waitUntilRunning(endpoint.metadata!.id)
     }

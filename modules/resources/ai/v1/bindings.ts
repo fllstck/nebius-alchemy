@@ -379,24 +379,21 @@ export const tokenToEnv = (token: string | undefined): string => token ?? ''
 
 /**
  * The endpoint env values injected into the Worker (AD6). Outputs resolve at
- * apply time: the URL is the endpoint's first public endpoint — empty means
- * the endpoint is not RUNNING and the deploy fails with
- * {@link EndpointNotRunning} (AD7). The token is Redacted → deployed as a
- * Cloudflare `secret_text` binding.
+ * apply time: the URL is the endpoint's first public endpoint — `''` when the
+ * endpoint isn't RUNNING yet (AD7, lenient). The token is Redacted → deployed
+ * as a Cloudflare `secret_text` binding.
+ *
+ * DELIBERATELY lenient: a fail-fast here would fire during alchemy's PLAN
+ * phase, which evaluates binding data against the endpoint's PERSISTED
+ * output — empty publicEndpoints before the first successful run — and block
+ * the deploy before reconcile can act (the O1 hit). Readiness lives in the
+ * provider (fresh/transient endpoints are awaited to RUNNING) and in the
+ * runtime guard (empty URL → EndpointNotRunning on first call).
  */
 const endpointToEnv = (endpoint: NebiusEndpoint): Record<string, BindHost.EnvValue> => ({
-  NEBIUS_ENDPOINT_URL: Output.mapEffect((eps: readonly string[]): Effect.Effect<string, never, never> => {
-    const first = publicEndpointUrl(eps)
-    if (first !== null) return Effect.succeed(first)
-    // The failure is real and intended — fail the deploy at apply time (AD7) —
-    // but the seam types the failure channel as `never`. Encapsulated cast,
-    // same spirit as `unrequiring` in `host-identity.ts`.
-    return Effect.fail(
-      new EndpointNotRunning({
-        message: `Endpoint ${endpoint.LogicalId} has no public endpoint yet — it must be RUNNING at deploy time`,
-      }),
-    ) as unknown as Effect.Effect<string, never, never>
-  })(endpoint.publicEndpoints),
+  NEBIUS_ENDPOINT_URL: Output.map((publicEndpoints: readonly string[]) =>
+    publicEndpointUrl(publicEndpoints) ?? '',
+  )(endpoint.publicEndpoints),
   NEBIUS_ENDPOINT_AUTH_TOKEN: Output.map((token: string | undefined) =>
     Redacted.make(tokenToEnv(token)),
   )(endpoint.authToken),

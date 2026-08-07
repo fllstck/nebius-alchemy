@@ -257,7 +257,7 @@ Status: M1–M5 **done** (0 errors, full suite green). Bundle-safety spike ran
 
 | # | Question | Decision | Status |
 |---|----------|----------|--------|
-| O1 | Fail-fast on a stopped endpoint at deploy time (AD7) vs lenient empty-URL + runtime error? | **Hit in real deploy + resolved:** the worker's env evaluation runs right after the endpoint's create — which returns while PROVISIONING (empty `publicEndpoints`). The provider now **awaits RUNNING** for fresh/transient endpoints (`EndpointNotReady` on timeout/ERROR); STOPPED endpoints still fail fast with `EndpointNotRunning`. One-deploy greenfield works | resolved (endpoint.ts) |
+| O1 | Fail-fast on a stopped endpoint at deploy time (AD7) vs lenient empty-URL + runtime error? | **Hit in real deploy, twice + resolved:** (1) the worker env eval runs after the endpoint create — which returns while PROVISIONING (empty `publicEndpoints`); (2) a fail-fast in the env Output fires during alchemy's **PLAN** phase (reads persisted output) and blocks the deploy before reconcile can act. Resolution: env derivation is **lenient** ('' when not RUNNING); readiness lives in the provider (fresh/transient endpoints awaited to RUNNING; observed ERROR → `EndpointNotReady`) and in the runtime guard ('' → `EndpointNotRunning` on first call) | resolved (endpoint.ts + bindings.ts) |
 | O2 | Mid-stream malformed JSON: fail stream vs skip event? | Fail with `MalformedStream` (corrupt event = misbehaving endpoint) | locked |
 | O3 | Long-stream timeout handling? | No built-in timeout; document `ctx.waitUntil` + endpoint idle behavior | open |
 | O4 | Adopted/ref'd endpoints lose the token (read/list lack `news`) → runtime 401 | Documented limitation; v1 targets stack-deployed endpoints | open |
