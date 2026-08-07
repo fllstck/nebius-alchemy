@@ -206,16 +206,16 @@ export const toStorageError = (key: string | undefined, error: unknown): Storage
   })
 }
 
-/** Deploy-time env values injected into the Worker (D7 naming, Redacted secret). */
+/** Deploy-time env values injected into the Worker (D7 naming; the access key secret deploys as secret_text). */
 const bindingEnv = (
   bucketName: Output.Output<string>,
   region: string,
   identity: HostIdentity,
-): Record<string, BindHost.EnvValue> => ({
+): Record<string, BindHost.EnvValue | BindHost.SecretValue> => ({
   NEBIUS_S3_ENDPOINT: `https://storage.${region}.nebius.cloud`,
   NEBIUS_REGION: region,
   NEBIUS_ACCESS_KEY_ID: identity.awsAccessKeyId,
-  NEBIUS_SECRET_ACCESS_KEY: identity.secretAccessKey,
+  NEBIUS_SECRET_ACCESS_KEY: BindHost.secret(identity.secretAccessKey),
   NEBIUS_BUCKET_NAME: bucketName,
 })
 

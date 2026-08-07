@@ -29,6 +29,27 @@ export type EnvValue =
   | Output.Output<string | Redacted.Redacted<string>>
 
 /**
+ * An explicit request to deploy a value as a Cloudflare `secret_text` binding.
+ *
+ * The wire shape requires `text` to be a **string** at upload, and the worker
+ * provider maps `host.bind` data items passthrough — it does NOT unwrap
+ * `Redacted` values in binding data (only the worker's `env` prop path does).
+ * So: wrap the value in {@link secret} to force `secret_text`; the wrapped
+ * value must resolve to a plain string at apply time (an Output resolving to
+ * a Redacted would hit the wire as an object and fail startup).
+ */
+export interface SecretValue {
+  readonly _tag: 'NebiusSecret'
+  readonly value: EnvValue
+}
+
+/** Force a value to deploy as a Cloudflare secret (`secret_text`). */
+export const secret = (value: EnvValue): SecretValue => ({ _tag: 'NebiusSecret', value })
+
+const isSecretValue = (value: unknown): value is SecretValue =>
+  typeof value === 'object' && value !== null && (value as { _tag?: string })._tag === 'NebiusSecret'
+
+/**
  * An env binding record with possibly-unresolved `text` (Output). The wire
  * `WorkerBinding` type only admits resolved strings; the deploy-time record
  * carries the Output and is resolved by the apply machinery before upload.
@@ -41,17 +62,23 @@ export type EnvBinding =
  * Map env entries to Cloudflare binding entries.
  *
  * - `string` values become `plain_text` bindings
- * - `Redacted` values become `secret_text` bindings (deployed as Cloudflare
- *   secrets, never visible in plaintext script settings)
+ * - {@link secret}-wrapped values become `secret_text` bindings (the wrapped
+ *   value resolves to a string at apply time)
+ * - direct `Redacted` values become `secret_text` with the secret UNWRAPPED
+ *   here — the worker provider does not unwrap Redacted in `host.bind` data
+ *   (only in the worker `env` prop), and the wire needs a string
  * - Output values pass through unresolved — the apply machinery evaluates
  *   them against the tracker before the Worker provider uploads the script
  */
-export const envToWorkerBindings = (env: Record<string, EnvValue>): EnvBinding[] =>
-  Object.entries(env).map(([name, value]) =>
-    Redacted.isRedacted(value)
-      ? { type: 'secret_text' as const, name, text: value }
-      : { type: 'plain_text' as const, name, text: value },
-  )
+export const envToWorkerBindings = (env: Record<string, EnvValue | SecretValue>): EnvBinding[] =>
+  Object.entries(env).map(([name, value]) => {
+    if (isSecretValue(value)) {
+      return { type: 'secret_text' as const, name, text: value.value }
+    }
+    return Redacted.isRedacted(value)
+      ? { type: 'secret_text' as const, name, text: Redacted.value(value) }
+      : { type: 'plain_text' as const, name, text: value }
+  })
 
 /**
  * Register env bindings on the host Worker.
@@ -65,7 +92,7 @@ export const envToWorkerBindings = (env: Record<string, EnvValue>): EnvBinding[]
 export const bindWorkerEnv = Effect.fn('bindWorkerEnv')(function* (
   host: Worker,
   sid: string,
-  env: Record<string, EnvValue>,
+  env: Record<string, EnvValue | SecretValue>,
 ): Effect.fn.Return<void> {
   if (globalThis.__ALCHEMY_RUNTIME__) return
   // The deploy-time record carries possibly-unresolved Output text; the wire
@@ -91,7 +118,7 @@ const registeredEnvNames = new Set<string>()
 export const registerEnvOnce = Effect.fn('registerEnvOnce')(function* (
   host: Worker,
   sid: string,
-  env: Record<string, EnvValue>,
+  env: Record<string, EnvValue | SecretValue>,
 ): Effect.fn.Return<void> {
   const fresh = Object.fromEntries(
     Object.entries(env).filter(([name]) => !registeredEnvNames.has(`${host.LogicalId}:${name}`)),

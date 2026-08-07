@@ -23,7 +23,6 @@ import * as Output from 'alchemy/Output'
 import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Redacted from 'effect/Redacted'
 import * as Schema from 'effect/Schema'
 import * as BindHost from '../../shared/bind-host.ts'
 import type { NebiusEndpoint } from './endpoint.ts'
@@ -390,13 +389,17 @@ export const tokenToEnv = (token: string | undefined): string => token ?? ''
  * provider (fresh/transient endpoints are awaited to RUNNING) and in the
  * runtime guard (empty URL → EndpointNotRunning on first call).
  */
-const endpointToEnv = (endpoint: NebiusEndpoint): Record<string, BindHost.EnvValue> => ({
+const endpointToEnv = (endpoint: NebiusEndpoint): Record<string, BindHost.EnvValue | BindHost.SecretValue> => ({
   NEBIUS_ENDPOINT_URL: Output.map((publicEndpoints: readonly string[]) =>
     publicEndpointUrl(publicEndpoints) ?? '',
   )(endpoint.publicEndpoints),
-  NEBIUS_ENDPOINT_AUTH_TOKEN: Output.map((token: string | undefined) =>
-    Redacted.make(tokenToEnv(token)),
-  )(endpoint.authToken),
+  // secret() → secret_text. The marker is consumed at classification time and
+  // the wrapped Output resolves to the plain token STRING at apply time — the
+  // wire shape requires a string (a Redacted object would fail startup, and
+  // the worker provider does not unwrap Redacted in host.bind data).
+  NEBIUS_ENDPOINT_AUTH_TOKEN: BindHost.secret(
+    Output.map((token: string | undefined) => tokenToEnv(token))(endpoint.authToken),
+  ),
 })
 
 /**

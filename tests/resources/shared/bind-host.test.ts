@@ -29,17 +29,25 @@ describe('bind-host', () => {
       ])
     })
 
-    test('Redacted values map to secret_text bindings (unwrap deferred to the worker provider)', () => {
+    test('direct Redacted values map to secret_text with the value UNWRAPPED (the worker provider does not unwrap host.bind data)', () => {
       const bindings = BindHost.envToWorkerBindings({ NEBIUS_SECRET_ACCESS_KEY: Redacted.make('s3cr3t') })
       expect(bindings).toHaveLength(1)
       const binding = bindings[0]!
       expect(binding.type).toBe('secret_text')
       expect(binding.name).toBe('NEBIUS_SECRET_ACCESS_KEY')
-      // The Redacted passes through untouched: alchemy's worker provider routes
-      // Redacted → secret_text and unwraps at resolution/apply time — not here
-      // (cf. alchemy WorkerProvider: Redacted-shaped values → secret_text).
-      expect(Redacted.isRedacted(binding.text)).toBe(true)
-      expect(Redacted.value(binding.text as Redacted.Redacted<string>)).toBe('s3cr3t')
+      // The provider maps host.bind items passthrough to the wire, which needs
+      // a string — unwrap here (cf. the ScriptStartupError hit: a Redacted/Output
+      // object as `text` fails Cloudflare's Go unmarshaler).
+      expect(binding.text).toBe('s3cr3t')
+    })
+
+    test('secret()-wrapped values map to secret_text, keeping the wrapped value (resolves to a string at apply time)', () => {
+      const bindings = BindHost.envToWorkerBindings({
+        NEBIUS_ENDPOINT_AUTH_TOKEN: BindHost.secret('tok'),
+      })
+      expect(bindings).toEqual([
+        { type: 'secret_text', name: 'NEBIUS_ENDPOINT_AUTH_TOKEN', text: 'tok' },
+      ])
     })
 
     test('mixed env maps each entry to the right binding type', () => {
@@ -50,12 +58,9 @@ describe('bind-host', () => {
       })
       expect(bindings).toEqual([
         { type: 'plain_text', name: 'NEBIUS_S3_ENDPOINT', text: 'https://storage.eu-north1.nebius.cloud' },
-        { type: 'secret_text', name: 'NEBIUS_SECRET_ACCESS_KEY', text: expect.anything() },
+        { type: 'secret_text', name: 'NEBIUS_SECRET_ACCESS_KEY', text: 's3cr3t' },
         { type: 'plain_text', name: 'NEBIUS_ACCESS_KEY_ID', text: 'AKIA123' },
       ])
-      const secret = bindings[1]!
-      expect(Redacted.isRedacted(secret.text)).toBe(true)
-      expect(Redacted.value(secret.text as Redacted.Redacted<string>)).toBe('s3cr3t')
     })
 
     test('empty env produces no bindings', () => {
@@ -78,11 +83,8 @@ describe('bind-host', () => {
       const data = calls[0]!.data as { bindings: BindHost.EnvBinding[] }
       expect(data.bindings).toEqual([
         { type: 'plain_text', name: 'NEBIUS_BUCKET_NAME', text: 'my-bucket' },
-        { type: 'secret_text', name: 'NEBIUS_SECRET_ACCESS_KEY', text: expect.anything() },
+        { type: 'secret_text', name: 'NEBIUS_SECRET_ACCESS_KEY', text: 's3cr3t' },
       ])
-      const secret = data.bindings[1]!
-      expect(Redacted.isRedacted(secret.text)).toBe(true)
-      expect(Redacted.value(secret.text as Redacted.Redacted<string>)).toBe('s3cr3t')
     })
 
     test('is a no-op at runtime (guard folded to true)', async () => {
