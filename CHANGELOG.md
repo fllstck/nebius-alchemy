@@ -1,3 +1,13 @@
+## [0.4.1](https://github.com/fllstck/nebius-alchemy/compare/v0.4.0...v0.4.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **api-client:** derive polling attempt cap from deadline window ([afe6c8b](https://github.com/fllstck/nebius-alchemy/commit/afe6c8b953b123febe6a23ebd1040f3ab1312639))
+* **api-client:** increase operation polling deadlines for VM-backed services ([38ea122](https://github.com/fllstck/nebius-alchemy/commit/38ea1224b3026c512fe6394b8a2993aecb8c5540))
+* **ci:** regenerate schemas before typecheck and tests ([33567a5](https://github.com/fllstck/nebius-alchemy/commit/33567a57275b7db88b83529bc64885cae674a1aa))
+* **tests:** update job state enum to match Nebius lifecycle ([ff6e884](https://github.com/fllstck/nebius-alchemy/commit/ff6e8845a959b20ce8b8f0d3a2ca404bd9d284c0))
+* **tests:** use provideMerge for config layer in factory tests ([723fe25](https://github.com/fllstck/nebius-alchemy/commit/723fe255052c46af4d88f756b82a5016c32bddee))
 # [0.4.0](https://github.com/fllstck/nebius-alchemy/compare/v0.3.15...v0.4.0) (2026-08-06)
 
 
