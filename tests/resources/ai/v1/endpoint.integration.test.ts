@@ -59,6 +59,10 @@ integrationTest(
             ports: [{ containerPort: 80, protocol: 'HTTP' }],
             volumes: [],
             disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+            // One HTTP port only → auth is valid. The API never echoes this
+            // back; M1 (AD1) synthesizes it from props so bindings can read
+            // it off the handle — assert it survives into the output attrs.
+            authToken: 'integration-test-token',
           })
           return { network, subnet, endpoint }
         }),
@@ -71,6 +75,8 @@ integrationTest(
       // the stack deploy already polls the create operation to completion.
       expect(['PROVISIONING', 'STARTING', 'RUNNING']).toContain(endpoint.state)
       expect(endpoint.publicEndpoints).toBeDefined()
+      // AD1: the one-time authToken survives into the deployed output.
+      expect(endpoint.authToken).toBe('integration-test-token')
     }).pipe(
       // Long timeout: endpoint VM provisioning routinely exceeds 120s — the
       // destroy must run against a settled endpoint, not a mid-create one

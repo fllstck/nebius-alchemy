@@ -99,6 +99,13 @@ export const EndpointAttributesSchema = Schema.Struct({
   ]),
   publicEndpoints: Schema.Array(Schema.String),
   privateEndpoints: Schema.Array(Schema.String),
+  /**
+   * The endpoint's bearer auth token. The API never echoes it back after
+   * create (one-time value, like the AccessKey secret) — synthesized from
+   * props, which Alchemy state persists across deploys, so bindings can read
+   * it off the resource handle (AI_BINDINGS.md AD1).
+   */
+  authToken: Schema.optional(Schema.String),
 })
 
 export type EndpointAttributes = typeof EndpointAttributesSchema.Type

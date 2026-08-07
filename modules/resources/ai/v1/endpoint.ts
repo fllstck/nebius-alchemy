@@ -98,8 +98,15 @@ export const NebiusEndpointProvider = AlchemyProvider.succeed(NebiusEndpoint, {
         )
     }
 
-    // 3. Return — fresh Attributes
-    return toFriendlyAttributes(endpoint)
+    // 3. Return — fresh Attributes. `authToken` is a one-time value (like the
+    // AccessKey secret): the API never echoes it back, so synthesize it from
+    // props — which Alchemy state persists across deploys — to keep it
+    // readable off the resource handle (bindings rely on this, AI_BINDINGS.md
+    // AD1). read/list paths have no `news` and omit it (documented).
+    return {
+      ...toFriendlyAttributes(endpoint),
+      authToken: news.authToken,
+    }
   }),
 
   delete: Factory.makeCrudDelete({

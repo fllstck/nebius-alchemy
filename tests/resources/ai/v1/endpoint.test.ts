@@ -1,5 +1,6 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Schema from 'effect/Schema'
 import * as Module from '../../../../modules/resources/ai/v1/endpoint.ts'
 import * as SchemaModule from '../../../../modules/resources/ai/v1/endpoint.schema.ts'
 import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
@@ -92,6 +93,38 @@ describe('Nebius.ai.v1.Endpoint', () => {
         }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+    })
+  })
+
+  describe('attributes', () => {
+    test('EndpointAttributesSchema carries authToken (binding support, AD1)', async () => {
+      const attrs = {
+        id: 'endpoint-abc123',
+        parentId: 'project-abc123',
+        name: 'my-endpoint',
+        labels: [],
+        state: 'RUNNING',
+        publicEndpoints: ['https://ep-abc123.public.api.nebius.cloud'],
+        privateEndpoints: [],
+        authToken: 'secret-token',
+      }
+      const decoded = await runEffect(Schema.decodeUnknownEffect(SchemaModule.EndpointAttributesSchema)(attrs))
+      expect(decoded.authToken).toBe('secret-token')
+      expect(decoded.state).toBe('RUNNING')
+    })
+
+    test('EndpointAttributesSchema decodes without authToken (read/list paths)', async () => {
+      const attrs = {
+        id: 'endpoint-abc123',
+        parentId: 'project-abc123',
+        name: 'my-endpoint',
+        labels: [],
+        state: 'RUNNING',
+        publicEndpoints: [],
+        privateEndpoints: [],
+      }
+      const decoded = await runEffect(Schema.decodeUnknownEffect(SchemaModule.EndpointAttributesSchema)(attrs))
+      expect(decoded.authToken).toBeUndefined()
     })
   })
 })
