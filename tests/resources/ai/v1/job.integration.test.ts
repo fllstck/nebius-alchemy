@@ -55,7 +55,7 @@ integrationTest(
             environmentVariables: [{ name: 'TEST', value: '1' }],
             ports: [],
             volumes: [],
-            disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+            disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 }, // 100 GiB (≥ 64 GiB floor)
           })
           return { network, subnet, job }
         }),

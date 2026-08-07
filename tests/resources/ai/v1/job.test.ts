@@ -18,7 +18,7 @@ const validJobProps = {
   environmentVariables: [{ name: 'FOO', value: 'bar' }],
   ports: [{ containerPort: 8080, protocol: 'HTTP' }],
   volumes: [],
-  disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+  disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 }, // 100 GiB (≥ 64 GiB floor)
 }
 
 describe('Nebius.ai.v1.Job', () => {
@@ -77,7 +77,7 @@ describe('Nebius.ai.v1.Job', () => {
       const result = await runEffect(
         SchemaModule.validateJobProps({
           ...validJobProps,
-          disk: { type: 'NOT_A_TYPE', sizeBytes: 10_737_418_240 },
+          disk: { type: 'NOT_A_TYPE', sizeBytes: 107_374_182_400 },
         }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
@@ -87,6 +87,16 @@ describe('Nebius.ai.v1.Job', () => {
       const { disk: _disk, ...withoutDisk } = validJobProps
       const result = await runEffect(
         SchemaModule.validateJobProps(withoutDisk).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects disks below the 64 GiB provisioning floor', async () => {
+      const result = await runEffect(
+        SchemaModule.validateJobProps({
+          ...validJobProps,
+          disk: { type: 'NETWORK_SSD', sizeBytes: 16 * 1024 ** 3 },
+        }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
     })

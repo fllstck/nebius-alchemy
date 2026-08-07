@@ -72,6 +72,10 @@ export default Cloudflare.Worker(
     // proves the full binding chain (endpoint RUNNING → public URL wired →
     // Worker env → runtime client). Not OpenAI-compatible — a chat call
     // returns the binding's EndpointNotFound (404).
+    // ⚠️ Disk must be ≥ 64 GiB (the provisioning floor, enforced by
+    // `diskSizeValid` in job.schema.ts): a smaller disk (the old 10 GiB
+    // value here) hangs provisioning and fails with an opaque platform
+    // internal error after ~29 min.
     // const endpoint = yield* NebiusEndpoint('llm', {
     //   image: 'nginx:alpine',
     //   platform: 'cpu-d3',
@@ -82,7 +86,7 @@ export default Cloudflare.Worker(
     //   environmentVariables: [],
     //   ports: [{ containerPort: 80, protocol: 'HTTP' }],
     //   volumes: [],
-    //   disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+    //   disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 }, // 100 GiB
     //   authToken: 'replace-with-a-real-token',
     // })
 

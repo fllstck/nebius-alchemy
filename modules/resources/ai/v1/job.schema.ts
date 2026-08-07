@@ -79,10 +79,32 @@ export const DiskTypeSchema = Schema.Union([
   Schema.Literal('NETWORK_SSD_IO_M3'),
 ])
 
+/**
+ * Minimum boot-disk size for VM-app endpoints/jobs: 64 GiB.
+ *
+ * Smaller disks hang provisioning — the create operation fails with an opaque
+ * internal error only after ~29 min (empirically verified: 10 GiB and 32 GiB
+ * fail with no instance ever created; 64 GiB reaches RUNNING in ~2 min). The
+ * platform itself enforces the same 64 GiB floor in its MK8s
+ * instance-template contract (`nebius/mk8s/v1/instance_template.proto` has
+ * `gte: 64` on `size_gibibytes`); the AI Endpoint/Job API lacks that
+ * validation, so we enforce it here to fail at plan time instead of after a
+ * half-hour wait.
+ */
+export const MIN_DISK_SIZE_BYTES = 64 * 1024 ** 3
+
+export const diskSizeValid = Schema.makeFilter(
+  (sizeBytes: number) =>
+    sizeBytes >= MIN_DISK_SIZE_BYTES
+      ? undefined
+      : `Disk size must be at least 64 GiB (${MIN_DISK_SIZE_BYTES} bytes), got ${sizeBytes} bytes — smaller disks hang provisioning and fail with a platform internal error`,
+  { title: 'disk size ≥ 64 GiB' },
+)
+
 export const JobDiskSchema = Schema.Struct({
   type: DiskTypeSchema,
-  /** Disk size in bytes. */
-  sizeBytes: Schema.Finite,
+  /** Disk size in bytes. Must be ≥ 64 GiB — see {@link diskSizeValid}. */
+  sizeBytes: Schema.Finite.check(diskSizeValid),
 })
 
 export const RegistryCredentialsSchema = Schema.Union([

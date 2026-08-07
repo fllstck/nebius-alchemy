@@ -18,7 +18,7 @@ const validEndpointProps = {
   environmentVariables: [],
   ports: [{ containerPort: 80, protocol: 'HTTP' }],
   volumes: [],
-  disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+  disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 }, // 100 GiB (≥ 64 GiB floor)
 }
 
 describe('Nebius.ai.v1.Endpoint', () => {
@@ -83,6 +83,26 @@ describe('Nebius.ai.v1.Endpoint', () => {
         SchemaModule.validateEndpointProps(withoutDisk).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects disks below the 64 GiB provisioning floor', async () => {
+      const result = await runEffect(
+        SchemaModule.validateEndpointProps({
+          ...validEndpointProps,
+          disk: { type: 'NETWORK_SSD', sizeBytes: 32 * 1024 ** 3 },
+        }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('accepts exactly 64 GiB (the proven provisioning floor)', async () => {
+      const result = await runEffect(
+        SchemaModule.validateEndpointProps({
+          ...validEndpointProps,
+          disk: { type: 'NETWORK_SSD', sizeBytes: 64 * 1024 ** 3 },
+        }),
+      )
+      expect(result.disk.sizeBytes).toBe(64 * 1024 ** 3)
     })
 
     test('rejects bad base64 in injectedFiles', async () => {

@@ -58,7 +58,7 @@ integrationTest(
             environmentVariables: [],
             ports: [{ containerPort: 80, protocol: 'HTTP' }],
             volumes: [],
-            disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+            disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 }, // 100 GiB (≥ 64 GiB floor)
             // One HTTP port only → auth is valid. The API never echoes this
             // back; M1 (AD1) synthesizes it from props so bindings can read
             // it off the handle — assert it survives into the output attrs.

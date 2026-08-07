@@ -109,6 +109,25 @@ const waitUntilRunning = Effect.fn('Nebius.ai.v1.Endpoint.waitUntilRunning')(fun
         message: `Endpoint ${endpointId} entered ERROR while waiting for RUNNING${reason}`,
       })
     }
+    // Fail fast when an instance reports FAILED/ERROR even while the endpoint
+    // state is still transitional (e.g. a container crash during STARTING):
+    // the endpoint-level state above only flips to ERROR after the platform
+    // create operation completes, which can take ~30 min on failure.
+    const failedInstance = current.status?.instances?.find(
+      (i) =>
+        i.state === NebiusEndpointSchema.EndpointInstanceStatus_State.FAILED ||
+        i.state === NebiusEndpointSchema.EndpointInstanceStatus_State.ERROR,
+    )
+    if (failedInstance) {
+      const reason = detail !== undefined ? ` — ${detail}` : ''
+      return yield* new EndpointNotReady({
+        id: endpointId,
+        state,
+        message: `Endpoint ${endpointId} instance ${
+          failedInstance.state === NebiusEndpointSchema.EndpointInstanceStatus_State.FAILED ? 'FAILED' : 'ERROR'
+        } while waiting for RUNNING${reason}`,
+      })
+    }
     const elapsed = (yield* Clock.currentTimeMillis) - started
     if (elapsed > READY_DEADLINE_MS) {
       const reason = detail !== undefined ? ` (last detail: ${detail})` : ''
