@@ -1,3 +1,9 @@
+## [0.5.1](https://github.com/fllstck/nebius-alchemy/compare/v0.5.0...v0.5.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **ai:** enforce 64 GiB disk floor and fail fast on instance errors ([e91a994](https://github.com/fllstck/nebius-alchemy/commit/e91a994b7203e5d3b2145b48acea474323e3b4b3))
 # [0.5.0](https://github.com/fllstck/nebius-alchemy/compare/v0.4.2...v0.5.0) (2026-08-07)
 
 
