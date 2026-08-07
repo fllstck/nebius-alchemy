@@ -11,6 +11,8 @@ bun add @fllstck/nebius-alchemy alchemy@next effect@4.0.0-beta.103 @effect/platf
 ```
 
 > **Effect version is pinned to `4.0.0-beta.103`** — `effect@beta` (104+) renames `Schema.TaggedErrorClass`, which alchemy 2.0.0-beta.70 still uses internally. Bump this pin when a new alchemy release supports the newer betas.
+>
+> **Type checking with `tsc`?** This package ships raw TypeScript (bun-first, no build step). If you typecheck with `tsc`, enable `allowImportingTsExtensions` (requires `noEmit`), e.g. `"moduleResolution": "bundler", "allowImportingTsExtensions": true, "noEmit": true`.
 
 ```ts
 // alchemy.run.ts
