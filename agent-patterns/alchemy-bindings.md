@@ -83,6 +83,119 @@ const registerEnvOnce = … // filter already-registered names, skip empty, then
 Module-level state is effectively per-deploy (`alchemy deploy` runs one deploy
 per process; `alchemy dev` restarts the exec child per reload).
 
+## Worker env bindings: `text` must be a plain STRING at upload (O7)
+
+The worker provider maps `host.bind` data items **passthrough** to
+Cloudflare's wire — it does NOT unwrap `Redacted` or re-classify values in
+binding data (only the worker's `env` **prop** path does). An `Output` that
+resolves to a `Redacted` OBJECT reaches the wire as `text` and fails startup:
+
+```
+ScriptStartupError: json: cannot unmarshal object into Go struct field PlainTextBinding.text of type string
+```
+
+Because classification runs BEFORE `Output.evaluate` (at `bindWorkerEnv`
+time), you cannot infer the final shape from the raw value. Rules:
+
+- **Env `text` values must resolve to a plain string** at apply time.
+- **Force `secret_text` explicitly** via the `secret()` marker in
+  `shared/bind-host.ts` — it's consumed at classification time (never
+  survives into binding data) and the wrapped value resolves to the string:
+
+  ```ts
+  NEBIUS_ENDPOINT_AUTH_TOKEN: BindHost.secret(
+    Output.map((t: string | undefined) => t ?? '')(endpoint.authToken),
+  )
+  ```
+- **Direct `Redacted` values are unwrapped at classification** (`Redacted.value`)
+  — the provider won't do it for you.
+- Never `Output.map((v) => Redacted.make(...))` into a binding — the resolved
+  object breaks the wire.
+
+## Env derivation must be LENIENT — the plan phase evaluates binding data (O1)
+
+Binding-data Outputs are evaluated during alchemy's **PLAN phase** too
+(`Plan.ts`), against the resource's PERSISTED output — which has empty
+status attrs before the first successful run. A fail-fast inside the env
+Output (e.g. `Output.mapEffect` returning `Effect.fail`) fires at plan time
+and blocks the deploy BEFORE reconcile can act:
+
+```
+ERROR (#3): EndpointNotRunning: Endpoint llm has no public endpoint yet …
+  at plan.diff.resource (Plan.ts:826)
+```
+
+Resolution (three layers, no fail-fast in the Output):
+1. **Env derivation is lenient**: empty status → `''` via `Output.map`,
+   never an error.
+2. **Readiness lives in the provider**: reconcile awaits the ready state
+   (below) so the attrs the env reads are populated by apply time.
+3. **A runtime guard** on the empty value gives the tagged error at call time.
+
+## Readiness wait for post-create (status) attributes
+
+When a binding reads a STATUS attribute (`publicEndpoints`), the provider
+must not return attrs until the resource is actually ready — the create
+OPERATION completes before the endpoint VM reaches RUNNING, and a dependent
+resource's env eval would otherwise bind `''`:
+
+- Wait for RUNNING on **fresh creates AND observed transient states**
+  (PROVISIONING/STARTING/IMAGE_PULLING — a previous deploy may have crashed
+  mid-provisioning).
+- Do NOT wait on deliberately-stopped resources (STOPPED) — fail fast via
+  the binding's runtime guard instead of hanging the deploy for the deadline.
+- Emit **progress notes on state transitions** (`session.note`) with elapsed
+  time + the platform's `stateDetails.message` — multi-minute provisioning
+  must not be silent.
+- On ERROR (or timeout) fail with a tagged error carrying the stateDetails
+  reason (quota failures etc. are in `status.stateDetails.serviceError`).
+
+## `publicEndpoints` mixes raw `IP:port` and the managed https URL — pick https
+
+Nebius endpoint status puts the raw VM `IP:port` (`89.169.121.158:8000`)
+BEFORE the managed tunnel URL in `publicEndpoints`. Blindly taking `[0]`
+binds a value that isn't URL-constructible:
+
+```ts
+new URL('/v1/chat/completions', '89.169.121.158:8000') // throws Invalid URL string
+```
+
+Always prefer an absolute `http(s)://` entry (the stable managed tunnel URL);
+return null (→ the runtime guard) when only raw entries exist.
+
+## D8: guard provider exports so worker bundles DCE the gRPC graph
+
+A Worker entry statically imports the RESOURCE modules (to declare
+resources), and an unguarded `AlchemyProvider.succeed(...)` at module scope
+keeps the whole deploy graph (gRPC clients, protobuf schemas, factories)
+alive in the bundle — measured ~1.15 MB entry with gRPC markers. The bucket
+module had the fix; apply it to EVERY resource module:
+
+```ts
+export const NebiusXProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusX>, never, any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? (undefined as unknown as Layer.Layer<…>)
+  : AlchemyProvider.succeed(NebiusX, { … })
+```
+
+The bundler folds the guard to `true` in worker bundles and DCEs the branch;
+at deploy time it's undefined and the real provider registers. (Backfilled to
+all 35 resource modules via `spikes/backfill-provider-guard.ts`.) Result: AI
+worker entry 1152 KB → 115 KB, zero gRPC.
+
+## Bundle analysis: lib not src, entry size matters, lazy chunks are inert
+
+- Rolldown resolves `alchemy` to **`lib/*.js`**, NOT `src/*.ts` — patching
+  node_modules src has NO effect on bundles. Don't go down that path.
+- **Total bundle size is misleading**: alchemy's core pulls the deploy engine
+  + platform layers as DYNAMIC-import chunks (`BunServices`/`NodeServices`/
+  `NodeSocket`, CLI tooling) that never load in a deployed worker. The
+  binding module's ENTRY (main script — what startup evaluates) is ~112 KB
+  even though the total is ~1 MB.
+- Measure entry size + check for gRPC markers (`@grpc`, `node:net` as static
+  imports) — `spikes/ai-bindings-bundle.ts` does both.
+
 ## Effect/API gotchas hit along the way
 
 - `Effect.provide` has only a **single-layer curried overload** — for multiple
@@ -92,7 +205,24 @@ per process; `alchemy dev` restarts the exec child per reload).
 - `HttpServerRequest.text` is an **Effect property** (`yield* request.text`),
   not a method.
 - `Effect.either` does not exist in this Effect version — use `Effect.exit` +
-  `Exit.isFailure`.
+  `Exit.isFailure` (or `Effect.match`).
+- `Schema.Literal('a','b','c')` keeps ONLY the first value — use
+  `Schema.Union([Schema.Literal('a'), Schema.Literal('b'), …])` (multi-value
+  literals always take the array form; `Schema.Union` also takes an array).
+- The Effect-based encoder is `Schema.encodeEffect(schema)(value)`; plain
+  `Schema.encode` crashes this build (`encodeSync` works for sync contexts).
+- `Schema.fromJsonString(schema)` composes JSON.parse + Schema decode for
+  JSON-string payloads (SSE events, error bodies) — there is no
+  `Schema.parseJson`.
+- `Schema.decodeUnknownEffect(schema)(input)` is the Effect decoder
+  (`decodeUnknownSync` for sync); `Schema.decodeUnknown` (no suffix) does not
+  exist.
+- `HttpServerResponse.json` returns an Effect — in a Worker fetch shape use
+  `HttpServerResponse.jsonUnsafe` to return a plain response.
+- `Bun.serve().url` is oddly typed for template literals — use
+  `server.url.toString()`.
+- `Effect.clock` does not exist — use `Clock.currentTimeMillis`
+  (`effect/Clock`).
 - A binding impl's layer requirements (`Worker | WorkerEnvironment`) can't be
   expressed in a stack effect's Req — satisfy them at the Worker impl boundary
   (Effect-native form) or cast at the stack boundary.

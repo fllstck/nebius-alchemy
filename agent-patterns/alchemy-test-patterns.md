@@ -97,6 +97,30 @@ yield* config.deleteById(svc, output.id).pipe(
 This is the standard IaC contract (Terraform/Pulumi treat 404-on-delete as
 success) and makes destroy idempotent across runs.
 
+## Mock-first runtime tests, then a gated real-infra e2e (bindings)
+
+For HTTP runtime clients (bindings), split the test surface:
+
+1. **Default `bun test` — local mock server** (`tests/helpers/openai-mock.ts`,
+   `Bun.serve`): full request/response, auth headers, error statuses, streaming
+   (scripted SSE frames) — zero cloud, zero cost. This covers the runtime
+   client + SSE parser thoroughly.
+2. **Impl runtime side**: set `globalThis.__ALCHEMY_RUNTIME__ = true` (the
+   bundler's fold) + provide `WorkerEnvironment` + a mocked `Self` host — the
+   real layer runs its runtime branch without the deploy-time branch (which
+   needs a real resource's attrs).
+3. **SLOW_TESTS-gated real-infra e2e** (`bindings.e2e.integration.test.ts`):
+   deploy a real resource (cheap combo — nginx on cpu-d3 for the endpoint)
+   and run the REAL layer with a mocked host against real attrs. Assert the
+   injected env carries the expected RESOLVED values (e.g. the managed https
+   URL, not raw `IP:port`) and make a real runtime call (nginx 404 →
+   `EndpointNotFound` proves reachability + error mapping).
+
+**The mock cannot catch deploy-time failure modes** — the real-infra e2e
+caught, in order: the plan-phase evaluation trap (O1), the wire-shape
+`ScriptStartupError` (O7), and the raw-`IP:port` URL bug. Keep the gated e2e
+as the regression gate even after the mocks pass.
+
 ## Diagnostic shortcut
 
 If integration-test failures look like server-side phantom resources or
