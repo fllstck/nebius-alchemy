@@ -36,19 +36,30 @@ export default Cloudflare.Worker(
     const network = yield* NebiusNetwork('Network', {})
     const subnet = yield* NebiusSubnet('Subnet', { networkId: network.id })
 
-    // A minimal inference endpoint. Point `image`/`ports` at your model
-    // server (vLLM/TGI/Ollama all speak the OpenAI HTTP API). Auth is
-    // enabled with a bearer token — the binding injects it into the Worker
-    // as a Cloudflare `secret_text` binding at deploy time.
+    // A minimal inference endpoint. Uses the ultra-compact llama.cpp server
+    // (<12 MB) with a small Qwen3-0.6B quantized model downloaded from
+    // HuggingFace at startup — OpenAI-compatible `/v1/chat/completions`,
+    // CPU-only, self-contained (no volume mounts). Auth is enabled with a
+    // bearer token — the binding injects it into the Worker as a Cloudflare
+    // `secret_text` binding at deploy time.
+    //
+    // `cpu-e2` is eu-north1-only and the smallest CPU platform; if it's not
+    // available in your region/project, use `platform: 'cpu-d3'` with
+    // `preset: '4vcpu-16gb'` instead.
     const endpoint = yield* NebiusEndpoint('llm', {
-      image: 'vllm/vllm-openai:latest',
-      platform: 'cpu-d3',
-      preset: '4vcpu-16gb',
+      image: 'samueltallet/alpine-llama-cpp-server',
+      platform: 'cpu-e2',
+      preset: '2vcpu-8gb',
       subnetId: subnet.id,
       publicIp: true,
       preemptible: false,
-      environmentVariables: [],
-      ports: [{ containerPort: 8000, protocol: 'HTTP' }],
+      environmentVariables: [
+        // The tiny model the server downloads at startup, and its request
+        // alias — the chat request below uses this model name.
+        { name: 'LLAMA_ARG_HF_REPO', value: 'unsloth/Qwen3-0.6B-GGUF' },
+        { name: 'LLAMA_ARG_ALIAS', value: 'qwen3-0.6b' },
+      ],
+      ports: [{ containerPort: 8080, protocol: 'HTTP' }],
       volumes: [],
       disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
       authToken: 'replace-with-a-real-token',
@@ -69,7 +80,8 @@ export default Cloudflare.Worker(
         const outcome = yield* Effect.exit(
           chat(
             new ChatCompletionRequest({
-              model: 'my-model',
+              // Matches the container's LLAMA_ARG_ALIAS above.
+              model: 'qwen3-0.6b',
               messages: [{ role: 'user', content: 'Hello from the Worker!' }],
             }),
           ),
