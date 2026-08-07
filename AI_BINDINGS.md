@@ -191,7 +191,8 @@ present; falls back to status text.
 
 ## Milestones
 
-Status: M1–M5 **done** (0 errors, full suite green). Bundle-safety spike ran
+Status: M1–M6 **done** (0 errors, full suite green; M6 gated behind SLOW_TESTS).
+ Bundle-safety spike ran
  (see M4); M6 pending (SLOW_TESTS).
 
 - **M1 — Provider change (AD1). ✅** `authToken` in `EndpointAttributesSchema` +
@@ -228,12 +229,22 @@ Status: M1–M5 **done** (0 errors, full suite green). Bundle-safety spike ran
 - **M5 — Exports, examples, docs. ✅** Re-exports through `ai/v1/index.ts`;
   `examples/ai.bindings.ts` + `ai.bindings-worker.ts`; `BINDINGS.md`
   §Out of scope and `README.md` updated.
-- **M6 — (pending, SLOW_TESTS=1) Real-endpoint e2e.** Deploy a cheap CPU
-  endpoint (smallest preset + tiny OpenAI-compatible image), full deploy-time
-  wiring (real `publicEndpoints` attrs) + real chat round-trip through the
-  binding. Money + 5–30 min, gated behind `integrationTest`/`safeDestroy` like
-  the storage M3 tests. Also verifies the AD7 apply-time failure surfaces as a
-  clean deploy error.
+- **M6 — (SLOW_TESTS=1) Real-endpoint e2e. ✅ written, gated**
+  (`tests/resources/ai/v1/bindings.e2e.integration.test.ts`): deploys a real
+  endpoint (nginx on cpu-d3 — the cheap wiring-validation combo) and exercises
+  the REAL binding layer — deploy-time wiring via a mocked host (asserting the
+  injected env carries the managed **https** URL — the raw-IP regression test
+  — and the token as `secret_text`) plus a runtime call against the real
+  endpoint (nginx 404 → `EndpointNotFound`). A real chat round-trip needs the
+  GPU vLLM config (the example) — verified manually during the real-infra
+  session (deploy → RUNNING → Worker → chat completion).
+
+  **Real-infra session findings (all fixed):** region/project mismatch (CLI
+  profile vs `.env`); `cpu-e2` is eu-north1-only; plan-phase evaluation needs
+  the lenient env derivation (O1); raw `IP:port` in `publicEndpoints[0]` broke
+  `new URL` (the https-preference fix); the `ScriptStartupError` wire shape
+  (O7 → `secret()` marker); delete-poller silence (progress ticker in
+  `makeCrudDelete`). `--enforce-eager` cut cold start ~20 min → ~10 min.
 
 ## Testing strategy
 
