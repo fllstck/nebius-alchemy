@@ -67,9 +67,11 @@ const specDrifted = (current: NebiusBucketSchema.BucketSpec, desired: NebiusBuck
 export const NebiusBucketProvider: Layer.Layer<
   AlchemyProvider.Provider<NebiusBucket>,
   never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
   any
 > = globalThis.__ALCHEMY_RUNTIME__
-  ? (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusBucket>, never, any>)
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusBucket>, never, any>)
   : AlchemyProvider.succeed(NebiusBucket, {
   // Observe → Ensure → Sync → Return
   // (see https://v2.alchemy.run/infrastructure-as-code/custom-provider/#implement-reconcile)

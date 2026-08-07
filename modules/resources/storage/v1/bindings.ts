@@ -430,6 +430,9 @@ export const wireAsyncBindings = Effect.fn('Nebius.storage.v1.Bucket.wireAsyncBi
   // The `as` cast erases the layer requirements (Worker/WorkerEnvironment —
   // provided here) plus the contract's Provider requirements, which the
   // stack's providers satisfy at runtime.
+  // provideHost erases R: it provides every requirement (Worker host,
+  // WorkerEnvironment, HTTP services) itself.
+  // oxlint-disable-next-line no-explicit-any
   const provideHost = <A, E>(effect: Effect.Effect<A, E, any>): Effect.Effect<A, E, never> =>
     effect.pipe(
       Effect.provide(Layer.mergeAll(GetObjectHttp, PutObjectHttp)),
