@@ -5,6 +5,8 @@ import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusSecretVersionSchema from '../../../../schemas/nebius/mysterybox/v1/secret_version.ts'
+import type { GrpcError } from '../../../api-client/grpc-utils.ts'
+import { GrpcError as GrpcErrorCtor } from '../../../api-client/grpc-utils.ts'
 import * as MysteryBoxGrpc from '../../../api-client/mysterybox.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
@@ -69,7 +71,15 @@ export const NebiusSecretVersionProvider = AlchemyProvider.succeed(NebiusSecretV
   delete: Effect.fn('Nebius.mysterybox.v1.SecretVersion.delete')(function* ({ output, session }) {
     const svc = yield* MysteryBoxGrpc.MysteryBoxGrpcService
     yield* session.note(`Deleting SecretVersion (${output.id})`)
-    yield* svc.secretVersion.delete(output.id)
+    // Idempotent delete: NOT_FOUND means the version is already gone (the
+    // server cascade-deletes versions when the parent Secret is removed) —
+    // treat it as success, mirroring Factory.makeCrudDelete.
+    yield* svc.secretVersion.delete(output.id).pipe(
+      Effect.catchIf(
+        (e: unknown): e is GrpcError => e instanceof GrpcErrorCtor && e.code === 5,
+        () => Effect.void,
+      ),
+    )
   }),
 
   read: Effect.fn('Nebius.mysterybox.v1.SecretVersion.read')(function* ({ id, output }) {

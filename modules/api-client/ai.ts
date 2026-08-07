@@ -110,13 +110,19 @@ export class AiGrpcService extends Effect.Context.Service<AiGrpcService, AiGrpcS
 // ---------------------------------------------------------------------------
 
 const makeJobService = Effect.Effect.gen(function* () {
-  const raw = yield* GrpcUtils.makeGrpcService(NebiusJobServiceSchema.JobServiceClient)
+  // VM-backed jobs provision slowly: 20-min operation poll budget (default is
+  // 5 min, which expires mid-provisioning) and a 2-min per-call deadline
+  // (default 30s — the delete RPC exceeds it while tearing down the VM).
+  const raw = yield* GrpcUtils.makeGrpcService(NebiusJobServiceSchema.JobServiceClient, {
+    deadlineMs: 120_000,
+  })
   const transport = yield* NebiusGrpcTransport
 
   const polled = GrpcUtils.wrapWithOperationPolling(raw, {
     serviceName: 'nebius.ai.v1.JobService',
     polling: ['create', 'cancel'],
     forget: ['delete'],
+    pollDeadlineMs: 20 * 60 * 1000,
     transport,
     getRequest: (id) => NebiusJobServiceSchema.GetJobRequest.fromPartial({ id }),
     mapInput: {
@@ -141,7 +147,11 @@ const makeJobService = Effect.Effect.gen(function* () {
 })
 
 const makeEndpointService = Effect.Effect.gen(function* () {
-  const raw = yield* GrpcUtils.makeGrpcService(NebiusEndpointServiceSchema.EndpointServiceClient)
+  // VM-backed endpoints provision/teardown slowly — same rationale as the job
+  // service: 20-min poll budget, 2-min per-call deadline.
+  const raw = yield* GrpcUtils.makeGrpcService(NebiusEndpointServiceSchema.EndpointServiceClient, {
+    deadlineMs: 120_000,
+  })
   const transport = yield* NebiusGrpcTransport
 
   const polled = GrpcUtils.wrapWithOperationPolling(raw, {
@@ -149,6 +159,7 @@ const makeEndpointService = Effect.Effect.gen(function* () {
     // Mirrors InstanceService: create/start/stop are long-running operations.
     polling: ['create', 'start', 'stop'],
     forget: ['delete'],
+    pollDeadlineMs: 20 * 60 * 1000,
     transport,
     getRequest: (id) => NebiusEndpointServiceSchema.GetEndpointRequest.fromPartial({ id }),
     mapInput: {

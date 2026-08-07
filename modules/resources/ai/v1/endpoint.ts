@@ -80,6 +80,9 @@ export const NebiusEndpointProvider = AlchemyProvider.succeed(NebiusEndpoint, {
           // no ID to act on and silently leaks a running workload.
           Effect.catch((e: unknown) =>
             Effect.gen(function* () {
+              yield* Effect.logWarning(
+                `Nebius.ai.v1.Endpoint create failed — attempting recovery: ${String(e)}`,
+              )
               const recovered = yield* aiGrpcService.endpoint
                 .getByName({ parentId, name })
                 .pipe(Effect.catch(() => Effect.succeed(undefined)))

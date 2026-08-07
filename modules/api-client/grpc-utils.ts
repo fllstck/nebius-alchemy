@@ -493,6 +493,12 @@ export const wrapWithOperationPolling = <
     /** Transport for resolving operation service endpoints during polling. */
     transport: { readonly channelFor: (service: string) => Effect.Effect<grpc.Channel, UnknownServiceError> }
     /**
+     * Overall deadline for operation polling in milliseconds
+     * (default: 5 minutes). Long-running provisioning (e.g. VM-backed
+     * endpoints) can exceed the default — raise per service.
+     */
+    pollDeadlineMs?: number
+    /**
      * Optional input transformation per method. Called before the raw gRPC
      * call, allowing the service layer to convert simplified inputs into
      * protobuf request objects (via {@code fromPartial}).
@@ -512,14 +518,18 @@ export const wrapWithOperationPolling = <
       wrapped[key] = (req: any) =>
         Effect.gen(function* () {
           const op = yield* raw[key]!(transform ? transform(req) : req)
-          yield* pollOperation(op.id, config.serviceName, transport)
+          yield* pollOperation(op.id, config.serviceName, transport, {
+            deadline: new Date(Date.now() + (config.pollDeadlineMs ?? 5 * 60 * 1000)),
+          })
           return yield* raw.get!(config.getRequest(op.resourceId))
         })
     } else if (forgetSet.has(key)) {
       wrapped[key] = (req: any) =>
         Effect.gen(function* () {
           const op = yield* raw[key]!(transform ? transform(req) : req)
-          yield* pollOperation(op.id, config.serviceName, transport)
+          yield* pollOperation(op.id, config.serviceName, transport, {
+            deadline: new Date(Date.now() + (config.pollDeadlineMs ?? 5 * 60 * 1000)),
+          })
         })
     } else if (fireAndForgetSet.has(key)) {
       wrapped[key] = (req: any) => raw[key]!(transform ? transform(req) : req)

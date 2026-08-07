@@ -71,5 +71,5 @@ integrationTest(
       // (a mid-create destroy is the historical leak path).
       safeDestroy(stack, verifyNoLeaks),
     ),
-  { timeout: 360_000 },
+  { timeout: 1_800_000 },
 )
