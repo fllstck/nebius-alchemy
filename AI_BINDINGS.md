@@ -191,8 +191,8 @@ present; falls back to status text.
 
 ## Milestones
 
-Status: M1–M4 **done** (0 errors, full suite green). M5 done (examples +
- docs). M6 pending (SLOW_TESTS).
+Status: M1–M5 **done** (0 errors, full suite green). Bundle-safety spike ran
+ (see M4); M6 pending (SLOW_TESTS).
 
 - **M1 — Provider change (AD1). ✅** `authToken` in `EndpointAttributesSchema` +
   reconcile returns it from `news`. Unit + integration coverage.
@@ -205,8 +205,27 @@ Status: M1–M4 **done** (0 errors, full suite green). M5 done (examples +
 - **M4 — Contract + layer. ✅** `ChatCompletions` + `ChatCompletionsHttp`;
   `registerEnvOnce` hoisted into `shared/bind-host.ts` (storage refactor,
   storage tests green); impl runtime-side test with `__ALCHEMY_RUNTIME__`
-  pre-set `true` + mocked host. Bundle check: the module is statically
-  workerd-safe by construction (no gRPC, no dynamic import).
+  pre-set `true` + mocked host.
+
+  **Bundle-safety spike (`spikes/ai-bindings-bundle.ts`)** — built the
+  binding module + both example worker entries through alchemy's real
+  `Bundle.build` (fold on/off):
+  - ✅ The AI binding module itself has **no gRPC and no dynamic import**
+    (no `@grpc`/`grpc-js` markers; the `nebius.ai.v1` string in the bundle is
+    just the contract tag). AD8's core claim holds.
+  - ⚠️ **~1 MB of Node-platform machinery** (`ws`, Effect `Socket`,
+    `node:net`/`http2`/`tls`/`os`) enters every binding bundle via
+    `alchemy/Output`'s transitive graph (`Output → Stack → Cli` — the CLI
+    imports the Node platform). Affects storage bindings **identically**;
+    an alchemy-internal structural issue (beta.70 vs the beta.67 the M0
+    spike measured) — worth reporting upstream.
+  - ⚠️ Full worker entries (AI **and** storage) additionally carry gRPC from
+    the statically-imported resource modules (endpoint/bucket) used in the
+    impl gen — the pre-existing storage example pattern.
+  - The M0 "67 KB / zero gRPC" result is **not reproducible** against the
+    current alchemy; whether workerd tolerates the dead Node builtin imports
+    (nodejs_compat stubs; never executed at runtime) is the real
+    deployability question — that is what M6's real deploy verifies.
 - **M5 — Exports, examples, docs. ✅** Re-exports through `ai/v1/index.ts`;
   `examples/ai.bindings.ts` + `ai.bindings-worker.ts`; `BINDINGS.md`
   §Out of scope and `README.md` updated.
