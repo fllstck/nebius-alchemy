@@ -72,8 +72,8 @@ for (const file of files) {
   const match = PROVIDER_RE.exec(src)
   if (match) {
     const [, provider, type] = match
-    providerName = provider
-    src = src.replace(PROVIDER_RE, guarded(provider, type))
+    providerName = provider ?? 'n/a'
+    src = src.replace(PROVIDER_RE, guarded(provider ?? '', type ?? ''))
   }
 
   if (src !== original) {

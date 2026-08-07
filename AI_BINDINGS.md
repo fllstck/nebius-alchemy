@@ -257,7 +257,7 @@ Status: M1–M5 **done** (0 errors, full suite green). Bundle-safety spike ran
 
 | # | Question | Decision | Status |
 |---|----------|----------|--------|
-| O1 | Fail-fast on a stopped endpoint at deploy time (AD7) vs lenient empty-URL + runtime error? | Fail-fast; endpoint must be RUNNING. A stopped-at-deploy endpoint yields a useless env anyway | locked |
+| O1 | Fail-fast on a stopped endpoint at deploy time (AD7) vs lenient empty-URL + runtime error? | **Hit in real deploy + resolved:** the worker's env evaluation runs right after the endpoint's create — which returns while PROVISIONING (empty `publicEndpoints`). The provider now **awaits RUNNING** for fresh/transient endpoints (`EndpointNotReady` on timeout/ERROR); STOPPED endpoints still fail fast with `EndpointNotRunning`. One-deploy greenfield works | resolved (endpoint.ts) |
 | O2 | Mid-stream malformed JSON: fail stream vs skip event? | Fail with `MalformedStream` (corrupt event = misbehaving endpoint) | locked |
 | O3 | Long-stream timeout handling? | No built-in timeout; document `ctx.waitUntil` + endpoint idle behavior | open |
 | O4 | Adopted/ref'd endpoints lose the token (read/list lack `news`) → runtime 401 | Documented limitation; v1 targets stack-deployed endpoints | open |

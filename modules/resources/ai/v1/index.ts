@@ -2,6 +2,7 @@ export { NebiusJob as Job, NebiusJobProvider as JobProvider, type NebiusJob as J
 export {
   NebiusEndpoint as Endpoint,
   NebiusEndpointProvider as EndpointProvider,
+  EndpointNotReady,
   type NebiusEndpoint as EndpointResource,
 } from './endpoint.ts'
 export {

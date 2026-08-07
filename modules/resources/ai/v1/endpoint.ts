@@ -1,5 +1,7 @@
 import * as Effect from 'effect/Effect'
+import * as Clock from 'effect/Clock'
 import * as Layer from 'effect/Layer'
+import * as Schema from 'effect/Schema'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -10,6 +12,7 @@ import * as AlchemyTags from 'alchemy/Tags'
 import * as NebiusEndpointSchema from '../../../../schemas/nebius/ai/v1/endpoint.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
 import * as AiGrpc from '../../../api-client/ai.ts'
+import type { GrpcDeadlineExceededError, GrpcError } from '../../../api-client/grpc-utils.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as EndpointSchema from './endpoint.schema.ts'
@@ -36,6 +39,61 @@ const toFriendlyAttributes = (rawEndpoint: NebiusEndpointSchema.Endpoint): Endpo
     rawResource: rawEndpoint,
     resourceSchema: NebiusEndpointSchema.Endpoint,
   })
+
+// ----- Readiness (O1 resolution: fresh creates wait for RUNNING)
+
+/** Poll interval while waiting for the endpoint VM to reach RUNNING. */
+const READY_POLL_INTERVAL_MS = 10_000
+/** Fresh creates wait at most this long for RUNNING (matches the 20-min operation poll budget). */
+const READY_DEADLINE_MS = 20 * 60 * 1000
+
+/** A freshly-created endpoint's VM failed to reach RUNNING (or entered ERROR) in time. */
+export class EndpointNotReady extends Schema.TaggedErrorClass<EndpointNotReady>()('EndpointNotReady', {
+  id: Schema.String,
+  state: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
+ * Poll a freshly-created endpoint until its state is RUNNING — i.e.
+ * `publicEndpoints` is populated. The binding's deploy-time env derivation
+ * reads `publicEndpoints` at apply time, so the resource isn't ready until
+ * the VM is up: a create that returned while PROVISIONING would otherwise
+ * fail the worker's env evaluation with EndpointNotRunning (the AI_BINDINGS
+ * O1 hit). Existing endpoints are NOT awaited — a STOPPED endpoint should
+ * fail fast via the binding, not hang the deploy for the full deadline.
+ */
+const waitUntilRunning = Effect.fn('Nebius.ai.v1.Endpoint.waitUntilRunning')(function* (
+  endpointId: string,
+): Effect.fn.Return<
+  NebiusEndpointSchema.Endpoint,
+  GrpcError | GrpcDeadlineExceededError | EndpointNotReady,
+  AiGrpc.AiGrpcService
+> {
+  const aiGrpcService = yield* AiGrpc.AiGrpcService
+  const started = yield* Clock.currentTimeMillis
+  for (;;) {
+    const current = yield* aiGrpcService.endpoint.get(endpointId)
+    const state = toFriendlyAttributes(current).state
+    if (state === 'RUNNING') return current
+    if (state === 'ERROR') {
+      return yield* new EndpointNotReady({
+        id: endpointId,
+        state,
+        message: `Endpoint ${endpointId} entered ERROR while waiting for RUNNING`,
+      })
+    }
+    const elapsed = (yield* Clock.currentTimeMillis) - started
+    if (elapsed > READY_DEADLINE_MS) {
+      return yield* new EndpointNotReady({
+        id: endpointId,
+        state,
+        message: `Endpoint ${endpointId} did not reach RUNNING within 20 minutes (state: ${state})`,
+      })
+    }
+    yield* Effect.sleep(READY_POLL_INTERVAL_MS)
+  }
+})
 
 // ----- PROVIDER
 
@@ -76,7 +134,9 @@ export const NebiusEndpointProvider: Layer.Layer<
         .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
     }
 
-    // 2. Ensure — create if missing (with ownership tags)
+    // 2. Ensure — create if missing (with ownership tags). `isFresh` marks
+    // creates in THIS deploy (vs adopted/observed endpoints) — see step 2.5.
+    const isFresh = endpoint === undefined
     const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
     if (!endpoint) {
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
@@ -116,6 +176,18 @@ export const NebiusEndpointProvider: Layer.Layer<
             }),
           ),
         )
+    }
+
+    // 2.5 — Wait for RUNNING (public endpoints populated) when the endpoint
+    // is freshly created OR observed in a transient provisioning state (a
+    // previous deploy may have crashed mid-provisioning). The binding's env
+    // derivation reads publicEndpoints at apply time, so the resource isn't
+    // ready until the VM is up (AI_BINDINGS.md O1 resolution). STOPPED/ERROR
+    // endpoints are NOT awaited — they fail fast via the binding's
+    // EndpointNotRunning instead of hanging the deploy for the deadline.
+    const readyState = toFriendlyAttributes(endpoint).state
+    if (isFresh || readyState === 'PROVISIONING' || readyState === 'STARTING' || readyState === 'IMAGE_PULLING') {
+      endpoint = yield* waitUntilRunning(endpoint.metadata!.id)
     }
 
     // 3. Return — fresh Attributes. `authToken` is a one-time value (like the
