@@ -45,9 +45,16 @@ export default Cloudflare.Worker(
     const endpoint = yield* NebiusEndpoint('llm', {
       image: 'vllm/vllm-openai:v0.19.1',
       // The template's exact command, split per the cookbook's CLI convention
-      // (--container-command / --args): python3 -m vllm.entrypoints.openai.api_server
+      // (--container-command / --args), plus `--enforce-eager`: vLLM's first
+      // start on a fresh VM compiles kernels with torch.compile and captures
+      // CUDA graphs across 33 batch sizes — multi-minute on a cold start.
+      // `--enforce-eager` disables both (docs.vllm.ai: "Turn off torch.compile
+      // and CUDAGraphs") for fast startup at slightly higher per-token cost —
+      // right for a demo; drop it for max production throughput. For faster
+      // model downloads, add `HF_TOKEN` to environmentVariables (unauthenticated
+      // HF pulls are rate-limited).
       containerCommand: 'python3',
-      args: '-m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --host 0.0.0.0 --port 8000',
+      args: '-m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --host 0.0.0.0 --port 8000 --enforce-eager',
       platform: 'gpu-l40s-a',
       preset: '1gpu-8vcpu-32gb',
       subnetId: subnet.id,
