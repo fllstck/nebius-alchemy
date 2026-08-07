@@ -258,6 +258,8 @@ secretAccessKey }` — path-style for Nebius, verify in M0).
 
 ### M0 — Spike & verification (no code committed)
 
+> Spike fixtures (`spikes/m0/`, `spikes/worker-bundle/`) were **deleted after M0** per plan — all findings and results below are self-contained.
+
 **Batch 1 — desk checks: DONE**
 
 - [x] Imports resolve + type-check (verified in `spikes/m0/imports.ts`, tsc 7.0.2
