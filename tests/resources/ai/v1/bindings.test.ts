@@ -249,3 +249,76 @@ describe('errors', () => {
     expect(caught).toBe('caught:bad')
   })
 })
+
+describe('parseErrorBody', () => {
+  test('extracts message, type and code from an OpenAI error body', () => {
+    const info = Bindings.parseErrorBody(
+      JSON.stringify({ error: { message: 'boom', type: 'server_error', code: 'internal' } }),
+    )
+    expect(info).toEqual({ message: 'boom', type: 'server_error', code: 'internal' })
+  })
+
+  test('numeric error codes are stringified', () => {
+    const info = Bindings.parseErrorBody(JSON.stringify({ error: { message: 'x', code: 42 } }))
+    expect(info.code).toBe('42')
+  })
+
+  test('non-JSON body falls back to the raw text', () => {
+    const info = Bindings.parseErrorBody('<html>bad gateway</html>')
+    expect(info.message).toBe('<html>bad gateway</html>')
+    expect(info.type).toBeUndefined()
+  })
+
+  test('empty error message falls back to the raw text', () => {
+    const info = Bindings.parseErrorBody(JSON.stringify({ error: { type: 'x' } }))
+    expect(info.message).toBe('{"error":{"type":"x"}}')
+  })
+})
+
+describe('toAiError', () => {
+  test('401 → EndpointUnauthorized', () => {
+    const err = Bindings.toAiError(401, JSON.stringify({ error: { message: 'nope' } }))
+    expect(err._tag).toBe('EndpointUnauthorized')
+  })
+
+  test('404 → EndpointNotFound', () => {
+    expect(Bindings.toAiError(404, '{}')._tag).toBe('EndpointNotFound')
+  })
+
+  test('429 → EndpointRateLimited', () => {
+    expect(Bindings.toAiError(429, '{}')._tag).toBe('EndpointRateLimited')
+  })
+
+  test('other statuses → EndpointError preserving status and fields', () => {
+    const err = Bindings.toAiError(503, JSON.stringify({ error: { message: 'busy', type: 'server_error', code: 'overloaded' } }))
+    expect(err._tag).toBe('EndpointError')
+    if (err._tag === 'EndpointError') {
+      expect(err.statusCode).toBe(503)
+      expect(err.message).toBe('busy')
+      expect(err.type).toBe('server_error')
+      expect(err.code).toBe('overloaded')
+    }
+  })
+})
+
+describe('readAiEnv', () => {
+  const FULL_ENV = {
+    NEBIUS_ENDPOINT_URL: 'https://ep-abc123.public.api.nebius.cloud',
+    NEBIUS_ENDPOINT_AUTH_TOKEN: 'secret-token',
+  }
+
+  test('resolves a complete env record', async () => {
+    const values = await Effect.runPromise(Bindings.readAiEnv(FULL_ENV))
+    expect(values).toEqual(FULL_ENV)
+  })
+
+  test('fails with InvalidCredentials listing the missing names', async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(Bindings.readAiEnv({ NEBIUS_ENDPOINT_AUTH_TOKEN: 'tok' })),
+    )
+    expect(error._tag).toBe('InvalidCredentials')
+    if (error._tag === 'InvalidCredentials') {
+      expect(error.missing).toEqual(['NEBIUS_ENDPOINT_URL'])
+    }
+  })
+})

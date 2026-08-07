@@ -18,8 +18,13 @@
  * `fetch` handler on a native `ReadableStream`, and piping through native
  * `TransformStream`s adds zero runtime machinery to the bundle.)
  */
+import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
-import { ChatCompletionChunk } from './bindings.schema.ts'
+import {
+  ChatCompletion,
+  ChatCompletionChunk,
+  ChatCompletionRequest,
+} from './bindings.schema.ts'
 
 /** The OpenAI SSE terminator event payload. */
 export const DONE_MARKER = '[DONE]'
@@ -35,6 +40,56 @@ const decodeChunk = Schema.fromJsonString(ChatCompletionChunk)
 export class MalformedStream extends Schema.TaggedErrorClass<MalformedStream>()('MalformedStream', {
   message: Schema.String,
 }) {}
+
+/** The endpoint has no public endpoint — it must be RUNNING at deploy time (AD7). */
+export class EndpointNotRunning extends Schema.TaggedErrorClass<EndpointNotRunning>()('EndpointNotRunning', {
+  message: Schema.String,
+}) {}
+
+/** Required env bindings are missing at runtime (deploy-time wiring failure). */
+export class InvalidCredentials extends Schema.TaggedErrorClass<InvalidCredentials>()('InvalidCredentials', {
+  missing: Schema.Array(Schema.String),
+  message: Schema.String,
+}) {}
+
+/** The endpoint rejected the auth token (HTTP 401). */
+export class EndpointUnauthorized extends Schema.TaggedErrorClass<EndpointUnauthorized>()('EndpointUnauthorized', {
+  message: Schema.String,
+}) {}
+
+/** The requested resource or model does not exist (HTTP 404). */
+export class EndpointNotFound extends Schema.TaggedErrorClass<EndpointNotFound>()('EndpointNotFound', {
+  message: Schema.String,
+}) {}
+
+/** The endpoint is rate-limiting requests (HTTP 429). */
+export class EndpointRateLimited extends Schema.TaggedErrorClass<EndpointRateLimited>()('EndpointRateLimited', {
+  message: Schema.String,
+}) {}
+
+/** Any other endpoint failure, with the upstream error body preserved. */
+export class EndpointError extends Schema.TaggedErrorClass<EndpointError>()('EndpointError', {
+  statusCode: Schema.optional(Schema.Finite),
+  type: Schema.optional(Schema.String),
+  code: Schema.optional(Schema.String),
+  message: Schema.String,
+}) {}
+
+/** The endpoint could not be reached (network failure). */
+export class EndpointUnreachable extends Schema.TaggedErrorClass<EndpointUnreachable>()('EndpointUnreachable', {
+  message: Schema.String,
+}) {}
+
+/** The shared error channel for AI endpoint bindings (AD5). */
+export type AiError =
+  | EndpointNotRunning
+  | InvalidCredentials
+  | EndpointUnauthorized
+  | EndpointNotFound
+  | EndpointRateLimited
+  | EndpointError
+  | EndpointUnreachable
+  | MalformedStream
 
 // ---------------------------------------------------------------------------
 // SSE framing helpers (pure, unit-tested)
@@ -144,3 +199,154 @@ export const decodeChatChunks = (): TransformStream<string, ChatCompletionChunk>
     },
   })
 }
+
+// ---------------------------------------------------------------------------
+// Runtime env (M3)
+// ---------------------------------------------------------------------------
+
+const AI_ENV_NAMES = ['NEBIUS_ENDPOINT_URL', 'NEBIUS_ENDPOINT_AUTH_TOKEN'] as const
+
+/** Literal-keyed env record — keeps property access `string` (noUncheckedIndexedAccess). */
+export type AiEnv = Record<(typeof AI_ENV_NAMES)[number], string>
+
+/**
+ * Resolve the injected endpoint env values, failing with
+ * {@link InvalidCredentials} if any are absent. The token is `''` when the
+ * endpoint has auth disabled — only the URL must be non-empty.
+ */
+export const readAiEnv = Effect.fn('readAiEnv')(function* (
+  env: Readonly<Record<string, unknown>>,
+): Effect.fn.Return<AiEnv, InvalidCredentials> {
+  const missing = AI_ENV_NAMES.filter((name) => typeof env[name] !== 'string')
+  if (missing.length > 0) {
+    return yield* new InvalidCredentials({
+      missing: [...missing],
+      message: `Missing Nebius AI endpoint env bindings: ${missing.join(', ')}. Did the binding's deploy-time wiring run?`,
+    })
+  }
+  return {
+    NEBIUS_ENDPOINT_URL: env.NEBIUS_ENDPOINT_URL as string,
+    NEBIUS_ENDPOINT_AUTH_TOKEN: env.NEBIUS_ENDPOINT_AUTH_TOKEN as string,
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Runtime client (M3)
+// ---------------------------------------------------------------------------
+
+/** The result of a chat completion call — the request's `stream` flag selects the branch. */
+export type ChatCompletionsResult =
+  | { readonly stream: true; readonly chunks: ReadableStream<ChatCompletionChunk> }
+  | { readonly stream: false; readonly response: ChatCompletion }
+
+/** The OpenAI error body shape `{ error: { message, type, code } }`. */
+const ErrorBodySchema = Schema.Struct({
+  error: Schema.Struct({
+    message: Schema.optional(Schema.String),
+    type: Schema.optional(Schema.String),
+    code: Schema.optional(Schema.Union([Schema.String, Schema.Finite])),
+  }),
+})
+
+const decodeErrorBody = Schema.fromJsonString(ErrorBodySchema)
+
+export interface ErrorBodyInfo {
+  readonly message: string
+  readonly type?: string
+  readonly code?: string
+}
+
+/**
+ * Parse an OpenAI-style error body from the response text. Falls back to the
+ * raw text when the body isn't the expected shape (e.g. an HTML error page).
+ */
+export const parseErrorBody = (text: string): ErrorBodyInfo => {
+  try {
+    const { error } = Schema.decodeUnknownSync(decodeErrorBody)(text)
+    return {
+      message: error.message ?? text,
+      type: error.type,
+      code: error.code === undefined ? undefined : String(error.code),
+    }
+  } catch {
+    return { message: text }
+  }
+}
+
+/** Map an HTTP error status + body to the tagged {@link AiError} union (AD5). */
+export const toAiError = (status: number, text: string): AiError => {
+  const { message, type, code } = parseErrorBody(text)
+  switch (status) {
+    case 401:
+      return new EndpointUnauthorized({ message })
+    case 404:
+      return new EndpointNotFound({ message })
+    case 429:
+      return new EndpointRateLimited({ message })
+    default:
+      return new EndpointError({ statusCode: status, type, code, message })
+  }
+}
+
+/**
+ * The chat completions operation over the OpenAI-compatible HTTP API.
+ *
+ * `request.stream === true` returns an SSE stream of typed chunks (the M2
+ * parser stages); otherwise the full {@link ChatCompletion} response.
+ *
+ * @param values — resolved env (see {@link readAiEnv}); the auth token is
+ *   sent as `Authorization: Bearer` only when non-empty.
+ */
+export const chatCompletions = (values: AiEnv) =>
+  Effect.fn('Nebius.ai.Endpoint.ChatCompletions')(function* (
+    request: ChatCompletionRequest,
+  ): Effect.fn.Return<ChatCompletionsResult, AiError> {
+    const url = new URL('/v1/chat/completions', values.NEBIUS_ENDPOINT_URL)
+    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    if (values.NEBIUS_ENDPOINT_AUTH_TOKEN !== '') {
+      headers['authorization'] = `Bearer ${values.NEBIUS_ENDPOINT_AUTH_TOKEN}`
+    }
+
+    const encoded = yield* Schema.encodeEffect(ChatCompletionRequest)(request).pipe(
+      Effect.mapError(
+        () => new EndpointError({ message: 'Invalid chat completion request', code: 'InvalidRequest' }),
+      ),
+    )
+    const body = JSON.stringify(encoded)
+
+    const response = yield* Effect.tryPromise({
+      try: () => fetch(url, { method: 'POST', headers, body }),
+      catch: (e) => new EndpointUnreachable({ message: e instanceof Error ? e.message : String(e) }),
+    })
+
+    if (!response.ok) {
+      const text = yield* Effect.tryPromise({
+        try: () => response.text(),
+        catch: () => new EndpointUnreachable({ message: 'Failed to read the error response body' }),
+      })
+      return yield* toAiError(response.status, text)
+    }
+
+    if (request.stream === true) {
+      // 2xx streaming response: pipe the SSE bytes through the M2 parser
+      // stages. (`body` is never null on a real 2xx; the cast satisfies the
+      // fetch typings.)
+      return {
+        stream: true as const,
+        chunks: (response.body as ReadableStream<Uint8Array>)
+          .pipeThrough(parseSseData())
+          .pipeThrough(decodeChatChunks()),
+      }
+    }
+
+    const text = yield* Effect.tryPromise({
+      try: () => response.text(),
+      catch: () => new EndpointUnreachable({ message: 'Failed to read the response body' }),
+    })
+    const decoded = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ChatCompletion))(text).pipe(
+      Effect.mapError(
+        () => new EndpointError({ statusCode: response.status, message: 'Invalid response body', code: 'InvalidResponse' }),
+      ),
+    )
+    return { stream: false as const, response: decoded }
+  })
