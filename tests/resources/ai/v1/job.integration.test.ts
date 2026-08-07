@@ -64,8 +64,12 @@ integrationTest(
       expect(job.id).toBeDefined()
       expect(typeof job.id).toBe('string')
       expect(job.name).toBeDefined()
-      // Jobs are short-lived — accept any terminal/in-flight state.
-      expect(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']).toContain(job.state)
+      // Jobs are short-lived — accept any real lifecycle state (the schema's
+      // enum; PENDING/SUCCEEDED are not Nebius states — COMPLETED is the
+      // terminal success state).
+      expect(['PROVISIONING', 'STARTING', 'IMAGE_PULLING', 'RUNNING', 'COMPLETED', 'FAILED', 'ERROR']).toContain(
+        job.state,
+      )
     }).pipe(
       // Long timeout: the job's VM must settle before the destroy runs
       // (a mid-create destroy is the historical leak path).
