@@ -2,29 +2,14 @@
 
 Deployable [Alchemy](https://alchemy.run) stacks that provision real Nebius resources. Each file is a complete stack — copy one, or just deploy it directly.
 
-## Prerequisites
-
-- A [Nebius account](https://nebius.com/) and [Bun](https://bun.sh/)
-- The [Nebius CLI](https://docs.nebius.com/cli/install) (auto-populates the API key) or a `NEBIUS_API_KEY` set manually
-
-## Running an Example
-
-```bash
-# Deploy (creates resources in your project)
-alchemy deploy --yes
-
-# Tear everything down
-alchemy destroy --yes
-```
-
 Environment variables are read from `.env` (see [`.env.example`](.env.example)):
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `NEBIUS_API_KEY` | yes | Auto-populated from the Nebius CLI (or set manually) |
-| `NEBIUS_PROJECT_ID` | yes | Target project |
-| `NEBIUS_TENANT_ID` | for some stacks | Needed by the actions example and Worker bindings |
-| `NEBIUS_REGION` | no | Defaults to `eu-north1` |
+| Variable            | Required        | Description                                          |
+| ------------------- | --------------- | ---------------------------------------------------- |
+| `NEBIUS_API_KEY`    | yes             | Auto-populated from the Nebius CLI (or set manually) |
+| `NEBIUS_PROJECT_ID` | yes             | Target project                                       |
+| `NEBIUS_TENANT_ID`  | for some stacks | Needed by the actions example and Worker bindings    |
+| `NEBIUS_REGION`     | no              | Defaults to `eu-north1`                              |
 
 > ⚠️ These stacks create real, billable resources in your Nebius project. Always run `alchemy destroy --yes` when you're done.
 

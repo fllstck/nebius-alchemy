@@ -2,6 +2,8 @@
 
 Build Nebius cloud infrastructure as typed [Effect](https://effect.website) programs. GPU compute, VPC networks, IAM, object storage, DNS, KMS, and secrets — all in one TypeScript program, deployed with [Alchemy](https://alchemy.run).
 
+Looking for ready-to-run stacks? See the [examples](examples/README.md) — complete Nebius stacks for storage, VPC, DNS, IAM, KMS, secrets, compute, and Cloudflare Worker bindings.
+
 ## Quick Start
 
 You need [a Nebius account](https://nebius.com/) and [Bun](https://bun.sh/).
