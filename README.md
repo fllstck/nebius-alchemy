@@ -1,18 +1,32 @@
 # Nebius AI Cloud for Alchemy
 
-Build Nebius cloud infrastructure as typed [Effect](https://effect.website) programs. GPU compute, VPC networks, IAM, object storage, DNS, KMS, and secrets — all in one TypeScript program, deployed with [Alchemy](https://v2.alchemy.run).
+Build Nebius cloud infrastructure as typed [Effect](https://effect.website) programs. GPU compute, VPC networks, IAM, object storage, DNS, KMS, and secrets — all in one TypeScript program, deployed with [Alchemy](https://alchemy.run).
 
 ## Quick Start
 
-You need [a Nebius account](https://nebius.com/).
+You need [a Nebius account](https://nebius.com/) and [Bun](https://bun.sh/).
+
+Optional: [The Nebius CLI](https://docs.nebius.com/cli/install) to automatically generate an API key.
+
+### Create a Project
 
 ```bash
-bun add @fllstck/nebius-alchemy alchemy@next effect@4.0.0-beta.103 @effect/platform-bun@4.0.0-beta.103 @effect/platform-node@4.0.0-beta.103 typescript
+mkdir my-app && cd my-app && bun init -y
+```
+
+### Install Dependencies
+
+```bash
+bun add alchemy@next effect@4.0.0-beta.103 @effect/platform-bun@4.0.0-beta.103 @effect/platform-node@4.0.0-beta.103 @fllstck/nebius-alchemy
 ```
 
 > **Effect version is pinned to `4.0.0-beta.103`** — `effect@beta` (104+) renames `Schema.TaggedErrorClass`, which alchemy 2.0.0-beta.70 still uses internally. Bump this pin when a new alchemy release supports the newer betas.
 >
 > **Type checking with `tsc`?** This package ships raw TypeScript (bun-first, no build step). If you typecheck with `tsc`, enable `allowImportingTsExtensions` (requires `noEmit`), e.g. `"moduleResolution": "bundler", "allowImportingTsExtensions": true, "noEmit": true`.
+
+### Implement the Stack
+
+A simple stack that creates a Nebius Bucket.
 
 ```ts
 // alchemy.run.ts
@@ -34,7 +48,9 @@ export default Alchemy.Stack(
 )
 ```
 
-Configure the project you want to deploy to.
+### Configure the Deployment
+
+Add the ID of the target project.
 
 ```
 // .env
@@ -42,7 +58,9 @@ Configure the project you want to deploy to.
 NEBIUS_PROJECT_ID=<YOUR_RROJECT_ID>
 ```
 
-Set the API key for the Nebius AI Cloud API. This can be done via the Nebius CLI or by manually entering a key.
+Set the API key for the Nebius AI Cloud API.
+
+> This can be done via the Nebius CLI or by manually entering a key.
 
 ```bash
 bun alchemy login
@@ -51,13 +69,13 @@ bun alchemy login
 Deploy the bucket.
 
 ```bash
-alchemy deploy
+bun alchemy deploy --yes
 ```
 
 Delete the bucket.
 
 ```bash
-alchemy destroy
+bun alchemy destroy --yes
 ```
 
 ### Peer Dependencies
@@ -66,7 +84,7 @@ The package ships raw TypeScript source and requires these peer dependencies ins
 
 | Package                 | Required | Notes                                               |
 | ----------------------- | -------- | --------------------------------------------------- |
-| `effect`                | Yes      | Effect V4 runtime (`>=4.0.0-beta.100` or `>=4.0.0`) |
+| `effect`                | Yes      | Effect V4 runtime (`>=4.0.0-beta.102` or `>=4.0.0`) |
 | `@effect/platform-bun`  | Yes      | Bun platform bindings                               |
 | `@effect/platform-node` | Yes      | Required by Alchemy CLI                             |
 | `typescript`            | Yes      | TypeScript 7 (`^7.0.0`)                             |
@@ -92,7 +110,7 @@ The package uses `.ts` extensions in imports, so your `tsconfig.json` must enabl
 
 The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0.0**.
 
-## Prerequisites
+## Environment Variables
 
 | Variable            | Required | Description                                            |
 | ------------------- | -------- | ------------------------------------------------------ |
@@ -104,6 +122,8 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 ## Resources
 
 All resources that currently are currently implemented.
+
+All resources use the `NEBIUS_PROJECT_ID` environment variable as default `parentId` where appropriate.
 
 ### Compute
 
@@ -179,7 +199,7 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 
 ### Discovery Actions
 
-Read-only actions for discovering existing resources without managing them. Useful in `alchemy plan` for auditing.
+[Alchemy actions](https://alchemy.run/infrastructure-as-code/action/) for discovering existing resources without adopting them. Useful in `alchemy plan` for auditing.
 
 - `Nebius.iam.action.ListProjects` / `GetProject`
 - `Nebius.iam.action.ListGroups` / `GetGroup`
@@ -190,44 +210,43 @@ Read-only actions for discovering existing resources without managing them. Usef
 
 ## Bindings
 
-**Bindings** are typed runtime clients you attach to **your own Cloudflare
-Worker** — no Nebius Function host required. One declaration derives three
-things at deploy time:
+**Bindings** are typed runtime clients you attach to **your own Cloudflare Worker** — no Nebius Function host required. One declaration derives three things at deploy time:
 
-1. **Credential minting + least-privilege grant** on Nebius (a service account
-   added to your tenant's default `editors` group + a region-scoped access
-   key),
+1. **Credential minting + least-privilege grant** on Nebius (a service account added to your tenant's default `editors` group + a region-scoped access key),
 2. **env injection** into the Worker as `plain_text`/`secret_text` bindings,
-3. a **typed runtime client** (s3-lite-client, fetch-based) reading those env
-   values.
+3. a **typed runtime client** (s3-lite-client, fetch-based) reading those env values.
 
 ```ts
-const Api = Cloudflare.Worker(
+// api.ts
+
+import * as Cloudflare from 'alchemy/Cloudflare'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+import { NebiusBucket } from '@fllstck/nebius-alchemy/resources/storage/v1/bucket.ts'
+import * as StorageBindings from '@fllstck/nebius-alchemy/resources/storage/v1/bindings.ts'
+
+export const Api = Cloudflare.Worker(
   'Api',
   { main: import.meta.url },
   Effect.gen(function* () {
-    const bucket = yield* Nebius.storage.Bucket('assets')
-    const getObject = yield* Nebius.storage.GetObject(bucket)
-    const putObject = yield* Nebius.storage.PutObject(bucket)
-    return { fetch: /* getObject/putObject */ }
-  }).pipe(Effect.provide(Layer.mergeAll(
-    Nebius.storage.GetObjectHttp,
-    Nebius.storage.PutObjectHttp,
-  ))),
+    const bucket = yield* NebiusBucket('assets')
+
+    const getObject = yield* StorageBindings.GetObject(bucket)
+    const putObject = yield* StorageBindings.PutObject(bucket)
+
+    return {
+      fetch: /*...*/,
+    }
+  }).pipe(Effect.provide(Layer.mergeAll(StorageBindings.GetObjectHttp, StorageBindings.PutObjectHttp))),
 )
 ```
 
 Currently available (Cloudflare Workers):
 
-| Contract                  | Layer                          | Runtime                          |
-| ------------------------- | ------------------------------ | -------------------------------- |
+| Contract                   | Layer                          | Runtime                       |
+| -------------------------- | ------------------------------ | ----------------------------- |
 | `Nebius.storage.GetObject` | `Nebius.storage.GetObjectHttp` | s3-lite-client (`GET object`) |
 | `Nebius.storage.PutObject` | `Nebius.storage.PutObjectHttp` | s3-lite-client (`PUT object`) |
-
-**Roadmap**: AWS Lambda/ECS/EKS hosts are a documented extension point — the
-same contracts with `*FunctionHttp` layers pushing `{ env }` instead of
-Worker `*Http` bindings.
-AI endpoint bindings (`ChatCompletions`) are deferred.
 
 ### Bindings env reference
 
@@ -243,14 +262,7 @@ Injected into the Worker at deploy time (names are stable):
 
 See [`examples/bindings.ts`](examples/bindings.ts) for the full pattern.
 
-**Small-bundle variant**: the Effect-native worker bundles alchemy's runtime
-(~2 MB). If bundle size matters more than the typed contracts, use
-[`examples/bindings-async.ts`](examples/bindings-async.ts) — the same
-identity chain declared as stack resources (SA → editors grant → key), with
-their outputs passed via the Worker's **`env` prop** (alchemy's native async
-binding pattern; `Redacted` → `secret_text`). The plain async worker
-(`main` + `fetch`) reads the injected `NEBIUS_S3_*` env with s3-lite-client
-directly — typically ~50-150 KB.
+> **Small-bundle variant**: the Effect-native worker bundles alchemy's runtime. If bundle size matters more than the typed contracts, use [`examples/bindings-async.ts`](examples/bindings-async.ts).
 
 ## Examples
 
@@ -270,13 +282,16 @@ directly — typically ~50-150 KB.
 
 ```bash
 # Preview changes
-alchemy plan
+bun alchemy plan
 
 # Deploy
-alchemy deploy
+bun alchemy deploy
 
 # Tear down
-alchemy destroy
+bun alchemy destroy
+
+# Clear all
+bun alchemy unsafe nuke
 ```
 
 Resources follow the namespace hierarchy `Nebius.<service>.<Resource>`:
@@ -287,7 +302,7 @@ const network = yield* Nebius.vpc.Network('MyNetwork')
 const instance = yield* Nebius.compute.Instance('MyInstance', { ... })
 ```
 
-Names are auto-generated from logical IDs when omitted — no need to invent unique physical names.
+Names are auto-generated from logical IDs when omitted.
 
 ## Development
 
@@ -300,9 +315,7 @@ bun run generate:schemas  # regenerate protobuf schemas from .proto files
 
 ### Testing & the `SLOW_TESTS` flag
 
-A plain `bun test` (no env vars) is **guaranteed network-free**: every test that
-deploys/destroys real Nebius resources or opens a real gRPC channel is gated
-behind the `SLOW_TESTS` flag and is reported as `skip`.
+A plain `bun test` (no env vars) is **guaranteed network-free**: every test that deploys/destroys real Nebius resources or opens a real gRPC channel is gated behind the `SLOW_TESTS` flag and is reported as `skip`.
 
 ```bash
 bun test                       # unit tests only — zero network I/O
@@ -310,13 +323,8 @@ SLOW_TESTS=1 bun test tests/   # full suite incl. real resource lifecycles
 bun run test:integration       # shorthand for the above
 ```
 
-The flag lives in a single place — `tests/helpers/gate.ts` (`runIntegration()` /
-`integrationTest()`). Integration tests additionally require real Nebius
-credentials (env / stored / CLI); api-client tests skip when credentials aren't
-resolvable. Destroy cleanup uses `safeDestroy()` from `tests/helpers/cleanup.ts`
-— a failed destroy fails the test when the body succeeded, and logs (redacted)
-without masking the body's own failure otherwise.
+> The flag lives in a single place — `tests/helpers/gate.ts` (`runIntegration()` / `integrationTest()`). Integration tests additionally require real Nebius credentials (env/stored/CLI); api-client tests skip when credentials aren't resolvable. Destroy cleanup uses `safeDestroy()` from `tests/helpers/cleanup.ts` — a failed destroy fails the test when the body succeeded, and logs (redacted) without masking the body's own failure otherwise.
 
 ## Architecture
 
-Built on **Effect V4** and **Alchemy V2** with typed gRPC/protobuf clients for every Nebius API service. The provider uses Alchemy's resource lifecycle (`reconcile`, `delete`, `diff`, `read`) with factory helpers for standard CRUD operations. Protobuf schemas live under `schemas/` and are generated from the Nebius API `.proto` files via `buf generate`.
+Built on **Effect V4** and **Alchemy V2** with typed gRPC/protobuf clients for every Nebius API service. The provider uses Alchemy's resource lifecycle (`reconcile`, `delete`, `diff`, `read`) with factory helpers for standard CRUD operations. Protobuf schemas live under `schemas/` and are generated from [the Nebius API `.proto` files](https://github.com/nebius/api) via `buf generate`.
