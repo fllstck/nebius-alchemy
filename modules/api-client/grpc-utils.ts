@@ -368,9 +368,15 @@ export const pollOperation = (
         return Effect.sync(() => call.cancel())
       })
 
-    // Poll with jittered exponential backoff, max 40 attempts
+    const pollWindowMs = Math.max(0, pollDeadline.getTime() - Date.now())
+    // The deadline is the binding constraint; the attempt cap only guards
+    // against a pathological non-expiring deadline. Worst case the loop makes
+    // ~2 attempts/sec (500ms backoff floor), so derive the cap from the window
+    // instead of a fixed 40 — a 20-minute budget would otherwise exhaust 40
+    // attempts (~12 min with capped 30s backoff) before the deadline fires.
+    const maxAttempts = Math.max(40, Math.ceil(pollWindowMs / 500))
     let delay = 500
-    for (let attempt = 0; attempt < 40; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       // Check overall deadline before each attempt
       if (Date.now() >= pollDeadline.getTime()) {
         return yield* new GrpcDeadlineExceededError({
@@ -401,11 +407,12 @@ export const pollOperation = (
       delay = Math.min(delay * 2, 30000) // exponential backoff, cap at 30s
     }
 
-    // Exhausted all retries
+    // Exhausted the attempt budget without the deadline firing (should not
+    // happen — the deadline check above is the primary bound).
     return yield* new OperationFailedError({
       operationId,
       code: -1,
-      message: 'Operation timed out after 40 polling attempts',
+      message: `Operation ${operationId} polling exhausted ${maxAttempts} attempts before its deadline`,
     })
   })
 
