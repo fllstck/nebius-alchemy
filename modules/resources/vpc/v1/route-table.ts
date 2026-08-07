@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -34,7 +35,16 @@ export const toFriendlyAttributes = (raw: NebiusRouteTableSchema.RouteTable): Ro
 
 // ----- PROVIDER
 
-export const NebiusRouteTableProvider = AlchemyProvider.succeed(NebiusRouteTable, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusRouteTableProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusRouteTable>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusRouteTable>, never, any>)
+  : AlchemyProvider.succeed(NebiusRouteTable, {
   reconcile: Effect.fn('Nebius.vpc.v1.RouteTable.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* RouteTableSchema.validateRouteTableProps(news)

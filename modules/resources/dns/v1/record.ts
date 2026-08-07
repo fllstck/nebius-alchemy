@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -31,7 +32,16 @@ const toFriendlyAttributes = (rawRecord: NebiusRecordSchema.Record): RecordSchem
 
 // ----- PROVIDER
 
-export const NebiusRecordProvider = AlchemyProvider.succeed(NebiusRecord, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusRecordProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusRecord>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusRecord>, never, any>)
+  : AlchemyProvider.succeed(NebiusRecord, {
   // ⚠️ Non-standard: parent is Zone, not Project
   reconcile: Effect.fn('Nebius.dns.v1.Record.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}

@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -36,7 +37,16 @@ const toFriendlyAttributes = (
 
 // ----- PROVIDER
 
-export const NebiusSymmetricKeyProvider = AlchemyProvider.succeed(NebiusSymmetricKey, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusSymmetricKeyProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusSymmetricKey>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusSymmetricKey>, never, any>)
+  : AlchemyProvider.succeed(NebiusSymmetricKey, {
   reconcile: Effect.fn('Nebius.kms.v1.SymmetricKey.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* SymmetricKeySchema.validateSymmetricKeyProps(news)

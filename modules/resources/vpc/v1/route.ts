@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
@@ -37,7 +38,16 @@ const specDrifted = (current: NebiusRouteSchema.RouteSpec, desired: NebiusRouteS
 
 // ----- PROVIDER
 
-export const NebiusRouteProvider = AlchemyProvider.succeed(NebiusRoute, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusRouteProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusRoute>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusRoute>, never, any>)
+  : AlchemyProvider.succeed(NebiusRoute, {
   reconcile: Effect.fn('Nebius.vpc.v1.Route.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* RouteSchema.validateRouteProps(news)

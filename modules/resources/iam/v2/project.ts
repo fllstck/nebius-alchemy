@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -44,7 +45,16 @@ export const toFriendlyAttributes = (
 
 // ----- PROVIDER
 
-export const NebiusProjectProvider = AlchemyProvider.succeed(NebiusProject, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusProjectProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusProject>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusProject>, never, any>)
+  : AlchemyProvider.succeed(NebiusProject, {
   // Observe → Ensure → Sync → Return
   reconcile: Effect.fn('Nebius.iam.v2.Project.reconcile')(function* ({ id, news, output, session }) {
     // When props are fully optional and the user passes none, news is undefined.

@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -33,7 +34,16 @@ const toFriendlyAttributes = (
 
 // ----- PROVIDER
 
-export const NebiusInvitationProvider = AlchemyProvider.succeed(NebiusInvitation, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusInvitationProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusInvitation>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusInvitation>, never, any>)
+  : AlchemyProvider.succeed(NebiusInvitation, {
   reconcile: Effect.fn('Nebius.iam.v1.Invitation.reconcile')(function* ({ id, news, output, session }) {
     news = yield* InvitationSchema.validateInvitationProps(news)
 

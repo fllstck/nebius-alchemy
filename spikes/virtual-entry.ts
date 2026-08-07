@@ -4,6 +4,7 @@
  * the deployed script imports the real entry and builds the runtime bridge —
  * the real deploy bundles THIS, not the raw entry file.
  */
+// @ts-nocheck — `cloudflare:workers` has no type declarations outside the CF plugin.
 import * as Effect from 'effect/Effect'
 import { env, DurableObject, WorkerEntrypoint } from 'cloudflare:workers'
 import { makeWorkerBridge } from 'alchemy/Cloudflare'

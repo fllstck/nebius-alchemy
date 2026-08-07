@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -38,7 +39,16 @@ const toFriendlyAttributes = (rawInstance: NebiusInstanceSchema.Instance): Insta
 
 // ----- PROVIDER
 
-export const NebiusInstanceProvider = AlchemyProvider.succeed(NebiusInstance, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusInstanceProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusInstance>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusInstance>, never, any>)
+  : AlchemyProvider.succeed(NebiusInstance, {
   // Observe → Ensure → Sync → Return
   reconcile: Effect.fn('Nebius.compute.v1.Instance.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}

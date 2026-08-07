@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -38,7 +39,26 @@ const toFriendlyAttributes = (rawEndpoint: NebiusEndpointSchema.Endpoint): Endpo
 
 // ----- PROVIDER
 
-export const NebiusEndpointProvider = AlchemyProvider.succeed(NebiusEndpoint, {
+// ----- PROVIDER
+
+/**
+ * D8 bundle-safety guard (mirrors `resources/storage/v1/bucket.ts`): a
+ * Worker importing the resource construct for registration never invokes the
+ * provider, but the module-scope `AlchemyProvider.succeed(...)` call keeps the
+ * whole deploy graph (gRPC clients, protobuf schemas, factory helpers) alive
+ * in Worker bundles. The bundler's `__ALCHEMY_RUNTIME__` fold turns this into
+ * `undefined` at build time and DCEs the branch + its imports. At deploy time
+ * the flag is undefined and the real provider is registered.
+ */
+export const NebiusEndpointProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusEndpoint>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusEndpoint>, never, any>)
+  : AlchemyProvider.succeed(NebiusEndpoint, {
   // Observe → Ensure → Return (no Sync: the AI API has no update RPC)
   reconcile: Effect.fn('Nebius.ai.v1.Endpoint.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}

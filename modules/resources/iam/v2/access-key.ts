@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -103,7 +104,16 @@ const create = Effect.fn('Nebius.iam.v2.AccessKey.create')(function* ({
   return toFriendlyAttributes(key, secret)
 })
 
-export const NebiusAccessKeyProvider = AlchemyProvider.succeed(NebiusAccessKey, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusAccessKeyProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusAccessKey>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusAccessKey>, never, any>)
+  : AlchemyProvider.succeed(NebiusAccessKey, {
   reconcile: Effect.fn('Nebius.iam.v2.AccessKey.reconcile')(function* ({ id, news, output, session }) {
     // Access keys are largely immutable — only description can be updated.
     // Creation happens HERE (in reconcile) — not in a precreate — because

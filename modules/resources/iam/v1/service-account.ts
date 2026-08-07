@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -35,7 +36,16 @@ const toFriendlyAttributes = (
 
 // ----- PROVIDER
 
-export const NebiusServiceAccountProvider = AlchemyProvider.succeed(NebiusServiceAccount, {
+/** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
+export const NebiusServiceAccountProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusServiceAccount>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusServiceAccount>, never, any>)
+  : AlchemyProvider.succeed(NebiusServiceAccount, {
   reconcile: Effect.fn('Nebius.iam.v1.ServiceAccount.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* ServiceAccountSchema.validateServiceAccountProps(news)

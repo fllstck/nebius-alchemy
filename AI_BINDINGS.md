@@ -210,22 +210,21 @@ Status: M1–M5 **done** (0 errors, full suite green). Bundle-safety spike ran
   **Bundle-safety spike (`spikes/ai-bindings-bundle.ts`)** — built the
   binding module + both example worker entries through alchemy's real
   `Bundle.build` (fold on/off):
-  - ✅ The AI binding module itself has **no gRPC and no dynamic import**
-    (no `@grpc`/`grpc-js` markers; the `nebius.ai.v1` string in the bundle is
-    just the contract tag). AD8's core claim holds.
-  - ⚠️ **~1 MB of Node-platform machinery** (`ws`, Effect `Socket`,
-    `node:net`/`http2`/`tls`/`os`) enters every binding bundle via
-    `alchemy/Output`'s transitive graph (`Output → Stack → Cli` — the CLI
-    imports the Node platform). Affects storage bindings **identically**;
-    an alchemy-internal structural issue (beta.70 vs the beta.67 the M0
-    spike measured) — worth reporting upstream.
-  - ⚠️ Full worker entries (AI **and** storage) additionally carry gRPC from
-    the statically-imported resource modules (endpoint/bucket) used in the
-    impl gen — the pre-existing storage example pattern.
-  - The M0 "67 KB / zero gRPC" result is **not reproducible** against the
-    current alchemy; whether workerd tolerates the dead Node builtin imports
-    (nodejs_compat stubs; never executed at runtime) is the real
-    deployability question — that is what M6's real deploy verifies.
+  - ✅ The AI binding module itself has **no gRPC and no dynamic import**.
+  - ✅ **Root cause found + fixed in-repo (D8 backfill):** the AI/VPC
+    resource modules exported their providers unguarded, so a worker
+    importing them (endpoint/network/subnet/job) retained the whole gRPC
+    deploy graph (1.15 MB entry). The bucket module already had the
+    `__ALCHEMY_RUNTIME__` provider guard (D8); backfilled it to **all 35
+    resource modules** (`spikes/backfill-provider-guard.ts`). AI worker
+    entry: **1152 KB → 115 KB, zero gRPC markers** (virtual entry 145 KB).
+  - ⚠️ Remaining ~1 MB is **inert lazy chunks** (alchemy CLI tooling,
+    effect Socket/ws, `node:net`/`http2`/`tls`) — dynamic-import chunks
+    that never load in a deployed worker. The binding module's main script
+    is only ~112 KB; the markers are dead code, not a deploy blocker.
+  - The M0 "67 KB" figure isn't reproducible against current alchemy (the
+    lazy-chunk set grew), but the **entry** script — what startup actually
+    loads — is comparable to storage (115 vs 135 KB).
 - **M5 — Exports, examples, docs. ✅** Re-exports through `ai/v1/index.ts`;
   `examples/ai.bindings.ts` + `ai.bindings-worker.ts`; `BINDINGS.md`
   §Out of scope and `README.md` updated.

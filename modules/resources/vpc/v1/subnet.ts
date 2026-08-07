@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -45,7 +46,15 @@ const specDrifted = (current: NebiusSubnetSchema.SubnetSpec, desired: NebiusSubn
 
 // ----- PROVIDER
 
-export const NebiusSubnetProvider = AlchemyProvider.succeed(NebiusSubnet, {
+export const NebiusSubnetProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusSubnet>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusSubnet>, never, any>)
+  : AlchemyProvider.succeed(NebiusSubnet, {
   // Observe → Ensure → Sync → Return
   reconcile: Effect.fn('Nebius.vpc.v1.Subnet.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}

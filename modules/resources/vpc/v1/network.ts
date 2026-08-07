@@ -1,4 +1,5 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -38,7 +39,15 @@ export const toFriendlyAttributes = (rawNetwork: NebiusNetworkSchema.Network): N
 
 // ----- PROVIDER
 
-export const NebiusNetworkProvider = AlchemyProvider.succeed(NebiusNetwork, {
+export const NebiusNetworkProvider: Layer.Layer<
+  AlchemyProvider.Provider<NebiusNetwork>,
+  never,
+  // oxlint-disable-next-line no-explicit-any — DCE guard: requirements wildcard (see doc comment above)
+  any
+> = globalThis.__ALCHEMY_RUNTIME__
+  ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
+    (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusNetwork>, never, any>)
+  : AlchemyProvider.succeed(NebiusNetwork, {
   // Observe → Ensure → Sync → Return
   reconcile: Effect.fn('Nebius.vpc.v1.Network.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
