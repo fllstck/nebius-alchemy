@@ -53,17 +53,17 @@ Demonstrates the read-only discovery actions: list-all and single-get for IAM pr
 
 The bindings examples ship typed Nebius S3 clients to a Cloudflare Worker at deploy time (host identity mint, editors-group grant, access key, and `NEBIUS_S3_*` env injection). Each has a stack file plus a separate Worker entry file — keeping the entry out of the stack keeps the deployed bundle free of provider/runtime machinery.
 
-### [bindings.ts](bindings.ts) — Effect-native Worker (inline form)
+### [storage.bindings.ts](storage.bindings.ts) — Effect-native Worker (inline form)
 
-The Worker entry ([bindings-worker.ts](bindings-worker.ts)) is a `Cloudflare.Worker` with an inline `Effect.gen` implementation. It declares the bucket, consumes the typed `GetObject`/`PutObject` runtime clients, and exposes a `GET`/`POST` HTTP API. Uses narrow deep-subpath imports so rolldown can tree-shake the handler bundle. Requires a Cloudflare API token or `alchemy login`.
+The Worker entry ([storage.bindings-worker.ts](storage.bindings-worker.ts)) is a `Cloudflare.Worker` with an inline `Effect.gen` implementation. It declares the bucket, consumes the typed `GetObject`/`PutObject` runtime clients, and exposes a `GET`/`POST` HTTP API. Uses narrow deep-subpath imports so rolldown can tree-shake the handler bundle. Requires a Cloudflare API token or `alchemy login`.
 
-### [bindings-async.ts](bindings-async.ts) — Async Worker (tiny bundle)
+### [storage-async.bindings.ts](storage-async.bindings.ts) — Async Worker (tiny bundle)
 
-Same deploy-time wiring as `bindings.ts`, but the Worker entry ([bindings-async-worker.ts](bindings-async-worker.ts)) is a plain async function with no Effect runtime — it reads `env` and drives s3-lite-client directly. Deployed size is a fraction of the Effect-native variant (~50–150 KB vs ~2 MB). The trade: you lose the typed `GetObject`/`PutObject` contracts inside the worker.
+Same deploy-time wiring as `storage.bindings.ts`, but the Worker entry ([storage-async.bindings-worker.ts](storage-async.bindings-worker.ts)) is a plain async function with no Effect runtime — it reads `env` and drives s3-lite-client directly. Deployed size is a fraction of the Effect-native variant (~50–150 KB vs ~2 MB). The trade: you lose the typed `GetObject`/`PutObject` contracts inside the worker.
 
-### [ai-bindings.ts](ai-bindings.ts) — AI endpoint ChatCompletions
+### [ai.bindings.ts](ai.bindings.ts) — AI endpoint ChatCompletions
 
-The Worker entry ([ai-bindings-worker.ts](ai-bindings-worker.ts)) declares an inference endpoint (network + subnet + vLLM-style container) and consumes the typed `ChatCompletions` runtime client: deploy-time `NEBIUS_ENDPOINT_URL`/`NEBIUS_ENDPOINT_AUTH_TOKEN` injection (the token deploys as a Cloudflare secret), a fetch-based OpenAI-compatible client at runtime. Auth is a bearer token — unlike the S3 bindings there is no identity minting or IAM grant. The deploy fails fast with `EndpointNotRunning` if the endpoint isn't RUNNING yet. See [AI_BINDINGS.md](../AI_BINDINGS.md) for the design.
+The Worker entry ([ai.bindings-worker.ts](ai.bindings-worker.ts)) declares an inference endpoint (network + subnet + vLLM-style container) and consumes the typed `ChatCompletions` runtime client: deploy-time `NEBIUS_ENDPOINT_URL`/`NEBIUS_ENDPOINT_AUTH_TOKEN` injection (the token deploys as a Cloudflare secret), a fetch-based OpenAI-compatible client at runtime. Auth is a bearer token — unlike the S3 bindings there is no identity minting or IAM grant. The deploy fails fast with `EndpointNotRunning` if the endpoint isn't RUNNING yet. See [AI_BINDINGS.md](../AI_BINDINGS.md) for the design.
 
 ## Companion Files
 

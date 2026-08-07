@@ -2,8 +2,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Bindings — ASYNC-worker variant (tiny bundle, alchemy-native)
  *
- * Same deploy-time wiring as `bindings.ts`, but the Worker is a plain async
- * entry (`bindings-async-worker.ts`): no Effect runtime in the bundle, so the
+ * Same deploy-time wiring as `storage.bindings.ts`, but the Worker is a plain async
+ * entry (`storage-async.bindings-worker.ts`): no Effect runtime in the bundle, so the
  * deployed size is a fraction of the Effect-native variant (~50-150 KB vs
  * ~2 MB).
  *
@@ -73,7 +73,7 @@ export default Alchemy.Stack(
 
     const Api = Cloudflare.Worker('Api', {
       // Resolve relative to this file (the stack lives in examples/), not the CWD.
-      main: import.meta.resolve('./bindings-async-worker.ts', import.meta.url),
+      main: import.meta.resolve('./storage-async.bindings-worker.ts', import.meta.url),
       env: {
         NEBIUS_S3_ENDPOINT: `https://storage.${REGION}.nebius.cloud`,
         NEBIUS_REGION: REGION,

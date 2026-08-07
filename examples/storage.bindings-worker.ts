@@ -3,7 +3,7 @@
  *
  * This file IS the Worker: it declares the bucket and consumes the typed
  * runtime clients, and the inline `Effect.gen` implementation is passed
- * directly to `Cloudflare.Worker`. The stack (`bindings.ts`) imports this
+ * directly to `Cloudflare.Worker`. The stack (`storage.bindings.ts`) imports this
  * construct and `yield*`s it, keeping the entry separate from the stack so
  * the deployed bundle doesn't drag in the provider/runtime machinery.
  *

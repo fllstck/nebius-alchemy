@@ -261,7 +261,7 @@ as a Cloudflare `secret_text` binding; auth is a bearer token, so — unlike
 the S3 bindings — there is no identity minting or IAM grant. The deploy
 fails fast with `EndpointNotRunning` when the endpoint has no public endpoint
 yet (it must be RUNNING). See [AI_BINDINGS.md](AI_BINDINGS.md) for the design
-and [`examples/ai-bindings.ts`](examples/ai-bindings.ts) for a full example.
+and [`examples/ai.bindings.ts`](examples/ai.bindings.ts) for a full example.
 
 ### Bindings env reference
 
@@ -277,9 +277,9 @@ Injected into the Worker at deploy time (names are stable):
 | `NEBIUS_ENDPOINT_URL`      | The endpoint's first public URL (AI bindings) |
 | `NEBIUS_ENDPOINT_AUTH_TOKEN` | The endpoint's bearer token (`secret_text`; `''` when auth disabled) |
 
-See [`examples/bindings.ts`](examples/bindings.ts) for the full pattern.
+See [`examples/storage.bindings.ts`](examples/storage.bindings.ts) for the full pattern.
 
-> **Small-bundle variant**: the Effect-native worker bundles alchemy's runtime. If bundle size matters more than the typed contracts, use [`examples/bindings-async.ts`](examples/bindings-async.ts).
+> **Small-bundle variant**: the Effect-native worker bundles alchemy's runtime. If bundle size matters more than the typed contracts, use [`examples/storage-async.bindings.ts`](examples/storage-async.bindings.ts).
 
 ## Examples
 
@@ -293,8 +293,8 @@ See [`examples/bindings.ts`](examples/bindings.ts) for the full pattern.
 | [`examples/kms.ts`](examples/kms.ts)               | Symmetric and asymmetric encryption keys                              |
 | [`examples/mysterybox.ts`](examples/mysterybox.ts) | Versioned secret with payload rotation                                |
 | [`examples/actions.ts`](examples/actions.ts)       | Read-only discovery actions for IAM, VPC, and quotas                  |
-| [`examples/bindings.ts`](examples/bindings.ts)     | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)           |
-| [`examples/ai-bindings.ts`](examples/ai-bindings.ts) | Nebius AI endpoint bindings for a Cloudflare Worker (ChatCompletions) |
+| [`examples/storage.bindings.ts`](examples/storage.bindings.ts) | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)          |
+| [`examples/ai.bindings.ts`](examples/ai.bindings.ts)         | Nebius AI endpoint bindings for a Cloudflare Worker (ChatCompletions) |
 
 ## Usage
 

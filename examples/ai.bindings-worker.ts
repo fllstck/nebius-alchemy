@@ -3,7 +3,7 @@
  *
  * This file IS the Worker: it declares an inference endpoint (plus its
  * network/subnet) and consumes the typed `ChatCompletions` runtime client.
- * The stack (`ai-bindings.ts`) imports this construct and `yield*`s it,
+ * The stack (`ai.bindings.ts`) imports this construct and `yield*`s it,
  * keeping the entry separate from the stack so the deployed bundle doesn't
  * drag in the provider/runtime machinery.
  *

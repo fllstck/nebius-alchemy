@@ -88,8 +88,8 @@ modules/resources/ai/v1/index.ts            # re-export binding namespace member
 tests/resources/ai/v1/bindings.test.ts      # unit: env derivation, error mapping, SSE parser, schemas
 tests/resources/ai/v1/bindings.integration.test.ts  # local-mock runtime (default) + impl runtime side
 tests/helpers/openai-mock.ts                # Bun.serve OpenAI-compatible mock server (scripted SSE)
-examples/ai-bindings.ts                     # Cloudflare Worker stack
-examples/ai-bindings-worker.ts              # Worker entry (chat handler)
+examples/ai.bindings.ts                     # Cloudflare Worker stack
+examples/ai.bindings-worker.ts              # Worker entry (chat handler)
 BINDINGS.md                                 # §Out of scope: point AI line at this doc
 README.md                                   # Bindings section + AI endpoint binding entry
 ```
@@ -208,7 +208,7 @@ Status: M1–M4 **done** (0 errors, full suite green). M5 done (examples +
   pre-set `true` + mocked host. Bundle check: the module is statically
   workerd-safe by construction (no gRPC, no dynamic import).
 - **M5 — Exports, examples, docs. ✅** Re-exports through `ai/v1/index.ts`;
-  `examples/ai-bindings.ts` + `ai-bindings-worker.ts`; `BINDINGS.md`
+  `examples/ai.bindings.ts` + `ai.bindings-worker.ts`; `BINDINGS.md`
   §Out of scope and `README.md` updated.
 - **M6 — (pending, SLOW_TESTS=1) Real-endpoint e2e.** Deploy a cheap CPU
   endpoint (smallest preset + tiny OpenAI-compatible image), full deploy-time
@@ -251,7 +251,7 @@ Status: M1–M4 **done** (0 errors, full suite green). M5 done (examples +
 - `Completions` / `Embeddings` / `Models` — same factory; `Models` doubles as a
   cheap liveness check
 - `wireAsyncBindings` sibling for async (non-Effect) Workers
-  (`examples/bindings-async.ts` pattern)
+  (`examples/storage-async.bindings.ts` pattern)
 - MysteryBox-sourced token (Option C): read the secret payload at deploy time
   in the CLI — real plumbing, skipped for v1
 - Port selection for multi-port endpoints (O5)

@@ -145,7 +145,7 @@ modules/resources/storage/v1/index.ts     # re-export binding namespace members
 tests/resources/shared/bind-host.test.ts
 tests/resources/storage/v1/bindings.test.ts
 tests/resources/storage/v1/bindings.integration.test.ts
-examples/bindings.ts                      # Cloudflare Worker stack
+examples/storage.bindings.ts              # Cloudflare Worker stack
 README.md                                 # Bindings section
 ```
 
@@ -467,7 +467,7 @@ number of `stack.deploy` calls.
 
 ### M4 — Docs & examples — DONE ✅ (with a follow-up: see “M4 e2e findings” below)
 
-- [x] `examples/bindings.ts`: Cloudflare Worker stack consuming
+- [x] `examples/storage.bindings.ts`: Cloudflare Worker stack consuming
       `Nebius.storage.GetObject`/`PutObject` — the Goal snippet shape, using
       the **Effect-native Worker form** (`Cloudflare.Worker(id, props, impl)`, where
       the impl's `WorkerServices` inherently satisfy the binding layers'
@@ -480,7 +480,7 @@ number of `stack.deploy` calls.
       `yield* HttpServerRequest`, not a function arg).
 - [x] README "Bindings" section: what they are, Cloudflare-first + AWS
       roadmap note, one-line usage snippet, contracts table,
-      `NEBIUS_S3_*` env reference; `examples/bindings.ts` row in the
+      `NEBIUS_S3_*` env reference; `examples/storage.bindings.ts` row in the
       Examples table.
 - [x] Final: `bun run check` clean (0 errors, 12 baseline warnings),
       `bun test` green (385), `SLOW_TESTS=1` integration green for the
@@ -501,12 +501,12 @@ already in use`). Fixed with `registerEnvOnce` — the shared host-identity env
 - **The remote provider requires an entry**: the Effect-native worker needs
   `main` pointing at its own file for real deploys (the dev local provider
   accepted impl-only). The example now uses a separate entry
-  (`examples/bindings-worker.ts`) with `main: import.meta.url` there — the
+  (`examples/storage.bindings-worker.ts`) with `main: import.meta.url` there — the
   entry imports only contracts + effect runtime, not the stack machinery.
 
 Earlier findings (still true, context):
 
-Running `alchemy dev examples/bindings.ts` (workerd local-worker e2e) surfaced
+Running `alchemy dev examples/storage.bindings.ts` (workerd local-worker e2e) surfaced
 THREE issues. Two are fixed and the deploy-time wiring is now proven in a real
 dev deploy; the third (the workerd runtime itself) remains with the alchemy
 maintainers.
@@ -537,7 +537,7 @@ maintainers.
    declared in the same deploy as its SA (the hostIdentity chain). Reconcile
    runs after `waitForDeps`/`Output.evaluate` — refs resolve — the one-deploy
    chain works, secret capture unchanged.
-4. **`examples/bindings.ts`: no `main` for an Effect-native Worker.**
+4. **`examples/storage.bindings.ts`: no `main` for an Effect-native Worker.**
    `main: import.meta.url` bundled the whole stack module into the worker
    script (dragging in the workerd lib whose `require.resolve` shim fails
    under workerd — `Uncaught TypeError: e.resolve is not a function`). The
@@ -552,7 +552,7 @@ requests. The RPC bridge connection dies (`CLOSE_WAIT`), the watch restarts
 sidecars on new ports while workerd stays on the dead bridge, and it does not
 respawn after a kill — `curl` hangs. Reproducer: `CI=1
 CLOUDFLARE_API_TOKEN=<32-hex> CLOUDFLARE_ACCOUNT_ID=<32-hex> bun
-node_modules/alchemy/bin/alchemy.js dev examples/bindings.ts` (the local
+node_modules/alchemy/bin/alchemy.js dev examples/storage.bindings.ts` (the local
 worker needs a resolvable Cloudflare profile — `~/.alchemy/profiles.json`
 gained `"Cloudflare": { "method": "env" }`; the token is never actually
 used for local workerd).

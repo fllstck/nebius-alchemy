@@ -1,18 +1,21 @@
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * Bindings — typed Nebius S3 clients for a Cloudflare Worker (inline form)
+ * Bindings — typed Nebius AI endpoint client for a Cloudflare Worker
+ * (inline form)
  *
  * The Worker + its inline `Effect.gen` implementation live in
- * `bindings-worker.ts` (the entry's default export is the Worker construct);
- * this stack imports the construct and `yield*`s it, which runs its Init
- * phase at deploy time — host identity mint, editors group grant, access
- * key, `NEBIUS_S3_*` env injection — and the `fetch` handler uses the typed
- * runtime clients.
+ * `ai.bindings-worker.ts` (the entry's default export is the Worker
+ * construct); this stack imports the construct and `yield*`s it, which runs
+ * its Init phase at deploy time — endpoint + network + subnet creation, and
+ * `NEBIUS_ENDPOINT_URL`/`NEBIUS_ENDPOINT_AUTH_TOKEN` env injection (the URL
+ * resolves only once the endpoint is RUNNING — the deploy fails early with
+ * `EndpointNotRunning` otherwise). The `fetch` handler uses the typed
+ * runtime client.
  *
  * Keeping the worker entry in its own file is what keeps the deployed
- * bundle clean: `main` points at `bindings-worker.ts`, never at this stack
- * file, so the provider/runtime machinery imported here (for the CLI) never
- * ships inside the Worker.
+ * bundle clean: `main` points at `ai.bindings-worker.ts`, never at this
+ * stack file, so the provider/runtime machinery imported here (for the CLI)
+ * never ships inside the Worker.
  *
  * Usage:
  *   NEBIUS_TENANT_ID=<tenant-id> alchemy deploy --yes
@@ -23,6 +26,9 @@
  *   NEBIUS_PROJECT_ID     (required)
  *   NEBIUS_REGION         (optional)  Default: eu-north1
  *   CLOUDFLARE_API_TOKEN / alchemy login   (required for the Worker deploy)
+ *
+ * ⚠️ Billable resources: this deploys a real inference endpoint (VM) —
+ *   destroy it when you're done. See AI_BINDINGS.md for the design.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -32,10 +38,10 @@ import { Stack, localState } from 'alchemy'
 
 import * as Cloudflare from 'alchemy/Cloudflare'
 import * as Nebius from '@fllstck/nebius-alchemy'
-import Api from './bindings-worker.ts'
+import Api from './ai.bindings-worker.ts'
 
 export default Stack(
-  'Bindings',
+  'AiBindings',
   {
     providers: Layer.mergeAll(Cloudflare.providers(), Nebius.providers()),
     state: localState(),

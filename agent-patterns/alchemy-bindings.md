@@ -50,7 +50,7 @@ hostIdentity one-deploy chain.)
 Use a **separate entry file** with `main` pointing at it:
 
 ```ts
-// examples/bindings-worker.ts — the entry: impl + contracts + layers
+// examples/storage.bindings-worker.ts — the entry: impl + contracts + layers
 export default Cloudflare.Worker('Api', { main: import.meta.url },
   Effect.gen(function* () {
     const bucket = yield* Nebius.storage.Bucket('assets', …)
@@ -58,8 +58,8 @@ export default Cloudflare.Worker('Api', { main: import.meta.url },
     return { fetch: … }
   }).pipe(Effect.provide(Layer.mergeAll(GetObjectHttp, PutObjectHttp))))
 
-// examples/bindings.ts — the stack
-import Api from './bindings-worker.ts'
+// examples/storage.bindings.ts — the stack
+import Api from './storage.bindings-worker.ts'
 export default Alchemy.Stack('Bindings', { providers: …, state: … },
   Effect.gen(function* () { const worker = yield* Api; return { workerUrl: worker.url } }))
 ```
