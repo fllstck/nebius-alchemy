@@ -36,34 +36,50 @@ export default Cloudflare.Worker(
     const network = yield* NebiusNetwork('Network', {})
     const subnet = yield* NebiusSubnet('Subnet', { networkId: network.id })
 
-    // A minimal inference endpoint. Uses the ultra-compact llama.cpp server
-    // (<12 MB) with a small Qwen3-0.6B quantized model downloaded from
-    // HuggingFace at startup — OpenAI-compatible `/v1/chat/completions`,
-    // CPU-only, self-contained (no volume mounts). Auth is enabled with a
-    // bearer token — the binding injects it into the Worker as a Cloudflare
-    // `secret_text` binding at deploy time.
+    // A minimal inference endpoint. The proven combo (matches the repo's own
+    // endpoint integration test): nginx on cpu-d3 — validates the FULL
+    // binding chain (endpoint RUNNING → public URL wired → Worker env →
+    // runtime client). nginx isn't OpenAI-compatible, so a chat call returns
+    // the binding's EndpointNotFound (404) — proof the runtime + error
+    // mapping works end-to-end.
     //
-    // `cpu-e2` is eu-north1-only and the smallest CPU platform; if it's not
-    // available in your region/project, use `platform: 'cpu-d3'` with
-    // `preset: '4vcpu-16gb'` instead.
+    // For a real chat round-trip, swap in an OpenAI-compatible container and
+    // a model (commented below). Note: `cpu-e2`/`2vcpu-8gb` is eu-north1-only
+    // and may lack quota in your project — the operation failed with a
+    // generic internal error when it was used.
     const endpoint = yield* NebiusEndpoint('llm', {
-      image: 'samueltallet/alpine-llama-cpp-server',
-      platform: 'cpu-e2',
-      preset: '2vcpu-8gb',
+      image: 'nginx:alpine',
+      platform: 'cpu-d3',
+      preset: '4vcpu-16gb',
       subnetId: subnet.id,
       publicIp: true,
       preemptible: false,
-      environmentVariables: [
-        // The tiny model the server downloads at startup, and its request
-        // alias — the chat request below uses this model name.
-        { name: 'LLAMA_ARG_HF_REPO', value: 'unsloth/Qwen3-0.6B-GGUF' },
-        { name: 'LLAMA_ARG_ALIAS', value: 'qwen3-0.6b' },
-      ],
-      ports: [{ containerPort: 8080, protocol: 'HTTP' }],
+      environmentVariables: [],
+      ports: [{ containerPort: 80, protocol: 'HTTP' }],
       volumes: [],
       disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
       authToken: 'replace-with-a-real-token',
     })
+    // ── Real chat alternative ──────────────────────────────────────────────
+    // Ultra-compact llama.cpp server (<12 MB), OpenAI-compatible, downloads
+    // a tiny Qwen3-0.6B GGUF from HuggingFace at startup; listen on 8080;
+    // the chat request below uses the LLAMA_ARG_ALIAS model name.
+    // const endpoint = yield* NebiusEndpoint('llm', {
+    //   image: 'samueltallet/alpine-llama-cpp-server',
+    //   platform: 'cpu-d3',
+    //   preset: '4vcpu-16gb',
+    //   subnetId: subnet.id,
+    //   publicIp: true,
+    //   preemptible: false,
+    //   environmentVariables: [
+    //     { name: 'LLAMA_ARG_HF_REPO', value: 'unsloth/Qwen3-0.6B-GGUF' },
+    //     { name: 'LLAMA_ARG_ALIAS', value: 'qwen3-0.6b' },
+    //   ],
+    //   ports: [{ containerPort: 8080, protocol: 'HTTP' }],
+    //   volumes: [],
+    //   disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+    //   authToken: 'replace-with-a-real-token',
+    // })
 
     // The typed runtime client — derives the endpoint's public URL and token
     // at deploy time; `ChatCompletionsHttp` provides the implementation.
@@ -80,7 +96,8 @@ export default Cloudflare.Worker(
         const outcome = yield* Effect.exit(
           chat(
             new ChatCompletionRequest({
-              // Matches the container's LLAMA_ARG_ALIAS above.
+              // With the llama.cpp alternative below, this must match its
+              // LLAMA_ARG_ALIAS; nginx ignores the model name.
               model: 'qwen3-0.6b',
               messages: [{ role: 'user', content: 'Hello from the Worker!' }],
             }),
