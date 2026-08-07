@@ -14,7 +14,7 @@
  */
 import * as Cloudflare from 'alchemy/Cloudflare'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
+import * as Result from 'effect/Result'
 import { HttpServerRequest } from 'effect/unstable/http/HttpServerRequest'
 import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
 import * as Layer from 'effect/Layer'
@@ -54,24 +54,24 @@ export default Cloudflare.Worker(
         const request = yield* HttpServerRequest
 
         if (request.method === 'POST') {
-          const body = yield* Effect.exit(request.text)
-          if (Exit.isFailure(body))
-            return HttpServerResponse.text(`error reading body: ${String(body.cause)}`, { status: 400 })
+          const body = yield* Effect.result(request.text)
+          if (Result.isFailure(body))
+            return HttpServerResponse.text(`error reading body: ${String(body.failure)}`, { status: 400 })
 
-          const outcome = yield* Effect.exit(
-            putObject({ key: 'hello.txt', value: body.value ?? '', contentType: 'text/plain' }),
+          const outcome = yield* Effect.result(
+            putObject({ key: 'hello.txt', value: body.success ?? '', contentType: 'text/plain' }),
           )
-          if (Exit.isFailure(outcome))
-            return HttpServerResponse.text(`error: ${String(outcome.cause)}`, { status: 500 })
+          if (Result.isFailure(outcome))
+            return HttpServerResponse.text(`error: ${String(outcome.failure)}`, { status: 500 })
 
           return HttpServerResponse.text('stored', { status: 201 })
         }
 
-        const read = yield* Effect.exit(getObject({ key: 'hello.txt' }).pipe(Effect.flatMap((result) => result.text)))
+        const read = yield* Effect.result(getObject({ key: 'hello.txt' }).pipe(Effect.flatMap((result) => result.text)))
 
-        if (Exit.isFailure(read)) return HttpServerResponse.text(`error: ${String(read.cause)}`, { status: 500 })
+        if (Result.isFailure(read)) return HttpServerResponse.text(`error: ${String(read.failure)}`, { status: 500 })
 
-        return HttpServerResponse.text(read.value, { status: 200 })
+        return HttpServerResponse.text(read.success, { status: 200 })
       }),
     }
   }).pipe(

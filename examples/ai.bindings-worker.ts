@@ -14,7 +14,7 @@
  */
 import * as Cloudflare from 'alchemy/Cloudflare'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
+import * as Result from 'effect/Result'
 import { HttpServerRequest } from 'effect/unstable/http/HttpServerRequest'
 import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
 import { NebiusEndpoint } from '@fllstck/nebius-alchemy/resources/ai/v1/endpoint.ts'
@@ -98,7 +98,7 @@ export default Cloudflare.Worker(
           return HttpServerResponse.text('send a POST to chat with this endpoint', { status: 405 })
         }
 
-        const outcome = yield* Effect.exit(
+        const outcome = yield* Effect.result(
           chat(
             new ChatCompletionRequest({
               // Must match the container's --model (vLLM rejects others).
@@ -107,14 +107,14 @@ export default Cloudflare.Worker(
             }),
           ),
         )
-        if (Exit.isFailure(outcome)) {
-          return HttpServerResponse.text(`chat failed: ${String(outcome.cause)}`, { status: 500 })
+        if (Result.isFailure(outcome)) {
+          return HttpServerResponse.text(`chat failed: ${String(outcome.failure)}`, { status: 500 })
         }
 
         // `stream: true` would return an SSE stream of typed chunks instead
         // (see AI_BINDINGS.md AD3) — this example uses the plain response.
-        if (outcome.value.stream === false) {
-          return HttpServerResponse.jsonUnsafe(outcome.value.response, { status: 200 })
+        if (outcome.success.stream === false) {
+          return HttpServerResponse.jsonUnsafe(outcome.success.response, { status: 200 })
         }
         return HttpServerResponse.text('streaming responses are not shown in this example', { status: 501 })
       }),
