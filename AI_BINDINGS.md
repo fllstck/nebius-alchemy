@@ -272,7 +272,7 @@ Status: M1–M6 **done** (0 errors, full suite green; M6 gated behind SLOW_TESTS
 | O2 | Mid-stream malformed JSON: fail stream vs skip event? | Fail with `MalformedStream` (corrupt event = misbehaving endpoint) | locked |
 | O3 | Long-stream timeout handling? | No built-in timeout; document `ctx.waitUntil` + endpoint idle behavior | open |
 | O4 | Adopted/ref'd endpoints lose the token (read/list lack `news`) → runtime 401 | Documented limitation; v1 targets stack-deployed endpoints | open |
-| O5 | Multi-port, auth-disabled endpoints: which URL? | First public endpoint; port selection later | open |
+| O5 | Multi-port, auth-disabled endpoints: which URL? | **Partially resolved by the https-preference fix:** the env always takes the absolute `https://` (managed tunnel) URL of the first HTTP port, never raw `IP:port` entries. Open part: per-port selection when a container exposes several HTTP ports | open (https-preference done) |
 | O6 | `/v1/chat/completions` path hardcoded — container must serve an OpenAI-compatible API | Documented; path config later if needed | open |
 | O7 | `WorkerBindingShape` local union drifts from alchemy's `WorkerBinding` wire type on upgrade | **Hit in real deploy + resolved:** the token env Output resolved to a `Redacted` OBJECT, which the wire (and the worker provider's passthrough of `host.bind` data) rejects — `ScriptStartupError: cannot unmarshal object into PlainTextBinding.text`. Fix: `secret()` marker in `bind-host.ts` forces `secret_text`; the wrapped value resolves to a plain STRING at apply time; direct `Redacted` values are unwrapped at classification. Storage's S3 key now also deploys as a real `secret_text` (was plain_text) | resolved (bind-host.ts) |
 
