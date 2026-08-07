@@ -1,20 +1,18 @@
 /**
  * M6 — real-infra e2e for the AI endpoint bindings (AI_BINDINGS.md M6).
  *
- * SLOW_TESTS-gated: deploys a real endpoint (nginx on cpu-d3 — the cheap,
- * deterministic wiring-validation combo; the GPU vLLM config in
- * `examples/ai.bindings-worker.ts` is the chat-capable variant) and exercises
- * the REAL binding layer against it:
+ * ⚠️ OPT-IN ONLY: requires BOTH `SLOW_TESTS=1` AND `M6_E2E=1`, and a
+ * dedicated slot — it deploys a GPU endpoint (vLLM Qwen3-0.6B) and the
+ * platform's teardown is slow (~30+ min total, GPU cost). The PRIMARY gate is
+ * the manual end-to-end verification (examples/ai.bindings.ts + curl to the
+ * worker) plus the unit suite. This test exists to lock in the wiring
+ * assertions (managed https URL, secret_text token) and a real chat
+ * round-trip when someone deliberately runs it.
  *
- *  1. Deploy-time wiring — endpointToEnv → registerEnvOnce → host.bind with a
- *     mocked Worker host. Asserts the injected env carries the endpoint's
- *     MANAGED https URL (regression for the raw `IP:port` bug) and the token
- *     as a `secret_text` binding.
- *  2. Runtime — chatCompletions via the real layer against the REAL endpoint:
- *     nginx answers 404 on /v1/chat/completions → EndpointNotFound. That
- *     proves reachability + the tagged error mapping against real infra. A
- *     real chat round-trip (200 + completion) requires the GPU vLLM config —
- *     verified manually, documented in the example.
+ * Deploy-time wiring: endpointToEnv → registerEnvOnce → host.bind with a
+ * mocked Worker host — asserts the injected env carries the endpoint's
+ * MANAGED https URL (regression for the raw `IP:port` bug) and the token as a
+ * `secret_text` binding. Runtime: a REAL chat round-trip through the layer.
  *
  * PATTERN (agent-patterns/alchemy-test-patterns.md): staged deploys; every
  * stage re-declares the full resource set (noops) so the re-plan doesn't
@@ -25,7 +23,7 @@ import * as Layer from 'effect/Layer'
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Self } from 'alchemy/Self'
 import { Nebius, test } from '../../../helpers/stack.ts'
-import { expect } from 'bun:test'
+import { expect, test as bunTest } from 'bun:test'
 import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
 import * as VpcGrpc from '../../../../modules/api-client/vpc.ts'
@@ -36,46 +34,57 @@ import type { EndpointProps } from '../../../../modules/resources/ai/v1/endpoint
 
 const PROJECT = process.env.NEBIUS_PROJECT_ID!
 
-/** The cheap wiring-validation combo: nginx on cpu-d3, one HTTP port, token auth. */
+/** The proven config: vLLM Qwen3-0.6B on an L40S GPU (cookbook template, --enforce-eager). */
 const ENDPOINT_PROPS: Omit<EndpointProps, 'subnetId'> = {
-  image: 'nginx:alpine',
-  platform: 'cpu-d3',
-  preset: '4vcpu-16gb',
+  image: 'vllm/vllm-openai:v0.19.1',
+  containerCommand: 'python3',
+  args: '-m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --host 0.0.0.0 --port 8000 --enforce-eager',
+  platform: 'gpu-l40s-a',
+  preset: '1gpu-8vcpu-32gb',
   publicIp: true,
-  preemptible: false,
+  preemptible: true,
   environmentVariables: [],
-  ports: [{ containerPort: 80, protocol: 'HTTP' }],
+  ports: [{ containerPort: 8000, protocol: 'HTTP' }],
   volumes: [],
-  disk: { type: 'NETWORK_SSD', sizeBytes: 10_737_418_240 },
+  disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 }, // 100 GiB (template uses 500)
+  shmSizeBytes: 17_179_869_184, // 16 GiB
   authToken: 'm6-integration-token',
 }
 
 /**
- * Post-destroy leak verification: anything named `m6test-*` surviving the
- * destroy is a leak (a failed destroy used to leave network/subnet/endpoint
- * remnants silently).
+ * Post-destroy leak verification: anything named
+ * `nebius-ai-bindings-chatcompletionshttp-*` (the slugged test name) surviving
+ * the destroy is a leak (a failed destroy used to leave
+ * network/subnet/endpoint remnants silently).
  */
+const LEAK_PREFIX = 'nebius-ai-bindings-chatcompletionshttp'
+
 const verifyNoLeaks = Effect.gen(function* () {
   const vpc = yield* VpcGrpc.VpcGrpcService
   const ai = yield* AiGrpc.AiGrpcService
   const leaked: string[] = []
   for (const n of yield* vpc.network.list(PROJECT)) {
-    if (n.metadata?.name?.startsWith('m6test-')) leaked.push(`network ${n.metadata.name}`)
+    if (n.metadata?.name?.startsWith(LEAK_PREFIX)) leaked.push(`network ${n.metadata.name}`)
   }
   for (const s of yield* vpc.subnet.list(PROJECT)) {
-    if (s.metadata?.name?.startsWith('m6test-')) leaked.push(`subnet ${s.metadata.name}`)
+    if (s.metadata?.name?.startsWith(LEAK_PREFIX)) leaked.push(`subnet ${s.metadata.name}`)
   }
   for (const e of yield* ai.endpoint.list(PROJECT)) {
-    if (e.metadata?.name?.startsWith('m6test-')) leaked.push(`endpoint ${e.metadata.name}`)
+    if (e.metadata?.name?.startsWith(LEAK_PREFIX)) leaked.push(`endpoint ${e.metadata.name}`)
   }
   if (leaked.length > 0) {
     return yield* Effect.fail(new Error(`LEAKED after destroy: ${leaked.join(', ')}`))
   }
 })
 
-integrationTest(
-  test.provider,
-  'Nebius.ai bindings — ChatCompletionsHttp wiring + runtime against a real endpoint (M6)',
+// ⚠️ Double-gated: SLOW_TESTS alone must NOT run this — it needs an explicit
+// M6_E2E=1 opt-in AND a dedicated slot (GPU endpoint, ~30+ min, slow teardown).
+if (process.env.M6_E2E !== '1') {
+  bunTest.skip('Nebius.ai bindings — real-infra e2e (M6) — opt-in: SLOW_TESTS=1 M6_E2E=1', () => {})
+} else {
+  integrationTest(
+    test.provider,
+    'Nebius.ai bindings — ChatCompletionsHttp wiring + runtime against a real endpoint (M6)',
   (stack) =>
     Effect.gen(function* () {
       // Stage 1 — network + subnet + endpoint alone. The endpoint provider's
@@ -127,18 +136,19 @@ integrationTest(
             ),
           )
 
-          // Runtime against the REAL endpoint: nginx 404s /v1/chat/completions
-          // → the binding maps it to EndpointNotFound. Collapse to a marker
-          // string so the assertion below is unambiguous.
+          // Runtime against the REAL endpoint: a real chat completion through
+          // the layer (200 + decoded ChatCompletion). Collapse to a string:
+          // the content on success, an error description on failure.
           return yield* chat(
             new BindingsSchema.ChatCompletionRequest({
-              model: 'm6-test-model',
-              messages: [{ role: 'user', content: 'hello from M6' }],
+              model: 'Qwen/Qwen3-0.6B',
+              messages: [{ role: 'user', content: 'Reply with exactly one word: pong' }],
+              max_tokens: 32,
             }),
           ).pipe(
             Effect.match({
-              onFailure: (e) => (e._tag === 'EndpointNotFound' ? 'EndpointNotFound' : `unexpected error: ${String(e)}`),
-              onSuccess: () => 'unexpected success',
+              onFailure: (e) => `chat call failed: ${String(e)}`,
+              onSuccess: (r) => (r.stream === false ? r.response.choices[0]?.message.content ?? '' : 'unexpected stream result'),
             }),
           )
         }),
@@ -161,12 +171,15 @@ integrationTest(
       expect(tokenBinding?.type).toBe('secret_text')
       expect(tokenBinding?.text).toBe('m6-integration-token')
 
-      // Runtime: nginx 404 → EndpointNotFound.
-      expect(outcome).toBe('EndpointNotFound')
-      console.log('[M6] runtime hit the real endpoint → EndpointNotFound (nginx 404) OK')
+      // Runtime: a real chat completion through the binding.
+      expect(outcome).not.toMatch(/^chat call failed/)
+      expect(outcome.length).toBeGreaterThan(0)
+      console.log(`[M6] real chat round-trip through the binding OK: ${outcome.slice(0, 80)}`)
     }).pipe(
-      // nginx provisions fast, but keep headroom for slow VM scheduling.
+      // Budget = deploy (op poll + readiness, up to ~25 min) + teardown (slow
+      // on this platform — subnet deletes wait on the endpoint VM).
       safeDestroy(stack, verifyNoLeaks),
     ),
-  { timeout: 900_000 },
-)
+    { timeout: 1_800_000 },
+  )
+}

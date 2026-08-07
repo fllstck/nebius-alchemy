@@ -1,3 +1,22 @@
+# [0.5.0](https://github.com/fllstck/nebius-alchemy/compare/v0.4.2...v0.5.0) (2026-08-07)
+
+
+### Bug Fixes
+
+* **ai:** await RUNNING for fresh endpoint creates to fix deploy-time env eval ([e8e6fcd](https://github.com/fllstck/nebius-alchemy/commit/e8e6fcd7f692eda8fd2bf60aa35f306193e70c08))
+* **ai:** make endpoint env derivation lenient and fail fast on ERROR state ([2dac0ba](https://github.com/fllstck/nebius-alchemy/commit/2dac0ba5a4c3c9706c0f746fb688fe4c02f0eb2e))
+* **ai:** prefer https tunnel URL over raw IP:port for endpoint ([90f1b9a](https://github.com/fllstck/nebius-alchemy/commit/90f1b9a82ef8256dc6a0f13e8ef807562462c0a5))
+* **bindings:** force secret_text for worker env bindings ([287cd56](https://github.com/fllstck/nebius-alchemy/commit/287cd56d1a3fbbb5f8abef413ad676cdffa18890))
+* **modules:** guard all resource providers with __ALCHEMY_RUNTIME__ DCE guard ([1b9c721](https://github.com/fllstck/nebius-alchemy/commit/1b9c72138b5e1d4c1db9e29bbfd99e0bc43eac18))
+
+
+### Features
+
+* **ai/endpoint:** persist authToken in endpoint attributes ([1449cf2](https://github.com/fllstck/nebius-alchemy/commit/1449cf21ce4ccd3c9e46c99cf8603487389e1951))
+* **ai:** add deploy-time endpoint env wiring and ChatCompletions layer ([35a0c8c](https://github.com/fllstck/nebius-alchemy/commit/35a0c8c9e60c882fdac8a40bf9d617f6cf964a88))
+* **ai:** add OpenAI-compatible wire schemas and SSE parser for AI bindings ([2286773](https://github.com/fllstck/nebius-alchemy/commit/2286773d7e6979f021e54b71b6ad45ead1813cc3))
+* **ai:** add typed error handling and runtime client for chat completions ([e489b19](https://github.com/fllstck/nebius-alchemy/commit/e489b19ccca88c787d9eddd030d7a9d5ebd0ecd5))
+* **ai:** surface endpoint provisioning progress in session notes ([eb2cb3d](https://github.com/fllstck/nebius-alchemy/commit/eb2cb3dacf01d1b3122d1ce272011aa106b3c11e))
 ## [0.4.2](https://github.com/fllstck/nebius-alchemy/compare/v0.4.1...v0.4.2) (2026-08-07)
 ## [0.4.1](https://github.com/fllstck/nebius-alchemy/compare/v0.4.0...v0.4.1) (2026-08-07)
 
