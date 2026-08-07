@@ -322,3 +322,67 @@ describe('readAiEnv', () => {
     }
   })
 })
+
+describe('contract', () => {
+  test('ChatCompletions contract is defined', () => {
+    expect(Bindings.ChatCompletions).toBeDefined()
+  })
+
+  test('ChatCompletionsHttp layer is defined', () => {
+    expect(Bindings.ChatCompletionsHttp).toBeDefined()
+  })
+})
+
+describe('env derivation (AD7/AD6)', () => {
+  test('publicEndpointUrl takes the first public endpoint', () => {
+    expect(Bindings.publicEndpointUrl(['https://a.example.com', 'https://b.example.com'])).toBe(
+      'https://a.example.com',
+    )
+  })
+
+  test('publicEndpointUrl is null when the endpoint is not RUNNING', () => {
+    expect(Bindings.publicEndpointUrl([])).toBeNull()
+  })
+
+  test('tokenToEnv passes the token through', () => {
+    expect(Bindings.tokenToEnv('secret-token')).toBe('secret-token')
+  })
+
+  test('tokenToEnv maps undefined to empty string (auth disabled)', () => {
+    expect(Bindings.tokenToEnv(undefined)).toBe('')
+  })
+})
+
+describe('runtime guard', () => {
+  test('empty endpoint URL → EndpointNotRunning', async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(
+        Bindings.chatCompletions({ NEBIUS_ENDPOINT_URL: '', NEBIUS_ENDPOINT_AUTH_TOKEN: '' })(
+          new BindingsSchema.ChatCompletionRequest({
+            model: 'm',
+            messages: [{ role: 'user', content: 'hi' }],
+          }),
+        ),
+      ),
+    )
+    expect(error._tag).toBe('EndpointNotRunning')
+  })
+})
+
+describe('error tags', () => {
+  test('all AiError members carry their _tag', async () => {
+    const cases: Array<[string, Bindings.AiError]> = [
+      ['EndpointNotRunning', new Bindings.EndpointNotRunning({ message: 'x' })],
+      ['InvalidCredentials', new Bindings.InvalidCredentials({ missing: ['A'], message: 'x' })],
+      ['EndpointUnauthorized', new Bindings.EndpointUnauthorized({ message: 'x' })],
+      ['EndpointNotFound', new Bindings.EndpointNotFound({ message: 'x' })],
+      ['EndpointRateLimited', new Bindings.EndpointRateLimited({ message: 'x' })],
+      ['EndpointError', new Bindings.EndpointError({ message: 'x' })],
+      ['EndpointUnreachable', new Bindings.EndpointUnreachable({ message: 'x' })],
+      ['MalformedStream', new Bindings.MalformedStream({ message: 'x' })],
+    ]
+    for (const [tag, error] of cases) {
+      expect(error._tag as string).toBe(tag)
+    }
+  })
+})

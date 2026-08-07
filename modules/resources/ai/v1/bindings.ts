@@ -18,8 +18,15 @@
  * `fetch` handler on a native `ReadableStream`, and piping through native
  * `TransformStream`s adds zero runtime machinery to the bundle.)
  */
+import * as Binding from 'alchemy/Binding'
+import * as Output from 'alchemy/Output'
+import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+import * as Redacted from 'effect/Redacted'
 import * as Schema from 'effect/Schema'
+import * as BindHost from '../../shared/bind-host.ts'
+import type { NebiusEndpoint } from './endpoint.ts'
 import {
   ChatCompletion,
   ChatCompletionChunk,
@@ -301,6 +308,14 @@ export const chatCompletions = (values: AiEnv) =>
   Effect.fn('Nebius.ai.Endpoint.ChatCompletions')(function* (
     request: ChatCompletionRequest,
   ): Effect.fn.Return<ChatCompletionsResult, AiError> {
+    if (values.NEBIUS_ENDPOINT_URL === '') {
+      // Belt-and-braces for the AD7 fail-fast: the deploy-time evaluation
+      // fails when the endpoint has no public endpoint; if an empty URL still
+      // reaches the worker, fail the call with the same tagged error.
+      return yield* new EndpointNotRunning({
+        message: 'NEBIUS_ENDPOINT_URL is empty — the endpoint had no public endpoint at deploy time (was it RUNNING?)',
+      })
+    }
     const url = new URL('/v1/chat/completions', values.NEBIUS_ENDPOINT_URL)
     const headers: Record<string, string> = { 'content-type': 'application/json' }
     if (values.NEBIUS_ENDPOINT_AUTH_TOKEN !== '') {
@@ -350,3 +365,96 @@ export const chatCompletions = (values: AiEnv) =>
     )
     return { stream: false as const, response: decoded }
   })
+
+// ---------------------------------------------------------------------------
+// Deploy-time env derivation + contract + layer (M4)
+// ---------------------------------------------------------------------------
+
+/** Pure: the endpoint's first public endpoint, or `null` when it is not RUNNING (AD7). */
+export const publicEndpointUrl = (publicEndpoints: readonly string[]): string | null =>
+  publicEndpoints[0] ?? null
+
+/** Pure: the `authToken` attribute → env value (`''` when auth is disabled). */
+export const tokenToEnv = (token: string | undefined): string => token ?? ''
+
+/**
+ * The endpoint env values injected into the Worker (AD6). Outputs resolve at
+ * apply time: the URL is the endpoint's first public endpoint — empty means
+ * the endpoint is not RUNNING and the deploy fails with
+ * {@link EndpointNotRunning} (AD7). The token is Redacted → deployed as a
+ * Cloudflare `secret_text` binding.
+ */
+const endpointToEnv = (endpoint: NebiusEndpoint): Record<string, BindHost.EnvValue> => ({
+  NEBIUS_ENDPOINT_URL: Output.mapEffect((eps: readonly string[]): Effect.Effect<string, never, never> => {
+    const first = publicEndpointUrl(eps)
+    if (first !== null) return Effect.succeed(first)
+    // The failure is real and intended — fail the deploy at apply time (AD7) —
+    // but the seam types the failure channel as `never`. Encapsulated cast,
+    // same spirit as `unrequiring` in `host-identity.ts`.
+    return Effect.fail(
+      new EndpointNotRunning({
+        message: `Endpoint ${endpoint.LogicalId} has no public endpoint yet — it must be RUNNING at deploy time`,
+      }),
+    ) as unknown as Effect.Effect<string, never, never>
+  })(endpoint.publicEndpoints),
+  NEBIUS_ENDPOINT_AUTH_TOKEN: Output.map((token: string | undefined) =>
+    Redacted.make(tokenToEnv(token)),
+  )(endpoint.authToken),
+})
+
+/**
+ * ChatCompletions — typed OpenAI-compatible chat calls against a deployed
+ * `Nebius.ai.Endpoint` (Cloudflare Worker host: deploy-time URL + token env
+ * wiring, fetch client at runtime).
+ *
+ * Contract tag: `Nebius.ai.v1.Endpoint.ChatCompletions` (parallel to
+ * `Nebius.storage.v1.Bucket.GetObject`).
+ */
+export interface ChatCompletions extends Binding.Service<
+  ChatCompletions,
+  'Nebius.ai.v1.Endpoint.ChatCompletions',
+  (endpoint: NebiusEndpoint) => Effect.Effect<
+    (request: ChatCompletionRequest) => Effect.Effect<ChatCompletionsResult, AiError>
+  >
+> {}
+
+export const ChatCompletions = Binding.Service<ChatCompletions>('Nebius.ai.v1.Endpoint.ChatCompletions')
+
+/**
+ * ChatCompletionsHttp — the Cloudflare Worker implementation layer.
+ *
+ * Deploy-time (CLI): injects `NEBIUS_ENDPOINT_URL` + `NEBIUS_ENDPOINT_AUTH_TOKEN`
+ * into the Worker env — once per host (registerEnvOnce). No host identity, no
+ * AccessPermit, no gRPC (AD8): endpoint auth is a bearer token, so the module
+ * is statically workerd-safe — no dynamic import, the bundler has nothing to
+ * DCE.
+ *
+ * Runtime (deployed Worker / `alchemy dev`): reads the injected env off
+ * `WorkerEnvironment` and delegates to the fetch client.
+ */
+export const ChatCompletionsHttp = Layer.effect(
+  ChatCompletions,
+  Effect.gen(function* () {
+    const host = yield* Worker
+    const env = yield* WorkerEnvironment
+
+    return Effect.fn(function* (
+      endpoint: NebiusEndpoint,
+    ): Effect.fn.Return<
+      (request: ChatCompletionRequest) => Effect.Effect<ChatCompletionsResult, AiError>
+    > {
+      if (!globalThis.__ALCHEMY_RUNTIME__) {
+        yield* BindHost.registerEnvOnce(
+          host,
+          'Nebius.ai.v1.Endpoint.ChatCompletions',
+          endpointToEnv(endpoint),
+        )
+      }
+
+      // Runtime: resolve env per call — the client is stateless, no memoization
+      // needed. The request span comes from the inner `Effect.fn`.
+      return (request: ChatCompletionRequest) =>
+        readAiEnv(env).pipe(Effect.flatMap((values) => chatCompletions(values)(request)))
+    })
+  }),
+)

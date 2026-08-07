@@ -74,3 +74,29 @@ export const bindWorkerEnv = Effect.fn('bindWorkerEnv')(function* (
   // uploads the script (same mechanism R2's bindings rely on).
   yield* host.bind(sid, { bindings: envToWorkerBindings(env) as unknown as WorkerBinding[] })
 })
+
+/**
+ * Register env bindings ONCE per (host, name).
+ *
+ * Cloudflare rejects duplicate binding names on a single upload, and every
+ * capability (storage GetObject/PutObject, AI ChatCompletions, …) injects the
+ * same shared values (S3 credentials, endpoint URL/token). The first
+ * capability registers them; later ones skip the already-registered names.
+ *
+ * A module-level set is effectively per-deploy: `alchemy deploy` runs one
+ * deploy per process, and `alchemy dev` restarts the exec child per reload.
+ */
+const registeredEnvNames = new Set<string>()
+
+export const registerEnvOnce = Effect.fn('registerEnvOnce')(function* (
+  host: Worker,
+  sid: string,
+  env: Record<string, EnvValue>,
+): Effect.fn.Return<void> {
+  const fresh = Object.fromEntries(
+    Object.entries(env).filter(([name]) => !registeredEnvNames.has(`${host.LogicalId}:${name}`)),
+  )
+  if (Object.keys(fresh).length === 0) return
+  for (const name of Object.keys(fresh)) registeredEnvNames.add(`${host.LogicalId}:${name}`)
+  yield* bindWorkerEnv(host, sid, fresh)
+})

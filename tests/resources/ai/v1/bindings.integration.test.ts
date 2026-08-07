@@ -7,9 +7,17 @@
  */
 import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
+import { Self } from 'alchemy/Self'
 import * as Bindings from '../../../../modules/resources/ai/v1/bindings.ts'
 import * as BindingsSchema from '../../../../modules/resources/ai/v1/bindings.schema.ts'
+import type { NebiusEndpoint } from '../../../../modules/resources/ai/v1/endpoint.ts'
 import { defaultStreamFrames, startOpenAiMock } from '../../../helpers/openai-mock.ts'
+
+/** The Worker resource's Self service — a mock host satisfies it (runtime tag match). */
+// oxlint-disable-next-line no-explicit-any — mock host satisfies the Worker shape
+const mockSelf = (host: any) => Layer.succeed(Self('Cloudflare.Worker'), host)
 
 /** Build resolved env for the mock URL. */
 const valuesFor = (mockUrl: string, token = 'test-token'): Bindings.AiEnv => ({
@@ -198,6 +206,55 @@ describe('Nebius.ai.v1 bindings — runtime client', () => {
     expect(error._tag).toBe('InvalidCredentials')
     if (error._tag === 'InvalidCredentials') {
       expect(error.missing).toEqual(['NEBIUS_ENDPOINT_URL'])
+    }
+  })
+
+  test('ChatCompletionsHttp runtime side — guard pre-set, mocked host', async () => {
+    const mock = startOpenAiMock()
+    try {
+      // Fold the deploy-time guard as the bundler does at build time: the
+      // deploy-time branch (which needs a REAL running endpoint's attrs) is
+      // skipped; the runtime side reads the provided WorkerEnvironment and
+      // round-trips through the fetch client.
+      const saved = globalThis.__ALCHEMY_RUNTIME__
+      // oxlint-disable-next-line no-explicit-any — test harness: simulate the bundler fold
+      ;(globalThis as any).__ALCHEMY_RUNTIME__ = true
+      try {
+        // The contract call's `Worker` requirement survives at the type level
+        // (the Self tag matches only at runtime — same reason the storage test
+        // relies on stack.deploy's loose typing). Encapsulated cast.
+        const chat = await Effect.runPromise(
+          // oxlint-disable-next-line no-explicit-any
+          (Bindings.ChatCompletions({} as unknown as NebiusEndpoint).pipe(
+            Effect.provide(Bindings.ChatCompletionsHttp),
+            Effect.provide(mockSelf({ Type: 'Cloudflare.Worker', LogicalId: 'MockHost' })),
+            Effect.provide(
+              Layer.succeed(WorkerEnvironment, {
+                NEBIUS_ENDPOINT_URL: mock.url,
+                NEBIUS_ENDPOINT_AUTH_TOKEN: 'layer-token',
+              }),
+            ),
+            // oxlint-disable-next-line no-explicit-any
+          ) as unknown as Effect.Effect<
+            (
+              request: BindingsSchema.ChatCompletionRequest,
+            ) => Effect.Effect<Bindings.ChatCompletionsResult, Bindings.AiError, never>,
+            never,
+            never
+          >),
+        )
+        const result = await Effect.runPromise(chat(simpleRequest()))
+        expect(result.stream).toBe(false)
+        if (result.stream === false) {
+          expect(result.response.choices[0]?.message.content).toBe('mock reply')
+        }
+        // The layer wired the env through readAiEnv → the client sent the token.
+        expect(mock.requests[0]?.authorization).toBe('Bearer layer-token')
+      } finally {
+        ;(globalThis as any).__ALCHEMY_RUNTIME__ = saved
+      }
+    } finally {
+      mock.stop()
     }
   })
 })

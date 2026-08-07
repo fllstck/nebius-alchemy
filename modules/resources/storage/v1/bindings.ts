@@ -223,25 +223,9 @@ const bindingEnv = (
  * The shared host-identity env must be injected ONCE per host: Cloudflare
  * rejects duplicate binding names on a single upload, and every capability
  * (GetObject, PutObject, …) injects the same `NEBIUS_S3_*` values. The first
- * capability registers them; later ones skip the already-registered names.
- *
- * A module-level set is effectively per-deploy: `alchemy deploy` runs one
- * deploy per process, and `alchemy dev` restarts the exec child per reload.
+ * capability registers them; later ones skip the already-registered names
+ * (see `registerEnvOnce` in `shared/bind-host.ts`).
  */
-const registeredEnvNames = new Set<string>()
-
-const registerEnvOnce = Effect.fn('registerEnvOnce')(function* (
-  host: Worker,
-  sid: string,
-  env: Record<string, BindHost.EnvValue>,
-): Effect.fn.Return<void> {
-  const fresh = Object.fromEntries(
-    Object.entries(env).filter(([name]) => !registeredEnvNames.has(`${host.LogicalId}:${name}`)),
-  )
-  if (Object.keys(fresh).length === 0) return
-  for (const name of Object.keys(fresh)) registeredEnvNames.add(`${host.LogicalId}:${name}`)
-  yield* BindHost.bindWorkerEnv(host, sid, fresh)
-})
 
 // ---------------------------------------------------------------------------
 // Implementation Layers (Cloudflare Worker host)
@@ -298,7 +282,7 @@ const makeStorageHttpBinding = <Req, A>(options: {
           bucket.id,
           options.role,
         )
-        yield* registerEnvOnce(
+        yield* BindHost.registerEnvOnce(
           host,
           `Nebius.storage.v1.Bucket.${options.capability}`,
           bindingEnv(BucketName, region, identity),

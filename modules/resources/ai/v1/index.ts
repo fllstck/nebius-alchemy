@@ -4,3 +4,26 @@ export {
   NebiusEndpointProvider as EndpointProvider,
   type NebiusEndpoint as EndpointResource,
 } from './endpoint.ts'
+export {
+  ChatCompletions,
+  ChatCompletionsHttp,
+  MalformedStream,
+  EndpointNotRunning,
+  InvalidCredentials,
+  EndpointUnauthorized,
+  EndpointNotFound,
+  EndpointRateLimited,
+  EndpointError,
+  EndpointUnreachable,
+  publicEndpointUrl,
+  tokenToEnv,
+  type ChatCompletionsResult,
+  type AiError,
+  type AiEnv,
+} from './bindings.ts'
+export {
+  ChatCompletionRequest,
+  ChatCompletion,
+  ChatCompletionChunk,
+  ChatMessage,
+} from './bindings.schema.ts'
