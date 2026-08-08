@@ -8,6 +8,7 @@ import * as AlchemyProfile from 'alchemy/Auth/Profile'
 import * as AlchemyCredentials from 'alchemy/Auth/Credentials'
 import * as NebiusAuthModule from '../../../modules/AuthProvider.ts'
 import * as NebiusCredentialsModule from '../../../modules/Credentials.ts'
+import * as SaTokenModule from '../../../modules/auth/sa-token.ts'
 import * as GrpcTransportModule from '../../../modules/api-client/GrpcTransport.ts'
 import * as BucketGrpcServiceModule from '../../../modules/api-client/storage.ts'
 import * as GrpcUtilsModule from '../../../modules/api-client/grpc-utils.ts'
@@ -58,6 +59,8 @@ const authLayer = Layer.mergeAll(ProfileLive, NebiusAuth).pipe(
       Layer.succeed(AuthProviders, {}),
       ConfigProvider.layer(ConfigProvider.fromUnknown({})),
       PlatformNode.NodeServices.layer,
+      // Satisfy NebiusAuth's sa-key requirement (never exercised here).
+      SaTokenModule.SaTokenMinterLive,
     ),
   ),
 )

@@ -13,11 +13,24 @@ import * as Match from 'effect/Match'
 import { getEnvRedacted } from 'alchemy/Auth/Env'
 import { displayRedacted } from 'alchemy/Auth/Credentials'
 import * as Console from 'effect/Console'
+import { readFile } from 'node:fs/promises'
+
+import * as SaToken from './auth/sa-token.ts'
 
 export const NEBIUS_AUTH_PROVIDER_NAME = 'Nebius'
 const STORAGE_KEY = 'nebius-stored'
 
-export type NebiusAuthConfig = { method: 'env' } | { method: 'stored' } | { method: 'nebius-cli' }
+// Service-account key env vars (the non-interactive RFC 8693 exchange path).
+const SA_ID_ENV = 'NEBIUS_SA_ID'
+const SA_KEY_ID_ENV = 'NEBIUS_SA_KEY_ID'
+const SA_PRIVATE_KEY_ENV = 'NEBIUS_SA_PRIVATE_KEY'
+const SA_PRIVATE_KEY_FILE_ENV = 'NEBIUS_SA_PRIVATE_KEY_FILE'
+
+export type NebiusAuthConfig =
+  | { method: 'env' }
+  | { method: 'stored' }
+  | { method: 'nebius-cli' }
+  | { method: 'sa-key' }
 
 /**
  * Credentials persisted to the Alchemy credential store.
@@ -28,9 +41,10 @@ export type NebiusAuthConfig = { method: 'env' } | { method: 'stored' } | { meth
  * is redacted in logs and console output (via {@link Redacted.make}), but
  * is stored as plaintext on disk.
  *
- * For production use, prefer the `nebius-cli` method (which uses short-lived
- * IAM tokens) or the `env` method (which reads from `NEBIUS_API_KEY` without
- * persisting to disk).
+ * For production use, prefer the `sa-key` method (non-interactive RFC 8693
+ * exchange from env, short-lived 12-hour IAM tokens) or the `nebius-cli`
+ * method (delegates to the CLI); the `env` method reads `NEBIUS_API_KEY`
+ * without persisting to disk.
  */
 export type NebiusStoredCredentials = {
   type: 'apiKey'
@@ -51,6 +65,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
   Effect.gen(function* () {
     const credentialStore = yield* CredentialsStore
     const childProcessSpawner = yield* ChildProcessSpawner
+    const saTokenMinter = yield* SaToken.SaTokenMinter
 
     const getTokenViaCli = (): Effect.Effect<string, AuthError> =>
       Effect.gen(function* () {
@@ -81,7 +96,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
             ? e
             : new AuthError({
                 message:
-                  'Could not invoke `nebius`. Install Nebius CLI from https://docs.nebius.com/cli/install and run `nebius init`.',
+                  'Could not invoke `nebius`. Install Nebius CLI from https://docs.nebius.com/cli/install and run `nebius profile create`.',
                 cause: e,
               }),
         ),
@@ -91,6 +106,65 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
     // getRawToken() is called once to obtain the effect; cachedInvalidateWithTTL
     // memoizes its result for TOKEN_TTL, re-executing on expiry or manual invalidation.
     const [cachedToken, invalidateToken] = yield* Effect.cachedInvalidateWithTTL(getTokenViaCli(), TOKEN_TTL)
+
+    // Resolve SA-key credentials from env: NEBIUS_SA_ID + NEBIUS_SA_KEY_ID +
+    // NEBIUS_SA_PRIVATE_KEY (inline PEM) or NEBIUS_SA_PRIVATE_KEY_FILE.
+    const readSaKey = Effect.fn('NebiusAuth.readSaKey')(function* (): Effect.fn.Return<
+      SaToken.SaKey,
+      AuthError
+    > {
+      const serviceAccountId = yield* getEnvRedacted(SA_ID_ENV)
+      const keyId = yield* getEnvRedacted(SA_KEY_ID_ENV)
+      const privateKeyValue = yield* getEnvRedacted(SA_PRIVATE_KEY_ENV)
+      const privateKeyFile = yield* getEnvRedacted(SA_PRIVATE_KEY_FILE_ENV)
+
+      if (serviceAccountId == null || keyId == null || (privateKeyValue == null && privateKeyFile == null)) {
+        const missing: string[] = []
+        if (serviceAccountId == null) missing.push(SA_ID_ENV)
+        if (keyId == null) missing.push(SA_KEY_ID_ENV)
+        if (privateKeyValue == null && privateKeyFile == null) {
+          missing.push(`${SA_PRIVATE_KEY_ENV} (or ${SA_PRIVATE_KEY_FILE_ENV})`)
+        }
+        return yield* new AuthError({
+          message: `Nebius service-account key credentials not found. Set ${missing.join(', ')}.`,
+        })
+      }
+
+      let privateKey: string
+      if (privateKeyFile != null) {
+        const filePath = Redacted.value(privateKeyFile)
+        privateKey = yield* Effect.tryPromise(() => readFile(filePath, 'utf8')).pipe(
+          Effect.mapError(
+            () => new AuthError({ message: `Could not read private key file ${filePath}` }),
+          ),
+        )
+      } else if (privateKeyValue != null) {
+        privateKey = Redacted.value(privateKeyValue)
+      } else {
+        return yield* new AuthError({
+          message: `Nebius service-account key credentials not found. Set ${SA_PRIVATE_KEY_ENV} (or ${SA_PRIVATE_KEY_FILE_ENV}).`,
+        })
+      }
+
+      return {
+        serviceAccountId: Redacted.value(serviceAccountId),
+        keyId: Redacted.value(keyId),
+        privateKey,
+      }
+    })
+
+    // Cached SA-key token: minted once per TTL (the 5-min JWT is signed fresh
+    // on each cache miss; only the 12-hour access token is cached).
+    const [cachedSaToken, invalidateSaToken] = yield* Effect.cachedInvalidateWithTTL(
+      Effect.gen(function* () {
+        const key = yield* readSaKey()
+        const token = yield* saTokenMinter.mint(key).pipe(
+          Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
+        )
+        return { token, serviceAccountId: key.serviceAccountId }
+      }),
+      TOKEN_TTL,
+    )
 
     const loginStored = Effect.fn(function* (profileName: string) {
       const apiKey = yield* Clank.password({
@@ -113,7 +187,12 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
           {
             value: 'nebius-cli' as const,
             label: 'Nebius CLI',
-            hint: 'delegate to `nebius iam get-access-token` (run `nebius init` first)',
+            hint: 'delegate to `nebius iam get-access-token` (run `nebius profile create` first)',
+          },
+          {
+            value: 'sa-key' as const,
+            label: 'Service Account Key',
+            hint: `non-interactive RFC 8693 exchange — set ${SA_ID_ENV} + ${SA_KEY_ID_ENV} + private key`,
           },
           { value: 'env' as const, label: 'Environment Variable', hint: 'NEBIUS_API_KEY' },
           {
@@ -137,6 +216,18 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
                 ),
               ),
             ),
+            Match.when('sa-key', () =>
+              cachedSaToken.pipe(
+                Effect.as({ method: 'sa-key' as const }),
+                Effect.mapError(
+                  (e) =>
+                    new AuthError({
+                      message: `Nebius service-account key not usable: ${e.message}`,
+                      cause: e,
+                    }),
+                ),
+              ),
+            ),
             Match.when('env', () => Effect.succeed({ method: 'env' as const })),
             Match.when('stored', () => loginStored(profileName)),
             Match.exhaustive,
@@ -146,7 +237,18 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
 
     const configureCredentials = (profileName: string, ctx: ConfigureContext) =>
       Effect.gen(function* () {
-        if (ctx.ci) return { method: 'env' as const }
+        if (ctx.ci) {
+          // Non-interactive default: prefer the static API key, fall back to
+          // the service-account key exchange when SA env vars are present.
+          const apiKey = yield* getEnvRedacted('NEBIUS_API_KEY')
+          if (apiKey) return { method: 'env' as const }
+          const saId = yield* getEnvRedacted(SA_ID_ENV)
+          const keyId = yield* getEnvRedacted(SA_KEY_ID_ENV)
+          const privateKey = yield* getEnvRedacted(SA_PRIVATE_KEY_ENV)
+          const privateKeyFile = yield* getEnvRedacted(SA_PRIVATE_KEY_FILE_ENV)
+          if (saId || keyId || privateKey || privateKeyFile) return { method: 'sa-key' as const }
+          return { method: 'env' as const }
+        }
         return yield* configureInteractive(profileName)
       }).pipe(Effect.mapError((e) => new AuthError({ message: 'failed to configure credentials', cause: e })))
 
@@ -161,6 +263,15 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
               type: 'apiKey' as const,
               apiKey: Redacted.make(token),
               source: { type: 'nebius-cli' as const },
+            })),
+          ),
+        ),
+        Match.when({ method: 'sa-key' }, () =>
+          cachedSaToken.pipe(
+            Effect.map(({ token, serviceAccountId }) => ({
+              type: 'apiKey' as const,
+              apiKey: Redacted.make(token),
+              source: { type: 'sa-key' as const, details: serviceAccountId },
             })),
           ),
         ),
@@ -209,6 +320,12 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
             Effect.asVoid,
           ),
         ),
+        Match.when({ method: 'sa-key' }, () =>
+          cachedSaToken.pipe(
+            Effect.tap(() => Clank.success('Nebius: service-account key exchange available.')),
+            Effect.asVoid,
+          ),
+        ),
         Match.when({ method: 'stored' }, () =>
           credentialStore
             .read<NebiusStoredCredentials>(profileName, STORAGE_KEY)
@@ -223,6 +340,9 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         Match.when({ method: 'env' }, () => Effect.void),
         Match.when({ method: 'nebius-cli' }, () =>
           invalidateToken.pipe(Effect.andThen(Clank.success('Nebius: CLI token cache invalidated.'))),
+        ),
+        Match.when({ method: 'sa-key' }, () =>
+          invalidateSaToken.pipe(Effect.andThen(Clank.success('Nebius: SA-key token cache invalidated.'))),
         ),
         Match.when({ method: 'stored' }, () =>
           credentialStore

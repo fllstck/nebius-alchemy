@@ -14,10 +14,19 @@ import {
   NEBIUS_AUTH_PROVIDER_NAME,
   type NebiusResolvedCredentials,
 } from '../modules/AuthProvider.ts'
+import * as SaToken from '../modules/auth/sa-token.ts'
 
 // ---------------------------------------------------------------------------
 // Layer construction
 // ---------------------------------------------------------------------------
+
+/**
+ * Fake SaTokenMinter — the sa-key resolution flow is tested without a real
+ * gRPC server; the JWT/exchange wire path is covered by `sa-token.test.ts`.
+ */
+const fakeSaTokenMinter = Layer.succeed(SaToken.SaTokenMinter, {
+  mint: () => Effect.succeed('minted-test-token'),
+})
 
 /**
  * Base layer providing platform dependencies (FileSystem, ChildProcessSpawner,
@@ -40,7 +49,9 @@ const credentialsLayer = AlchemyCredentials.CredentialsStoreLive.pipe(Layer.prov
  */
 const authTestLayer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
   Layer.provide(credentialsLayer),
-  Layer.provideMerge(Layer.mergeAll(Layer.succeed(AuthProviders, {}), baseServices)),
+  Layer.provideMerge(
+    Layer.mergeAll(Layer.succeed(AuthProviders, {}), baseServices, fakeSaTokenMinter),
+  ),
 )
 
 /** Build with custom env vars substituted into ConfigProvider. */
@@ -52,6 +63,7 @@ const authTestLayerWithEnv = (env: Record<string, string>) =>
         Layer.succeed(AuthProviders, {}),
         PlatformNode.NodeServices.layer,
         ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
+        fakeSaTokenMinter,
       ),
     ),
   )
@@ -135,6 +147,62 @@ describe('NebiusAuth', () => {
     })
   })
 
+  describe('resolveCredentials — sa-key method', () => {
+    test('fails with a clear message when SA env vars are missing', async () => {
+      const error = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'sa-key' }).pipe(Effect.flip, Effect.provide(authTestLayer)),
+      )
+
+      expect(error).toBeInstanceOf(AuthError)
+      if (error instanceof AuthError) {
+        expect(error.message).toContain('NEBIUS_SA_ID')
+        expect(error.message).toContain('NEBIUS_SA_KEY_ID')
+        expect(error.message).toContain('NEBIUS_SA_PRIVATE_KEY')
+      }
+    })
+
+    test('resolves credentials from SA env vars via the minter', async () => {
+      const creds = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'sa-key' }).pipe(
+          Effect.provide(
+            authTestLayerWithEnv({
+              NEBIUS_SA_ID: 'serviceaccount-test-1',
+              NEBIUS_SA_KEY_ID: 'akey-test-1',
+              NEBIUS_SA_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----',
+            }),
+          ),
+        ),
+      )
+
+      expect(creds.type).toBe('apiKey')
+      expect(Redacted.value(creds.apiKey)).toBe('minted-test-token')
+      expect(creds.source.type).toBe('sa-key')
+      expect(creds.source.details).toBe('serviceaccount-test-1')
+    })
+
+    test('reads the private key from NEBIUS_SA_PRIVATE_KEY_FILE when set', async () => {
+      const keyPath = '/tmp/nebius-sa-test-key.pem'
+      await Bun.write(keyPath, '-----BEGIN PRIVATE KEY-----\nFILEKEY\n-----END PRIVATE KEY-----')
+      try {
+        const creds = await Effect.runPromise(
+          resolveCredentials('test-profile', { method: 'sa-key' }).pipe(
+            Effect.provide(
+              authTestLayerWithEnv({
+                NEBIUS_SA_ID: 'serviceaccount-test-2',
+                NEBIUS_SA_KEY_ID: 'akey-test-2',
+                NEBIUS_SA_PRIVATE_KEY_FILE: keyPath,
+              }),
+            ),
+          ),
+        )
+
+        expect(creds.source.details).toBe('serviceaccount-test-2')
+      } finally {
+        await Bun.$`rm -f ${keyPath}`.quiet()
+      }
+    })
+  })
+
   describe('provider registration', () => {
     test('provider name constant matches expected value', () => {
       expect(NEBIUS_AUTH_PROVIDER_NAME).toBe('Nebius')
@@ -172,6 +240,13 @@ describe('NebiusAuth', () => {
         method: 'nebius-cli',
       }
       expect(config.method).toBe('nebius-cli')
+    })
+
+    test('accepts sa-key config', () => {
+      const config: NebiusAuthConfig = {
+        method: 'sa-key',
+      }
+      expect(config.method).toBe('sa-key')
     })
   })
 })
