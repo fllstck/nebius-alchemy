@@ -7,6 +7,9 @@
  *
  *   1. Build a short-lived (5-min) self-signed RS256 JWT from a service
  *      account's authorized key (`kid` = key ID, `iss`/`sub` = SA ID).
+ *      Authorized keys MUST be RSA-4096 — the IAM API rejects other sizes
+ *      at key-creation time (the private key never leaves the user's side;
+ *      only the public key is uploaded).
  *   2. Exchange it at `tokens.iam.api.nebius.cloud:443` for a 12-hour IAM
  *      access token via `TokenExchangeService.Exchange`.
  *
