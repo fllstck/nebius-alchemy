@@ -37,6 +37,7 @@ const fakeSaBootstrap = Layer.succeed(SaBootstrap.SaBootstrap, {
       keyId: 'publickey-bootstrapped',
       privateKey: '-----BEGIN PRIVATE KEY-----\nBOOTSTRAPPED\n-----END PRIVATE KEY-----',
     }),
+  getProjectName: () => Effect.succeed('Test Project'),
 })
 
 /**

@@ -255,6 +255,13 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
               validate: (v) => (v.length === 0 ? 'Required' : undefined),
             }).pipe(retryOnce, Effect.map((k) => Redacted.make(k)))
 
+      // Best-effort project name so the prompts show the project name, not
+      // just the opaque ID (falls back to the ID alone on any failure).
+      const projectName = yield* saBootstrap.getProjectName(token, Redacted.value(projectId)).pipe(
+        Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
+      )
+      const projectLabel = projectName ? `${projectName} (${Redacted.value(projectId)})` : Redacted.value(projectId)
+
       const saName = yield* Clank.text({
         message: 'Service account name',
         initialValue: 'nebius-alchemy-sa',
@@ -262,7 +269,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       })
 
       const grant = yield* Clank.confirm({
-        message: `Grant this SA access to project ${Redacted.value(projectId)}?`,
+        message: `Grant this SA access to project ${projectLabel}?`,
         initialValue: true,
       })
 

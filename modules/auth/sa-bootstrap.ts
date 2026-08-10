@@ -37,6 +37,8 @@ import * as NebiusGroupMembershipServiceSchema from '../../schemas/nebius/iam/v1
 import type { GroupMembership } from '../../schemas/nebius/iam/v1/group_membership.ts'
 import * as NebiusAccessPermitServiceSchema from '../../schemas/nebius/iam/v1/access_permit_service.ts'
 import type { AccessPermit } from '../../schemas/nebius/iam/v1/access_permit.ts'
+import * as NebiusProjectServiceSchema from '../../schemas/nebius/iam/v2/project_service.ts'
+import type { Project } from '../../schemas/nebius/iam/v2/project.ts'
 import type { SaKey } from './sa-token.ts'
 
 /** Raised when bootstrap provisioning fails (bad token, missing grant role, …). */
@@ -297,6 +299,35 @@ const createAccessPermit = (
       ),
   ).pipe(Effect.asVoid)
 
+/**
+ * Best-effort project name lookup (for friendlier prompts). Fails soft — a
+ * name-resolution error must never block the bootstrap.
+ */
+const getProjectNameImpl = (
+  token: Redacted.Redacted<string>,
+  projectId: string,
+): Effect.Effect<string | undefined, SaBootstrapError> =>
+  Effect.gen(function* () {
+    const transport = tokenTransport(token)
+    const channel = yield* transport.channelFor('nebius.iam.v2.ProjectService').pipe(
+      Effect.mapError((e) => new SaBootstrapError({ message: `Unknown IAM service: ${e.message}` })),
+    )
+    try {
+      const client = new NebiusProjectServiceSchema.ProjectServiceClient('unused', grpc.credentials.createSsl(), {
+        channelOverride: channel,
+      })
+      const project = yield* callUnary<Project>(client, (callback) =>
+        client.get(NebiusProjectServiceSchema.GetProjectRequest.fromPartial({ id: projectId }), callback),
+      ).pipe(
+        Effect.result,
+        Effect.map((r) => (r._tag === 'Success' ? r.success.metadata?.name : undefined)),
+      )
+      return project
+    } finally {
+      channel.close()
+    }
+  })
+
 // ---------------------------------------------------------------------------
 // Bootstrap orchestration
 // ---------------------------------------------------------------------------
@@ -335,9 +366,15 @@ export class SaBootstrap extends Context.Service<
       token: Redacted.Redacted<string>,
       options: BootstrapOptions,
     ) => Effect.Effect<SaKey, SaBootstrapError>
+    readonly getProjectName: (
+      token: Redacted.Redacted<string>,
+      projectId: string,
+    ) => Effect.Effect<string | undefined, SaBootstrapError>
   }
 >()('SaBootstrap') {}
 
 export const SaBootstrapLive = Layer.succeed(SaBootstrap, {
   bootstrap: (token, options): Effect.Effect<SaKey, SaBootstrapError> => bootstrapWithToken(token, options),
+  getProjectName: (token, projectId): Effect.Effect<string | undefined, SaBootstrapError> =>
+    getProjectNameImpl(token, projectId),
 })
