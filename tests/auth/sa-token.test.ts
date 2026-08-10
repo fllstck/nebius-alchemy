@@ -39,6 +39,11 @@ describe('SaToken.signJwt', () => {
     expect(payload.iat).toBe(nowMs / 1000)
     expect(payload.exp).toBe(nowMs / 1000 + SaToken.JWT_TTL_SECONDS)
     expect(payload.exp).toBeGreaterThan(payload.iat as number)
+    // No `aud` claim — the platform documents kid/iss/sub/exp only and no
+    // audience value exists for the exchange endpoint (see signJwt doc).
+    // Asserting absence locks the decision in: adding `aud` later requires
+    // updating this test consciously once a value is documented.
+    expect(payload.aud).toBeUndefined()
   })
 
   test('signature verifies against the public key (RS256)', () => {

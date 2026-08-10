@@ -58,6 +58,17 @@ const b64url = (o: unknown): string => Buffer.from(JSON.stringify(o)).toString('
  *
  * Pure and deterministic given `nowMs`, so it's unit-testable without any
  * network or keys beyond an RSA private key.
+ *
+ * ⚠️ No `aud` claim by design: the platform documents exactly `kid`/`iss`/`sub`/`exp`
+ * for this JWT (nebius/api README, “Service Account Authentication”; verified
+ * 2025) — no audience value exists for `tokens.iam.api.nebius.cloud`. The OIDC
+ * discovery `claims_supported` includes `aud`, but that describes id tokens
+ * issued by the OAuth server, not this self-signed subject JWT; and the
+ * `ExchangeTokenRequest.audience` proto field is the RFC 8693 request-side
+ * audience of the *resulting* access token, not a claim in this JWT. Guessing a
+ * value would add dead weight today and could break the exchange if the server
+ * ever enforces a specific audience. Re-verify the token-exchange docs before
+ * adding an `aud` claim.
  */
 export const signJwt = (key: SaKey, nowMs = Date.now()): string => {
   const now = Math.floor(nowMs / 1000)
