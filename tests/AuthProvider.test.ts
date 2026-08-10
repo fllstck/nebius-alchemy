@@ -15,6 +15,7 @@ import {
   type NebiusResolvedCredentials,
 } from '../modules/AuthProvider.ts'
 import * as SaToken from '../modules/auth/sa-token.ts'
+import * as SaBootstrap from '../modules/auth/sa-bootstrap.ts'
 
 // ---------------------------------------------------------------------------
 // Layer construction
@@ -26,6 +27,16 @@ import * as SaToken from '../modules/auth/sa-token.ts'
  */
 const fakeSaTokenMinter = Layer.succeed(SaToken.SaTokenMinter, {
   mint: () => Effect.succeed('minted-test-token'),
+})
+
+/** Fake SaBootstrap — the interactive bootstrap flow never touches IAM here. */
+const fakeSaBootstrap = Layer.succeed(SaBootstrap.SaBootstrap, {
+  bootstrap: (_token: Redacted.Redacted<string>) =>
+    Effect.succeed({
+      serviceAccountId: 'serviceaccount-bootstrapped',
+      keyId: 'publickey-bootstrapped',
+      privateKey: '-----BEGIN PRIVATE KEY-----\nBOOTSTRAPPED\n-----END PRIVATE KEY-----',
+    }),
 })
 
 /**
@@ -50,7 +61,7 @@ const credentialsLayer = AlchemyCredentials.CredentialsStoreLive.pipe(Layer.prov
 const authTestLayer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
   Layer.provide(credentialsLayer),
   Layer.provideMerge(
-    Layer.mergeAll(Layer.succeed(AuthProviders, {}), baseServices, fakeSaTokenMinter),
+    Layer.mergeAll(Layer.succeed(AuthProviders, {}), baseServices, fakeSaTokenMinter, fakeSaBootstrap),
   ),
 )
 
@@ -64,6 +75,7 @@ const authTestLayerWithEnv = (env: Record<string, string>) =>
         PlatformNode.NodeServices.layer,
         ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
         fakeSaTokenMinter,
+        fakeSaBootstrap,
       ),
     ),
   )
@@ -158,6 +170,7 @@ describe('NebiusAuth', () => {
         expect(error.message).toContain('NEBIUS_SA_ID')
         expect(error.message).toContain('NEBIUS_SA_KEY_ID')
         expect(error.message).toContain('NEBIUS_SA_PRIVATE_KEY')
+        expect(error.message).toContain('alchemy login')
       }
     })
 
@@ -200,6 +213,101 @@ describe('NebiusAuth', () => {
       } finally {
         await Bun.$`rm -f ${keyPath}`.quiet()
       }
+    })
+
+    test('resolves from the credential store when env vars are absent', async () => {
+      const inMemory = new Map<string, unknown>()
+      const fakeStore = Layer.succeed(AlchemyCredentials.CredentialsStore, {
+        read: <T>(profile: string, provider: string) =>
+          Effect.succeed(inMemory.get(`${profile}:${provider}`) as T | undefined),
+        write: <T>(profile: string, provider: string, value: T) =>
+          Effect.sync(() => {
+            inMemory.set(`${profile}:${provider}`, value)
+          }),
+        delete: (profile: string, provider: string) =>
+          Effect.sync(() => {
+            inMemory.delete(`${profile}:${provider}`)
+          }),
+        deleteProfile: (profile: string) =>
+          Effect.sync(() => {
+            for (const key of inMemory.keys()) if (key.startsWith(`${profile}:`)) inMemory.delete(key)
+          }),
+      })
+      inMemory.set('test-profile:nebius-sa-key', {
+        type: 'saKey',
+        serviceAccountId: 'serviceaccount-stored',
+        keyId: 'publickey-stored',
+        privateKey: 'STORED-PEM',
+      })
+
+      const layer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+        Layer.provide(fakeStore),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            Layer.succeed(AuthProviders, {}),
+            PlatformNode.NodeServices.layer,
+            ConfigProvider.layer(ConfigProvider.fromUnknown({})),
+            fakeSaTokenMinter,
+            fakeSaBootstrap,
+          ),
+        ),
+      )
+
+      const creds = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'sa-key' }).pipe(Effect.provide(layer)),
+      )
+      expect(Redacted.value(creds.apiKey)).toBe('minted-test-token')
+      expect(creds.source.details).toBe('serviceaccount-stored')
+    })
+
+    test('env vars override stored material', async () => {
+      const inMemory = new Map<string, unknown>()
+      const fakeStore = Layer.succeed(AlchemyCredentials.CredentialsStore, {
+        read: <T>(profile: string, provider: string) =>
+          Effect.succeed(inMemory.get(`${profile}:${provider}`) as T | undefined),
+        write: <T>(profile: string, provider: string, value: T) =>
+          Effect.sync(() => {
+            inMemory.set(`${profile}:${provider}`, value)
+          }),
+        delete: (profile: string, provider: string) =>
+          Effect.sync(() => {
+            inMemory.delete(`${profile}:${provider}`)
+          }),
+        deleteProfile: (profile: string) =>
+          Effect.sync(() => {
+            for (const key of inMemory.keys()) if (key.startsWith(`${profile}:`)) inMemory.delete(key)
+          }),
+      })
+      inMemory.set('test-profile:nebius-sa-key', {
+        type: 'saKey',
+        serviceAccountId: 'serviceaccount-stored',
+        keyId: 'publickey-stored',
+        privateKey: 'STORED-PEM',
+      })
+
+      const layer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+        Layer.provide(fakeStore),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            Layer.succeed(AuthProviders, {}),
+            PlatformNode.NodeServices.layer,
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                NEBIUS_SA_ID: 'serviceaccount-env',
+                NEBIUS_SA_KEY_ID: 'publickey-env',
+                NEBIUS_SA_PRIVATE_KEY: 'ENV-PEM',
+              }),
+            ),
+            fakeSaTokenMinter,
+            fakeSaBootstrap,
+          ),
+        ),
+      )
+
+      const creds = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'sa-key' }).pipe(Effect.provide(layer)),
+      )
+      expect(creds.source.details).toBe('serviceaccount-env')
     })
   })
 

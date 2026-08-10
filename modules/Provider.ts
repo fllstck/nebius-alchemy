@@ -51,6 +51,7 @@ import * as InvitationResource from './resources/iam/v1/invitation.ts'
 import * as Credentials from './Credentials.ts'
 import * as AuthProvider from './AuthProvider.ts'
 import * as SaToken from './auth/sa-token.ts'
+import * as SaBootstrap from './auth/sa-bootstrap.ts'
 
 export class Providers extends AlchemyProvider.ProviderCollection<Providers>()('Nebius') {}
 
@@ -146,6 +147,7 @@ export const providers = () =>
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),
     Layer.provideMerge(Credentials.fromAuthProvider),
     Layer.provideMerge(SaToken.SaTokenMinterLive),
+    Layer.provideMerge(SaBootstrap.SaBootstrapLive),
     Layer.provideMerge(AuthProvider.NebiusAuth),
   ).pipe(
     Layer.provideMerge(AlchemyAuth.ProfileLive),

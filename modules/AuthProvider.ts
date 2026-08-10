@@ -13,12 +13,15 @@ import * as Match from 'effect/Match'
 import { getEnvRedacted } from 'alchemy/Auth/Env'
 import { displayRedacted } from 'alchemy/Auth/Credentials'
 import * as Console from 'effect/Console'
+import * as Result from 'effect/Result'
 import { readFile } from 'node:fs/promises'
 
 import * as SaToken from './auth/sa-token.ts'
+import * as SaBootstrap from './auth/sa-bootstrap.ts'
 
 export const NEBIUS_AUTH_PROVIDER_NAME = 'Nebius'
 const STORAGE_KEY = 'nebius-stored'
+const SA_STORAGE_KEY = 'nebius-sa-key'
 
 // Service-account key env vars (the non-interactive RFC 8693 exchange path).
 const SA_ID_ENV = 'NEBIUS_SA_ID'
@@ -51,6 +54,18 @@ export type NebiusStoredCredentials = {
   apiKey: string
 }
 
+/**
+ * SA-key material persisted by the interactive bootstrap. The private key is
+ * stored as plaintext JSON in the credential store — same trust model as
+ * {@link NebiusStoredCredentials}; env vars override it for CI.
+ */
+export type NebiusSaKeyCredentials = {
+  type: 'saKey'
+  serviceAccountId: string
+  keyId: string
+  privateKey: string
+}
+
 export type NebiusResolvedCredentials = {
   type: 'apiKey'
   apiKey: Redacted.Redacted<string>
@@ -66,11 +81,17 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
     const credentialStore = yield* CredentialsStore
     const childProcessSpawner = yield* ChildProcessSpawner
     const saTokenMinter = yield* SaToken.SaTokenMinter
+    const saBootstrap = yield* SaBootstrap.SaBootstrap
 
     const getTokenViaCli = (): Effect.Effect<string, AuthError> =>
       Effect.gen(function* () {
         const handle = yield* childProcessSpawner.spawn(
-          ChildProcess.make('nebius', ['iam', 'get-access-token'], { shell: false }),
+          // `--no-browser` suppresses the popup; `--auth-timeout 30s` bounds
+          // the interactive OAuth flow so an expired CLI token fails in ~30s
+          // instead of blocking up to the CLI's default 15-minute timeout.
+          ChildProcess.make('nebius', ['iam', 'get-access-token', '--no-browser', '--auth-timeout', '30s'], {
+            shell: false,
+          }),
         )
         const [exitCode, stdout, stderr] = yield* Effect.all(
           [
@@ -80,10 +101,17 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
           ],
           { concurrency: 3 },
         )
-        if (exitCode !== 0)
+        if (exitCode !== 0) {
+          const out = stderr.trim() || stdout.trim()
+          const authHint = /(authentication|authorize|auth\.nebius|get code|deadline exceeded|complete the authentication)/i.test(
+            out,
+          )
+            ? ' — Nebius CLI authentication is required or expired. Run `nebius profile create` + `nebius iam login`, or use the sa-key method (recommended).'
+            : ''
           return yield* new AuthError({
-            message: `nebius iam get-access-token exited with ${exitCode}: ${stderr.trim() || stdout.trim()}`,
+            message: `nebius iam get-access-token exited with ${exitCode}: ${out}${authHint}`,
           })
+        }
 
         const token = stdout.trim()
         if (!token) return yield* new AuthError({ message: 'nebius iam get-access-token returned empty output' })
@@ -91,6 +119,18 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         return token
       }).pipe(
         Effect.scoped,
+        // Version-independent backstop: even if a future CLI ignores the
+        // flags, an expired-token auth flow can never hang the deploy.
+        Effect.timeoutOrElse({
+          duration: '45 seconds',
+          orElse: () =>
+            Effect.fail(
+              new AuthError({
+                message:
+                  'nebius iam get-access-token timed out — Nebius CLI authentication is required or expired. Run `nebius profile create` + `nebius iam login`, or use the sa-key method (recommended).',
+              }),
+            ),
+        }),
         Effect.mapError((e) =>
           e instanceof AuthError
             ? e
@@ -109,8 +149,8 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
 
     // Resolve SA-key credentials from env: NEBIUS_SA_ID + NEBIUS_SA_KEY_ID +
     // NEBIUS_SA_PRIVATE_KEY (inline PEM) or NEBIUS_SA_PRIVATE_KEY_FILE.
-    const readSaKey = Effect.fn('NebiusAuth.readSaKey')(function* (): Effect.fn.Return<
-      SaToken.SaKey,
+    const readSaKeyEnv = Effect.fn('NebiusAuth.readSaKeyEnv')(function* (): Effect.fn.Return<
+      SaToken.SaKey | undefined,
       AuthError
     > {
       const serviceAccountId = yield* getEnvRedacted(SA_ID_ENV)
@@ -119,15 +159,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       const privateKeyFile = yield* getEnvRedacted(SA_PRIVATE_KEY_FILE_ENV)
 
       if (serviceAccountId == null || keyId == null || (privateKeyValue == null && privateKeyFile == null)) {
-        const missing: string[] = []
-        if (serviceAccountId == null) missing.push(SA_ID_ENV)
-        if (keyId == null) missing.push(SA_KEY_ID_ENV)
-        if (privateKeyValue == null && privateKeyFile == null) {
-          missing.push(`${SA_PRIVATE_KEY_ENV} (or ${SA_PRIVATE_KEY_FILE_ENV})`)
-        }
-        return yield* new AuthError({
-          message: `Nebius service-account key credentials not found. Set ${missing.join(', ')}.`,
-        })
+        return undefined
       }
 
       let privateKey: string
@@ -141,9 +173,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       } else if (privateKeyValue != null) {
         privateKey = Redacted.value(privateKeyValue)
       } else {
-        return yield* new AuthError({
-          message: `Nebius service-account key credentials not found. Set ${SA_PRIVATE_KEY_ENV} (or ${SA_PRIVATE_KEY_FILE_ENV}).`,
-        })
+        return undefined
       }
 
       return {
@@ -153,18 +183,108 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       }
     })
 
-    // Cached SA-key token: minted once per TTL (the 5-min JWT is signed fresh
-    // on each cache miss; only the 12-hour access token is cached).
-    const [cachedSaToken, invalidateSaToken] = yield* Effect.cachedInvalidateWithTTL(
-      Effect.gen(function* () {
-        const key = yield* readSaKey()
-        const token = yield* saTokenMinter.mint(key).pipe(
-          Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
-        )
-        return { token, serviceAccountId: key.serviceAccountId }
-      }),
-      TOKEN_TTL,
-    )
+    /**
+     * Resolve SA-key material: env vars first (CI override), then the
+     * credential store (written by the interactive bootstrap).
+     */
+    const readSaKey = Effect.fn('NebiusAuth.readSaKey')(function* (
+      profileName: string,
+    ): Effect.fn.Return<SaToken.SaKey, AuthError> {
+      const fromEnv = yield* readSaKeyEnv()
+      if (fromEnv) return fromEnv
+
+      const stored = yield* credentialStore.read<NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY)
+      if (stored) {
+        return {
+          serviceAccountId: stored.serviceAccountId,
+          keyId: stored.keyId,
+          privateKey: stored.privateKey,
+        }
+      }
+
+      return yield* new AuthError({
+        message:
+          'Nebius service-account key credentials not found. Run `alchemy login` and pick "Service Account Key" to bootstrap one, or set NEBIUS_SA_ID / NEBIUS_SA_KEY_ID / NEBIUS_SA_PRIVATE_KEY.',
+      })
+    })
+
+    /**
+     * Interactive bootstrap: create SA + key (+ optional grant) using a
+     * one-time bootstrap credential, then persist the material.
+     */
+    const bootstrapSaKey = Effect.fn('NebiusAuth.bootstrapSaKey')(function* (
+      profileName: string,
+    ) {
+      const projectId = yield* getEnvRedacted('NEBIUS_PROJECT_ID')
+      if (!projectId) {
+        return yield* new AuthError({ message: 'Set NEBIUS_PROJECT_ID to bootstrap a service account.' })
+      }
+
+      yield* Clank.info('No Nebius service-account key found — bootstrapping one now.')
+
+      const credSource = yield* Clank.select({
+        message: 'Create the service account using',
+        options: [
+          {
+            value: 'cli' as const,
+            label: 'Nebius CLI login',
+            hint: 'uses your existing `nebius` CLI session (one time)',
+          },
+          {
+            value: 'apiKey' as const,
+            label: 'API key',
+            hint: 'paste a Nebius API key (one time)',
+          },
+        ],
+      })
+
+      const token: Redacted.Redacted<string> =
+        credSource === 'cli'
+          ? yield* cachedToken.pipe(
+              Effect.map((t) => Redacted.make(t)),
+              Effect.mapError(
+                (e) =>
+                  new AuthError({
+                    message: `Nebius CLI not available: ${e.message}`,
+                    cause: e,
+                  }),
+              ),
+            )
+          : yield* Clank.password({
+              message: 'Nebius API Key',
+              validate: (v) => (v.length === 0 ? 'Required' : undefined),
+            }).pipe(retryOnce, Effect.map((k) => Redacted.make(k)))
+
+      const saName = yield* Clank.text({
+        message: 'Service account name',
+        initialValue: 'nebius-alchemy-sa',
+        validate: (v) => (v.length === 0 ? 'Required' : undefined),
+      })
+
+      const grant = yield* Clank.confirm({
+        message: `Grant this SA access to project ${Redacted.value(projectId)}?`,
+        initialValue: true,
+      })
+
+      const key = yield* saBootstrap
+        .bootstrap(token, {
+          parentId: Redacted.value(projectId),
+          serviceAccountName: saName,
+          ...(grant ? { grant: { role: 'admin', resourceId: Redacted.value(projectId) } } : {}),
+        })
+        .pipe(Effect.mapError((e) => new AuthError({ message: e.message, cause: e })))
+
+      yield* credentialStore.write<NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY, {
+        type: 'saKey',
+        ...key,
+      })
+      yield* Clank.success('Nebius: service-account key created and stored.')
+      yield* Clank.info('To use in CI, set:')
+      yield* Clank.info(`  NEBIUS_SA_ID=${key.serviceAccountId}`)
+      yield* Clank.info(`  NEBIUS_SA_KEY_ID=${key.keyId}`)
+      yield* Clank.info('  NEBIUS_SA_PRIVATE_KEY=<private key PEM>')
+      return key
+    })
 
     const loginStored = Effect.fn(function* (profileName: string) {
       const apiKey = yield* Clank.password({
@@ -217,8 +337,17 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
               ),
             ),
             Match.when('sa-key', () =>
-              cachedSaToken.pipe(
-                Effect.as({ method: 'sa-key' as const }),
+              Effect.gen(function* () {
+                // Material already present (env or store) → validate by minting.
+                const existing = yield* readSaKey(profileName).pipe(Effect.result)
+                if (Result.isSuccess(existing)) {
+                  yield* saTokenMinter.mint(existing.success)
+                  return { method: 'sa-key' as const }
+                }
+                // Otherwise bootstrap interactively (one-time).
+                yield* bootstrapSaKey(profileName)
+                return { method: 'sa-key' as const }
+              }).pipe(
                 Effect.mapError(
                   (e) =>
                     new AuthError({
@@ -267,13 +396,17 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
           ),
         ),
         Match.when({ method: 'sa-key' }, () =>
-          cachedSaToken.pipe(
-            Effect.map(({ token, serviceAccountId }) => ({
+          Effect.gen(function* () {
+            const key = yield* readSaKey(profileName)
+            const token = yield* saTokenMinter.mint(key).pipe(
+              Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
+            )
+            return {
               type: 'apiKey' as const,
               apiKey: Redacted.make(token),
-              source: { type: 'sa-key' as const, details: serviceAccountId },
-            })),
-          ),
+              source: { type: 'sa-key' as const, details: key.serviceAccountId },
+            }
+          }),
         ),
         Match.when(
           { method: 'env' },
@@ -321,10 +454,14 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
           ),
         ),
         Match.when({ method: 'sa-key' }, () =>
-          cachedSaToken.pipe(
-            Effect.tap(() => Clank.success('Nebius: service-account key exchange available.')),
-            Effect.asVoid,
-          ),
+          Effect.gen(function* () {
+            const existing = yield* readSaKey(profileName).pipe(Effect.result)
+            const key = Result.isSuccess(existing) ? existing.success : yield* bootstrapSaKey(profileName)
+            yield* saTokenMinter.mint(key).pipe(
+              Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
+            )
+            yield* Clank.success('Nebius: service-account key available.')
+          }),
         ),
         Match.when({ method: 'stored' }, () =>
           credentialStore
@@ -342,7 +479,9 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
           invalidateToken.pipe(Effect.andThen(Clank.success('Nebius: CLI token cache invalidated.'))),
         ),
         Match.when({ method: 'sa-key' }, () =>
-          invalidateSaToken.pipe(Effect.andThen(Clank.success('Nebius: SA-key token cache invalidated.'))),
+          credentialStore
+            .delete(profileName, SA_STORAGE_KEY)
+            .pipe(Effect.andThen(Clank.success('Nebius: SA-key credentials removed.'))),
         ),
         Match.when({ method: 'stored' }, () =>
           credentialStore
