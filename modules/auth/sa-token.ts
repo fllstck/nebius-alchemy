@@ -13,9 +13,9 @@
  *   2. Exchange it at `tokens.iam.api.nebius.cloud:443` for a 12-hour IAM
  *      access token via `TokenExchangeService.Exchange`.
  *
- * Unlike `nebius iam get-access-token` (which drops into an interactive
- * browser-OAuth flow and blocks when the CLI's token is expired), this path
- * is fully headless — safe for CI and for the alchemy deploy process.
+ * Unlike the user-account OAuth flow (which needs a browser and re-login
+ * every 12h), this path is fully headless and self-renewing — safe for CI
+ * and for the alchemy deploy process.
  *
  * ⚠️ The token endpoint is unauthenticated BY DESIGN (the JWT *is* the
  * credential). It must NOT go through `NebiusGrpcTransport`, which attaches

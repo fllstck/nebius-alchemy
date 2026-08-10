@@ -2,10 +2,6 @@ import { AuthProviderLayer } from 'alchemy/Auth/AuthProvider'
 import { CredentialsStore } from 'alchemy/Auth/Credentials'
 import { Redacted } from 'effect'
 import * as Effect from 'effect/Effect'
-import * as Duration from 'effect/Duration'
-import * as Stream from 'effect/Stream'
-import * as ChildProcess from 'effect/unstable/process/ChildProcess'
-import { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner'
 import { AuthError, type ConfigureContext } from 'alchemy/Auth/AuthProvider'
 import { retryOnce } from 'alchemy/Auth/Env'
 import * as Clank from 'alchemy/Util/Clank'
@@ -34,7 +30,6 @@ const SA_PRIVATE_KEY_FILE_ENV = 'NEBIUS_SA_PRIVATE_KEY_FILE'
 export type NebiusAuthConfig =
   | { method: 'env' }
   | { method: 'stored' }
-  | { method: 'nebius-cli' }
   | { method: 'sa-key' }
   | { method: 'oauth' }
 
@@ -47,10 +42,9 @@ export type NebiusAuthConfig =
  * is redacted in logs and console output (via {@link Redacted.make}), but
  * is stored as plaintext on disk.
  *
- * For production use, prefer the `sa-key` method (non-interactive RFC 8693
- * exchange from env, short-lived 12-hour IAM tokens) or the `nebius-cli`
- * method (delegates to the CLI); the `env` method reads `NEBIUS_API_KEY`
- * without persisting to disk.
+ * For production use, prefer the `oauth` method (browser login) or the
+ * `sa-key` method (non-interactive RFC 8693 exchange, automatic renewal);
+ * the `env` method reads `NEBIUS_API_KEY` without persisting to disk.
  */
 export type NebiusStoredCredentials = {
   type: 'apiKey'
@@ -92,80 +86,16 @@ export type NebiusResolvedCredentials = {
   source: { type: NebiusAuthConfig['method']; details?: string }
 }
 
-// Token TTL: 11 hours (within the 12-hour expiry of Nebius IAM tokens)
-const TOKEN_TTL = Duration.hours(11)
+// Token TTL is not needed: OAuth reads the stored 12h token directly and
+// sa-key mints per process (the outer `Effect.cached` in Credentials.ts
+// memoizes the whole resolution).
 
 export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCredentials>()(
   NEBIUS_AUTH_PROVIDER_NAME,
   Effect.gen(function* () {
     const credentialStore = yield* CredentialsStore
-    const childProcessSpawner = yield* ChildProcessSpawner
     const saTokenMinter = yield* SaToken.SaTokenMinter
     const saBootstrap = yield* SaBootstrap.SaBootstrap
-
-    const getTokenViaCli = (): Effect.Effect<string, AuthError> =>
-      Effect.gen(function* () {
-        const handle = yield* childProcessSpawner.spawn(
-          // `--no-browser` suppresses the popup; `--auth-timeout 30s` bounds
-          // the interactive OAuth flow so an expired CLI token fails in ~30s
-          // instead of blocking up to the CLI's default 15-minute timeout.
-          ChildProcess.make('nebius', ['iam', 'get-access-token', '--no-browser', '--auth-timeout', '30s'], {
-            shell: false,
-          }),
-        )
-        const [exitCode, stdout, stderr] = yield* Effect.all(
-          [
-            handle.exitCode,
-            Stream.mkString(Stream.decodeText(handle.stdout)),
-            Stream.mkString(Stream.decodeText(handle.stderr)),
-          ],
-          { concurrency: 3 },
-        )
-        if (exitCode !== 0) {
-          const out = stderr.trim() || stdout.trim()
-          const authHint = /(authentication|authorize|auth\.nebius|get code|deadline exceeded|complete the authentication)/i.test(
-            out,
-          )
-            ? ' — Nebius CLI authentication is required or expired. Run `nebius profile create` + `nebius iam login`, or use the sa-key method (recommended).'
-            : ''
-          return yield* new AuthError({
-            message: `nebius iam get-access-token exited with ${exitCode}: ${out}${authHint}`,
-          })
-        }
-
-        const token = stdout.trim()
-        if (!token) return yield* new AuthError({ message: 'nebius iam get-access-token returned empty output' })
-
-        return token
-      }).pipe(
-        Effect.scoped,
-        // Version-independent backstop: even if a future CLI ignores the
-        // flags, an expired-token auth flow can never hang the deploy.
-        Effect.timeoutOrElse({
-          duration: '45 seconds',
-          orElse: () =>
-            Effect.fail(
-              new AuthError({
-                message:
-                  'nebius iam get-access-token timed out — Nebius CLI authentication is required or expired. Run `nebius profile create` + `nebius iam login`, or use the sa-key method (recommended).',
-              }),
-            ),
-        }),
-        Effect.mapError((e) =>
-          e instanceof AuthError
-            ? e
-            : new AuthError({
-                message:
-                  'Could not invoke `nebius`. Install Nebius CLI from https://docs.nebius.com/cli/install and run `nebius profile create`.',
-                cause: e,
-              }),
-        ),
-      )
-
-    // Cached token source with TTL-based invalidation.
-    // getRawToken() is called once to obtain the effect; cachedInvalidateWithTTL
-    // memoizes its result for TOKEN_TTL, re-executing on expiry or manual invalidation.
-    const [cachedToken, invalidateToken] = yield* Effect.cachedInvalidateWithTTL(getTokenViaCli(), TOKEN_TTL)
 
     // Resolve SA-key credentials from env: NEBIUS_SA_ID + NEBIUS_SA_KEY_ID +
     // NEBIUS_SA_PRIVATE_KEY (inline PEM) or NEBIUS_SA_PRIVATE_KEY_FILE.
@@ -242,14 +172,23 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
 
       yield* Clank.info('No Nebius service-account key found — bootstrapping one now.')
 
+      // Bootstrap credential source: prefer the current browser (OAuth) login
+      // when available, otherwise paste an API key — no external CLI needed.
+      const storedOAuth = yield* credentialStore.read<NebiusOAuthCredentials>(profileName, OAUTH_STORAGE_KEY)
+      const oauthAvailable = storedOAuth != null && storedOAuth.expiresAt > Date.now()
+
       const credSource = yield* Clank.select({
         message: 'Create the service account using',
         options: [
-          {
-            value: 'cli' as const,
-            label: 'Nebius CLI login',
-            hint: 'uses your existing `nebius` CLI session (one time)',
-          },
+          ...(oauthAvailable
+            ? [
+                {
+                  value: 'oauth' as const,
+                  label: 'Nebius OAuth login',
+                  hint: 'use the current browser login (recommended)',
+                },
+              ]
+            : []),
           {
             value: 'apiKey' as const,
             label: 'API key',
@@ -259,17 +198,8 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       })
 
       const token: Redacted.Redacted<string> =
-        credSource === 'cli'
-          ? yield* cachedToken.pipe(
-              Effect.map((t) => Redacted.make(t)),
-              Effect.mapError(
-                (e) =>
-                  new AuthError({
-                    message: `Nebius CLI not available: ${e.message}`,
-                    cause: e,
-                  }),
-              ),
-            )
+        credSource === 'oauth'
+          ? Redacted.make(storedOAuth!.accessToken)
           : yield* Clank.password({
               message: 'Nebius API Key',
               validate: (v) => (v.length === 0 ? 'Required' : undefined),
@@ -416,19 +346,14 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         message: 'Nebius authentication method',
         options: [
           {
-            value: 'nebius-cli' as const,
-            label: 'Nebius CLI',
-            hint: 'delegate to `nebius iam get-access-token` (run `nebius profile create` first)',
+            value: 'oauth' as const,
+            label: 'Nebius account (OAuth)',
+            hint: 'browser-based login — no CLI, no service account',
           },
           {
             value: 'sa-key' as const,
             label: 'Service Account Key',
             hint: `non-interactive RFC 8693 exchange — set ${SA_ID_ENV} + ${SA_KEY_ID_ENV} + private key`,
-          },
-          {
-            value: 'oauth' as const,
-            label: 'Nebius account (OAuth)',
-            hint: 'browser-based login — no CLI, no service account',
           },
           { value: 'env' as const, label: 'Environment Variable', hint: 'NEBIUS_API_KEY' },
           {
@@ -440,13 +365,18 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       }).pipe(
         Effect.flatMap((method) =>
           Match.value(method).pipe(
-            Match.when('nebius-cli', () =>
-              cachedToken.pipe(
-                Effect.as({ method: 'nebius-cli' as const }),
+            Match.when('oauth', () =>
+              Effect.gen(function* () {
+                // `--configure` means re-setup: always run the browser flow,
+                // even when a valid token is already stored (mirrors the
+                // Cloudflare provider's configureOAuth).
+                yield* loginOAuth(profileName)
+                return { method: 'oauth' as const }
+              }).pipe(
                 Effect.mapError(
                   (e) =>
                     new AuthError({
-                      message: `Nebius CLI not available: ${e.message}`,
+                      message: `Nebius OAuth not usable: ${e.message}`,
                       cause: e,
                     }),
                 ),
@@ -503,23 +433,6 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
                 ),
               ),
             ),
-            Match.when('oauth', () =>
-              Effect.gen(function* () {
-                // `--configure` means re-setup: always run the browser flow,
-                // even when a valid token is already stored (mirrors the
-                // Cloudflare provider's configureOAuth).
-                yield* loginOAuth(profileName)
-                return { method: 'oauth' as const }
-              }).pipe(
-                Effect.mapError(
-                  (e) =>
-                    new AuthError({
-                      message: `Nebius OAuth not usable: ${e.message}`,
-                      cause: e,
-                    }),
-                ),
-              ),
-            ),
             Match.when('env', () => Effect.succeed({ method: 'env' as const })),
             Match.when('stored', () => loginStored(profileName)),
             Match.exhaustive,
@@ -548,16 +461,15 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       profileName: string,
       config: NebiusAuthConfig,
     ): Effect.Effect<NebiusResolvedCredentials, AuthError> =>
-      Match.value(config).pipe(
-        Match.when({ method: 'nebius-cli' }, () =>
-          cachedToken.pipe(
-            Effect.map((token) => ({
-              type: 'apiKey' as const,
-              apiKey: Redacted.make(token),
-              source: { type: 'nebius-cli' as const },
-            })),
-          ),
-        ),
+      // Migration: pre-OAuth profiles may still store the removed
+      // `nebius-cli` method — fail with clear guidance instead of a crash.
+      (config as { method: string }).method === 'nebius-cli'
+        ? Effect.fail(
+            new AuthError({
+              message: 'Nebius CLI authentication is no longer supported. Run: alchemy login',
+            }),
+          )
+        : Match.value(config).pipe(
         Match.when({ method: 'sa-key' }, () =>
           Effect.gen(function* () {
             const key = yield* readSaKey(profileName)
@@ -626,12 +538,6 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
     const login = (profileName: string, config: NebiusAuthConfig) =>
       Match.value(config).pipe(
         Match.when({ method: 'env' }, () => Effect.void),
-        Match.when({ method: 'nebius-cli' }, () =>
-          cachedToken.pipe(
-            Effect.tap(() => Clank.success('Nebius: CLI authentication available.')),
-            Effect.asVoid,
-          ),
-        ),
         Match.when({ method: 'sa-key' }, () =>
           Effect.gen(function* () {
             const existing = yield* readSaKey(profileName).pipe(Effect.result)
@@ -664,9 +570,6 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
     const logout = (profileName: string, config: NebiusAuthConfig) =>
       Match.value(config).pipe(
         Match.when({ method: 'env' }, () => Effect.void),
-        Match.when({ method: 'nebius-cli' }, () =>
-          invalidateToken.pipe(Effect.andThen(Clank.success('Nebius: CLI token cache invalidated.'))),
-        ),
         Match.when({ method: 'sa-key' }, () =>
           credentialStore
             .delete(profileName, SA_STORAGE_KEY)

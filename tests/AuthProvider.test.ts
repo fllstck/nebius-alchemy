@@ -419,6 +419,24 @@ describe('NebiusAuth', () => {
     })
   })
 
+  describe('resolveCredentials — removed nebius-cli migration guard', () => {
+    test('stored nebius-cli config fails with guidance, not a crash', async () => {
+      // Simulates a pre-OAuth profile: the stored method is `nebius-cli`,
+      // which no longer exists in the config union.
+      const error = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'nebius-cli' as never }).pipe(
+          Effect.flip,
+          Effect.provide(authTestLayer),
+        ),
+      )
+      expect(error).toBeInstanceOf(AuthError)
+      if (error instanceof AuthError) {
+        expect(error.message).toContain('no longer supported')
+        expect(error.message).toContain('alchemy login')
+      }
+    })
+  })
+
   describe('NebiusAuthConfig discriminated union', () => {
     test('accepts env config', () => {
       const config: NebiusAuthConfig = { method: 'env' }
@@ -430,18 +448,18 @@ describe('NebiusAuth', () => {
       expect(config.method).toBe('stored')
     })
 
-    test('accepts nebius-cli config', () => {
-      const config: NebiusAuthConfig = {
-        method: 'nebius-cli',
-      }
-      expect(config.method).toBe('nebius-cli')
-    })
-
     test('accepts sa-key config', () => {
       const config: NebiusAuthConfig = {
         method: 'sa-key',
       }
       expect(config.method).toBe('sa-key')
+    })
+
+    test('accepts oauth config', () => {
+      const config: NebiusAuthConfig = {
+        method: 'oauth',
+      }
+      expect(config.method).toBe('oauth')
     })
   })
 })

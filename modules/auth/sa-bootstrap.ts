@@ -3,7 +3,7 @@
  *
  * Creates the service-account identity + authorized key that the RFC 8693
  * token exchange (`sa-token.ts`) consumes. This is the "producer" side of the
- * flow: a bootstrap credential (the user's existing Nebius CLI login, or a
+ * flow: a bootstrap credential (the current browser OAuth login, or a
  * pasted API key) is used exactly once to provision:
  *
  *   1. a service account,
