@@ -8,7 +8,7 @@ Check the [examples](examples/README.md).
 
 You need [a Nebius account](https://nebius.com/) and [Bun](https://bun.sh/).
 
-Optional: [The Nebius CLI](https://docs.nebius.com/cli/install) to automatically generate an API key.
+No external CLI required.
 
 ### Create a Project
 
@@ -50,23 +50,23 @@ export default Alchemy.Stack(
 )
 ```
 
-### Configure the Deployment
-
-Add the ID of the target project.
-
-```
-// .env
-
-NEBIUS_PROJECT_ID=<YOUR_RROJECT_ID>
-```
-
-Set the API key for the Nebius AI Cloud API.
-
-> This can be done via the Nebius CLI or by manually entering a key.
+### Authenticate
 
 ```bash
 bun alchemy login
 ```
+
+This opens your browser for a Nebius OAuth login, then asks you to pick a
+project — no external CLI, no API key, no environment variables. The chosen
+tenant and project are stored and used by every deploy.
+
+Alternatively, for automation/CI:
+
+- **`sa-key`** — a service-account key (RSA-4096 authorized key). Renewal is
+automatic via the RFC 8693 token exchange, so it needs no browser after the
+one-time bootstrap (`alchemy login` → *Service Account Key*). In CI, set
+`NEBIUS_SA_ID`, `NEBIUS_SA_KEY_ID` and `NEBIUS_SA_PRIVATE_KEY`.
+- **`env`** — a static IAM API key via `NEBIUS_API_KEY`.
 
 Deploy the bucket.
 
@@ -114,12 +114,12 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 
 ## Environment Variables
 
-| Variable            | Required | Description                                            |
-| ------------------- | -------- | ------------------------------------------------------ |
-| `NEBIUS_API_KEY`    | Yes      | IAM API key (auto-populated from Nebius CLI)           |
-| `NEBIUS_PROJECT_ID` | Yes      | Nebius project ID                                      |
-| `NEBIUS_TENANT_ID`  | —        | Tenant ID for project/group discovery/creation actions |
-| `NEBIUS_REGION`     | —        | Default region (defaults to `eu-north1`)               |
+| Variable | Required | Description |
+| `NEBIUS_PROJECT_ID` | with `env` / env-var `sa-key` | Project ID — not needed after `alchemy login` or the SA bootstrap (picked at login) |
+| `NEBIUS_TENANT_ID` | with `env` / env-var `sa-key` | Tenant ID for project/group discovery/creation actions |
+| `NEBIUS_API_KEY` | with `env` | IAM API key for the `env` auth method |
+| `NEBIUS_SA_ID` / `NEBIUS_SA_KEY_ID` / `NEBIUS_SA_PRIVATE_KEY` | with `sa-key` in CI | Service-account key material (RFC 8693 exchange) |
+| `NEBIUS_REGION` | — | Default region (defaults to `eu-north1`) |
 
 ## Resources
 

@@ -1,3 +1,27 @@
+# [0.6.0](https://github.com/fllstck/nebius-alchemy/compare/v0.5.1...v0.6.0) (2026-08-10)
+
+
+### Bug Fixes
+
+* **auth:** always re-run OAuth flow during configure ([57facc3](https://github.com/fllstck/nebius-alchemy/commit/57facc32b621f0c468476825df381ffafe2d2dc3))
+* **auth:** document RSA-4096 requirement for authorized keys ([5ca4326](https://github.com/fllstck/nebius-alchemy/commit/5ca4326122126b648ec49eaa4b2460674ec5e957))
+* **auth:** redirect OAuth callback to Alchemy landing pages ([0826484](https://github.com/fllstck/nebius-alchemy/commit/082648444ed3caaff907012f7d73d20fa02b03f4))
+* **provider:** reorder NebiusAuth merge before its dependencies ([ae96206](https://github.com/fllstck/nebius-alchemy/commit/ae96206cdbc29c09dc10c9fec8cd02f75aafe771))
+
+
+### Features
+
+* **auth:** add browser-based OAuth login for Nebius ([ffda300](https://github.com/fllstck/nebius-alchemy/commit/ffda300ce98e9284c9154dac51013365e017bcc7))
+* **auth:** add SA-key bootstrap and harden CLI token flow ([f58af9f](https://github.com/fllstck/nebius-alchemy/commit/f58af9f53f722d093f80a96d383fffe35bcde8f4))
+* **auth:** add service-account key authentication for Nebius ([30a7fad](https://github.com/fllstck/nebius-alchemy/commit/30a7fad357d56dccbd6bc30000f71fad071e8d3b))
+* **auth:** detect project mismatch for stored SA keys ([b0ca6c6](https://github.com/fllstck/nebius-alchemy/commit/b0ca6c66677e8f31f4befc1cc3147a4be548a0f0))
+* **auth:** remove nebius-cli auth method and use OAuth for SA bootstrap ([6e15212](https://github.com/fllstck/nebius-alchemy/commit/6e15212a4515b44db5953dc60d9a5cf367f32aa0))
+* **auth:** resolve tenant from OAuth token instead of env var ([306e479](https://github.com/fllstck/nebius-alchemy/commit/306e4797c70c7ca1ec71edd5f5a11d880c22b56b))
+* **auth:** show project name in SA grant confirmation prompt ([3e615c5](https://github.com/fllstck/nebius-alchemy/commit/3e615c519ec4a69c5a6d63afec62de5cfe3590d6))
+### ⚠️ Breaking Changes
+
+* **auth:** remove the `nebius-cli` auth method — browser OAuth (`oauth`) and service-account keys (`sa-key`) replace it; stored `nebius-cli` profiles must re-run `alchemy login` (migration guard added) ([6e15212](https://github.com/fllstck/nebius-alchemy/commit/6e15212a4515b44db5953dc60d9a5cf367f32aa0))
+
 ## [0.5.1](https://github.com/fllstck/nebius-alchemy/compare/v0.5.0...v0.5.1) (2026-08-07)
 
 
