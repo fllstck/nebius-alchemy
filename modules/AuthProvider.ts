@@ -15,6 +15,7 @@ import { readFile } from 'node:fs/promises'
 import * as SaToken from './auth/sa-token.ts'
 import * as SaBootstrap from './auth/sa-bootstrap.ts'
 import * as OAuth from './auth/oauth.ts'
+import { writeSecureCredentials } from './auth/secure-credentials.ts'
 
 export const NEBIUS_AUTH_PROVIDER_NAME = 'Nebius'
 const STORAGE_KEY = 'nebius-stored'
@@ -38,9 +39,11 @@ export type NebiusAuthConfig =
  *
  * **⚠️ Security note:** Alchemy's {@link CredentialsStore} writes these
  * credentials as **unencrypted JSON** to
- * `~/.alchemy/credentials/{profile}/nebius-stored.json`. The `apiKey` field
- * is redacted in logs and console output (via {@link Redacted.make}), but
- * is stored as plaintext on disk.
+ * `~/.alchemy/credentials/{profile}/nebius-stored.json` — plaintext **and
+ * world-readable unless chmod'd**. The `apiKey` field is redacted in logs
+ * and console output (via {@link Redacted.make}), and the file is chmod'd
+ * to 0600 after writing via `writeSecureCredentials`
+ * (`modules/auth/secure-credentials.ts`).
  *
  * For production use, prefer the `oauth` method (browser login) or the
  * `sa-key` method (non-interactive RFC 8693 exchange, automatic renewal);
@@ -55,6 +58,10 @@ export type NebiusStoredCredentials = {
  * OAuth credentials persisted by the browser login. No refresh token exists
  * for Nebius user accounts — the 12h token is re-issued by re-running
  * `alchemy login`. `projectId` records the project chosen at login.
+ *
+ * **⚠️ Security note:** plaintext JSON — **world-readable unless chmod'd**;
+ * the file is chmod'd to 0600 after writing via `writeSecureCredentials`
+ * (`modules/auth/secure-credentials.ts`).
  */
 export type NebiusOAuthCredentials = {
   type: 'oauth'
@@ -71,6 +78,10 @@ export type NebiusOAuthCredentials = {
  * `projectId` records which project the SA was bootstrapped for, so a later
  * project change can be surfaced (and re-bootstrap offered) instead of
  * failing later with a confusing PermissionDenied.
+ *
+ * **⚠️ Security note:** plaintext RSA private key — **world-readable unless
+ * chmod'd**; the file is chmod'd to 0600 after writing via
+ * `writeSecureCredentials` (`modules/auth/secure-credentials.ts`).
  */
 export type NebiusSaKeyCredentials = {
   type: 'saKey'
@@ -231,7 +242,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         })
         .pipe(Effect.mapError((e) => new AuthError({ message: e.message, cause: e })))
 
-      yield* credentialStore.write<NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY, {
+      yield* writeSecureCredentials(credentialStore, profileName, SA_STORAGE_KEY, {
         type: 'saKey',
         ...key,
         projectId: Redacted.value(projectId),
@@ -316,7 +327,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         })),
       })
 
-      yield* credentialStore.write<NebiusOAuthCredentials>(profileName, OAUTH_STORAGE_KEY, {
+      yield* writeSecureCredentials(credentialStore, profileName, OAUTH_STORAGE_KEY, {
         type: 'oauth',
         accessToken: credentials.accessToken,
         expiresAt: credentials.expiresAt,
@@ -333,7 +344,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         validate: (v) => (v.length === 0 ? 'Required' : undefined),
       }).pipe(retryOnce)
 
-      yield* credentialStore.write<NebiusStoredCredentials>(profileName, STORAGE_KEY, {
+      yield* writeSecureCredentials(credentialStore, profileName, STORAGE_KEY, {
         type: 'apiKey',
         apiKey,
       })
