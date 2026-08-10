@@ -229,16 +229,27 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         validate: (v) => (v.length === 0 ? 'Required' : undefined),
       })
 
-      const grant = yield* Clank.confirm({
-        message: `Grant this SA access to project ${projectLabel}?`,
-        initialValue: true,
+      const grantRole = yield* Clank.select({
+        message: `Grant the SA a role on project ${projectLabel}?`,
+        options: [
+          {
+            value: 'editor',
+            label: 'editor',
+            hint: 'manage resources (compute, storage, VPC, KMS…) — recommended',
+          },
+          {
+            value: 'admin',
+            label: 'admin',
+            hint: 'full access incl. IAM, quotas, audit logs — needed when deploying IAM/quotas resources',
+          },
+        ],
       })
 
       const key = yield* saBootstrap
         .bootstrap(token, {
           parentId: Redacted.value(projectId),
           serviceAccountName: saName,
-          ...(grant ? { grant: { role: 'admin', resourceId: Redacted.value(projectId) } } : {}),
+          grant: { role: grantRole, resourceId: Redacted.value(projectId) },
         })
         .pipe(Effect.mapError((e) => new AuthError({ message: e.message, cause: e })))
 
