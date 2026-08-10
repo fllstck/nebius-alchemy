@@ -1,5 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
@@ -8,6 +9,7 @@ import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusSecurityRuleSchema from '../../../../schemas/nebius/vpc/v1/security_rule.ts'
 import * as VpcGrpc from '../../../api-client/vpc.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecurityRuleSchema from './security-rule.schema.ts'
@@ -45,6 +47,10 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusSecurityRule>, never, any>)
   : AlchemyProvider.succeed(NebiusSecurityRule, {
+  // Security rules are children of a SecurityGroup — nuke deletes rules
+  // before their group.
+  nuke: { dependsOn: ['Nebius.vpc.v1.SecurityGroup'] },
+
   reconcile: Effect.fn('Nebius.vpc.v1.SecurityRule.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* SecurityRuleSchema.validateSecurityRuleProps(news)
@@ -111,12 +117,30 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // Security rules are children of a specific SecurityGroup, so there's no
-  // project-scoped list operation. Import/adopt detection works via read()
-  // against known physical IDs instead.
+  // Security rules are children of a SecurityGroup — enumerate every security
+  // group in the tenant and list each group's rules. Without this, nuke can't
+  // delete rules before their group (Nebius does not cascade-delete), so group
+  // deletes would fail or orphan rules.
   list: Effect.fn('Nebius.vpc.v1.SecurityRule.list')(function* () {
-    yield* Effect.void
-    return []
+    const vpc = yield* VpcGrpc.VpcGrpcService
+    const iam = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const projects = yield* iam.project.list(tenantId)
+    const rows = yield* Effect.forEach(projects, (project) =>
+      vpc.securityGroup.list(project.metadata!.id).pipe(
+        Effect.flatMap((groups) =>
+          Effect.forEach(groups, (group) =>
+            vpc.securityRule.list(group.metadata!.id).pipe(
+              Effect.map((rules) => rules.map((r) => toFriendlyAttributes(r))),
+              Effect.catch(() => Effect.succeed([] as SecurityRuleSchema.SecurityRuleAttributes[])),
+            ),
+          ),
+        ),
+        Effect.map((nested) => nested.flat()),
+        Effect.catch(() => Effect.succeed([] as SecurityRuleSchema.SecurityRuleAttributes[])),
+      ),
+    )
+    return rows.flat()
   }),
 
   // eslint-disable-next-line require-yield

@@ -1,5 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -7,6 +8,7 @@ import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusRecordSchema from '../../../../schemas/nebius/dns/v1/record.ts'
 import * as DnsGrpc from '../../../api-client/dns.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as RecordSchema from './record.schema.ts'
@@ -42,6 +44,9 @@ export const NebiusRecordProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusRecord>, never, any>)
   : AlchemyProvider.succeed(NebiusRecord, {
+  // Records are children of a Zone — nuke deletes records before their zone.
+  nuke: { dependsOn: ['Nebius.dns.v1.Zone'] },
+
   // ⚠️ Non-standard: parent is Zone, not Project
   reconcile: Effect.fn('Nebius.dns.v1.Record.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
@@ -103,10 +108,30 @@ export const NebiusRecordProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // ⚠️ Non-standard: no project-scoped list (parent is Zone)
+  // Records are children of a Zone (no project-scoped list) — enumerate every
+  // zone in the tenant and list each zone's records. Without this, nuke can't
+  // delete records before their zone (Nebius does not cascade-delete), so zone
+  // deletes would fail or orphan records.
   list: Effect.fn('Nebius.dns.v1.Record.list')(function* () {
-    yield* Effect.void
-    return []
+    const dns = yield* DnsGrpc.DnsGrpcService
+    const iam = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const projects = yield* iam.project.list(tenantId)
+    const rows = yield* Effect.forEach(projects, (project) =>
+      dns.zone.list(project.metadata!.id).pipe(
+        Effect.flatMap((zones) =>
+          Effect.forEach(zones, (zone) =>
+            dns.record.list(zone.metadata!.id).pipe(
+              Effect.map((records) => records.map((r) => toFriendlyAttributes(r))),
+              Effect.catch(() => Effect.succeed([] as RecordSchema.RecordAttributes[])),
+            ),
+          ),
+        ),
+        Effect.map((nested) => nested.flat()),
+        Effect.catch(() => Effect.succeed([] as RecordSchema.RecordAttributes[])),
+      ),
+    )
+    return rows.flat()
   }),
 
   // eslint-disable-next-line require-yield

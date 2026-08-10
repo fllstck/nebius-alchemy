@@ -1,5 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -9,6 +10,7 @@ import * as NebiusSecretVersionSchema from '../../../../schemas/nebius/mysterybo
 import type { GrpcError } from '../../../api-client/grpc-utils.ts'
 import { GrpcError as GrpcErrorCtor } from '../../../api-client/grpc-utils.ts'
 import * as MysteryBoxGrpc from '../../../api-client/mysterybox.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecretVersionSchema from './secret-version.schema.ts'
@@ -46,6 +48,10 @@ export const NebiusSecretVersionProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusSecretVersion>, never, any>)
   : AlchemyProvider.succeed(NebiusSecretVersion, {
+  // Secret versions are children of a Secret — nuke deletes versions before
+  // their secret.
+  nuke: { dependsOn: ['Nebius.mysterybox.v1.Secret'] },
+
   reconcile: Effect.fn('Nebius.mysterybox.v1.SecretVersion.reconcile')(function* ({ id, news, output, session }) {
     news = yield* SecretVersionSchema.validateSecretVersionProps(news)
 
@@ -106,8 +112,30 @@ export const NebiusSecretVersionProvider: Layer.Layer<
     return Alchemy.AdoptPolicy.Unowned(attrs)
   }),
 
-  // list is per-secret (parentId from props), not project-scoped — return []
-  list: Effect.fn('Nebius.mysterybox.v1.SecretVersion.list')(() => Effect.succeed([])),
+  // Secret versions are children of a Secret — enumerate every secret in the
+  // tenant and list each secret's versions (kept consistent with Secret.list;
+  // Secret itself is nuke: skip, so this only matters if that ever changes).
+  list: Effect.fn('Nebius.mysterybox.v1.SecretVersion.list')(function* () {
+    const mysterybox = yield* MysteryBoxGrpc.MysteryBoxGrpcService
+    const iam = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const projects = yield* iam.project.list(tenantId)
+    const rows = yield* Effect.forEach(projects, (project) =>
+      mysterybox.secret.list(project.metadata!.id).pipe(
+        Effect.flatMap((secrets) =>
+          Effect.forEach(secrets, (secret) =>
+            mysterybox.secretVersion.list(secret.metadata!.id).pipe(
+              Effect.map((versions) => versions.map((v) => toFriendlyAttributes(v))),
+              Effect.catch(() => Effect.succeed([] as SecretVersionSchema.SecretVersionAttributes[])),
+            ),
+          ),
+        ),
+        Effect.map((nested) => nested.flat()),
+        Effect.catch(() => Effect.succeed([] as SecretVersionSchema.SecretVersionAttributes[])),
+      ),
+    )
+    return rows.flat()
+  }),
 
   // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.mysterybox.v1.SecretVersion.diff')(function* ({ news, olds }) {

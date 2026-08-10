@@ -1,5 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
@@ -8,6 +9,7 @@ import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusRouteSchema from '../../../../schemas/nebius/vpc/v1/route.ts'
 import * as VpcGrpc from '../../../api-client/vpc.ts'
+import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as RouteSchema from './route.schema.ts'
@@ -48,6 +50,10 @@ export const NebiusRouteProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusRoute>, never, any>)
   : AlchemyProvider.succeed(NebiusRoute, {
+  // Routes are children of a RouteTable — nuke deletes routes before their
+  // route table.
+  nuke: { dependsOn: ['Nebius.vpc.v1.RouteTable'] },
+
   reconcile: Effect.fn('Nebius.vpc.v1.Route.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* RouteSchema.validateRouteProps(news)
@@ -102,10 +108,30 @@ export const NebiusRouteProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // No project-scoped list — routes are children of a specific RouteTable.
+  // Routes are children of a RouteTable — enumerate every route table in the
+  // tenant and list each table's routes. Without this, nuke can't delete routes
+  // before their table (Nebius does not cascade-delete), so route-table deletes
+  // would fail or orphan routes.
   list: Effect.fn('Nebius.vpc.v1.Route.list')(function* () {
-    yield* Effect.void
-    return []
+    const vpc = yield* VpcGrpc.VpcGrpcService
+    const iam = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const projects = yield* iam.project.list(tenantId)
+    const rows = yield* Effect.forEach(projects, (project) =>
+      vpc.routeTable.list(project.metadata!.id).pipe(
+        Effect.flatMap((tables) =>
+          Effect.forEach(tables, (table) =>
+            vpc.route.list(table.metadata!.id).pipe(
+              Effect.map((routes) => routes.map((r) => toFriendlyAttributes(r))),
+              Effect.catch(() => Effect.succeed([] as RouteSchema.RouteAttributes[])),
+            ),
+          ),
+        ),
+        Effect.map((nested) => nested.flat()),
+        Effect.catch(() => Effect.succeed([] as RouteSchema.RouteAttributes[])),
+      ),
+    )
+    return rows.flat()
   }),
 
   // eslint-disable-next-line require-yield
