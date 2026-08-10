@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import * as Effect from 'effect/Effect'
 import * as OAuth from '../../modules/auth/oauth.ts'
@@ -30,6 +30,18 @@ describe('OAuth.buildAuthorizeUrl', () => {
     expect(url.searchParams.get('scope')).toBe('openid')
     expect(url.searchParams.get('state')).toBe('the-state')
   })
+
+  test('honors an explicit client id override', () => {
+    const url = new URL(
+      OAuth.buildAuthorizeUrl({
+        challenge: 'c',
+        state: 's',
+        redirectUri: 'http://127.0.0.1:4321',
+        clientId: 'my-registered-client',
+      }),
+    )
+    expect(url.searchParams.get('client_id')).toBe('my-registered-client')
+  })
 })
 
 describe('OAuth.parseCallbackInput', () => {
@@ -50,7 +62,12 @@ describe('OAuth.parseCallbackInput', () => {
 })
 
 describe('OAuth.exchangeCallbackInput (fails before any network call)', () => {
-  const authorization: OAuth.OAuthAuthorization = { verifier: 'v', state: 'expected-state', redirectUri: 'http://127.0.0.1:1' }
+  const authorization: OAuth.OAuthAuthorization = {
+    verifier: 'v',
+    state: 'expected-state',
+    redirectUri: 'http://127.0.0.1:1',
+    clientId: 'nebius-cli',
+  }
 
   test('rejects a mismatched state', async () => {
     const message = await failureMessage(
@@ -62,6 +79,31 @@ describe('OAuth.exchangeCallbackInput (fails before any network call)', () => {
   test('rejects a URL with no code', async () => {
     const message = await failureMessage(OAuth.exchangeCallbackInput('http://127.0.0.1:1/?state=expected-state', authorization))
     expect(message).toContain('No authorization code')
+  })
+})
+
+describe('OAuth.resolveClientId', () => {
+  const ENV = OAuth.OAUTH_CLIENT_ID_ENV
+  const original = process.env[ENV]
+
+  afterEach(() => {
+    if (original === undefined) delete process.env[ENV]
+    else process.env[ENV] = original
+  })
+
+  test('defaults to the shared nebius-cli client when unset', () => {
+    delete process.env[ENV]
+    expect(OAuth.resolveClientId()).toBe('nebius-cli')
+  })
+
+  test('honors the env override', () => {
+    process.env[ENV] = 'my-registered-client'
+    expect(OAuth.resolveClientId()).toBe('my-registered-client')
+  })
+
+  test('falls back to the default for blank values', () => {
+    process.env[ENV] = '   '
+    expect(OAuth.resolveClientId()).toBe('nebius-cli')
   })
 })
 

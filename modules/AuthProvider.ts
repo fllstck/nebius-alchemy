@@ -274,13 +274,15 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
      */
     const loginOAuth = Effect.fn('NebiusAuth.loginOAuth')(function* (profileName: string) {
       const { verifier, challenge, state } = OAuth.createPkce()
+      const clientId = yield* Effect.sync(OAuth.resolveClientId)
       const { port, waitForCode, close } = yield* OAuth.startCallbackServer(state).pipe(
         Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
       )
       const redirectUri = `http://127.0.0.1:${port}`
-      const authorization: OAuth.OAuthAuthorization = { verifier, state, redirectUri }
-      const url = OAuth.buildAuthorizeUrl({ challenge, state, redirectUri })
+      const authorization: OAuth.OAuthAuthorization = { verifier, state, redirectUri, clientId }
+      const url = OAuth.buildAuthorizeUrl({ challenge, state, redirectUri, clientId })
 
+      yield* Clank.info(`Nebius: authenticating with OAuth client ${clientId}`)
       yield* Clank.info('Nebius: opening browser for OAuth login...')
       yield* Clank.info(url)
       yield* Clank.openUrl(url).pipe(
@@ -291,7 +293,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       yield* Clank.info('Nebius: waiting for authorization (up to 5 minutes).')
 
       const credentials = yield* Effect.raceFirst(
-        waitForCode.pipe(Effect.flatMap((code) => OAuth.exchangeCode(code, verifier, redirectUri))),
+        waitForCode.pipe(Effect.flatMap((code) => OAuth.exchangeCode(code, verifier, redirectUri, clientId))),
         Clank.text({
           message: 'Paste the authorization code or callback URL',
           placeholder: 'The browser will complete this automatically when local',

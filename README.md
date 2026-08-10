@@ -60,6 +60,19 @@ This opens your browser for a Nebius OAuth login, then asks you to pick a
 project — no external CLI, no API key, no environment variables. The chosen
 tenant and project are stored and used by every deploy.
 
+The OAuth login uses Nebius's shared `nebius-cli` client id by default — fine
+for evaluation, but a third-party use of a client we don't own (no separate
+trust boundary, fragile to their config changes). For a distinct trust
+boundary, register your own **public** OAuth client with Nebius (loopback
+redirect `http://127.0.0.1:<port>`, PKCE) and point the provider at it:
+
+```bash
+export NEBIUS_OAUTH_CLIENT_ID=<your-registered-client-id>
+```
+
+Only registered client ids work — the token endpoint rejects unknown ones
+with `invalid_client` after the browser flow completes.
+
 Alternatively, for automation/CI:
 
 - **`sa-key`** — a service-account key (RSA-4096 authorized key). Renewal is
@@ -120,6 +133,7 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 | `NEBIUS_API_KEY` | with `env` | IAM API key for the `env` auth method |
 | `NEBIUS_SA_ID` / `NEBIUS_SA_KEY_ID` / `NEBIUS_SA_PRIVATE_KEY` | with `sa-key` in CI | Service-account key material (RFC 8693 exchange) |
 | `NEBIUS_REGION` | — | Default region (defaults to `eu-north1`) |
+| `NEBIUS_OAUTH_CLIENT_ID` | OAuth login | Client id for the browser OAuth login (default: `nebius-cli`; set to a client registered with Nebius) |
 
 ## Resources
 

@@ -25,8 +25,24 @@ import type { AddressInfo } from 'node:net'
 export const OAUTH_AUTHORIZE_ENDPOINT = 'https://auth.nebius.com/oauth2/authorize'
 export const OAUTH_TOKEN_ENDPOINT = 'https://auth.nebius.com/oauth2/token'
 export const OAUTH_CLIENT_ID = 'nebius-cli'
+/** Env override for the OAuth client id (see {@link resolveClientId}). */
+export const OAUTH_CLIENT_ID_ENV = 'NEBIUS_OAUTH_CLIENT_ID'
 export const OAUTH_SCOPE = 'openid'
 export const OAUTH_CALLBACK_TIMEOUT = 5 * 60 * 1000
+
+/**
+ * Resolve the OAuth client id for this process.
+ *
+ * Defaults to Nebius's shared `nebius-cli` client — the pragmatic choice for
+ * evaluation, but a third-party use of a client we don't own (no separate
+ * trust boundary; fragile to their config changes). Set
+ * {@link OAUTH_CLIENT_ID_ENV} to a client registered with Nebius (loopback
+ * redirect `http://127.0.0.1:<port>`, PKCE) for a distinct trust boundary.
+ * Only registered client ids work — the token endpoint rejects unknown ones
+ * with `invalid_client`. Lazy call-time read so tests can set the env var
+ * per-test; blank values fall back to the default.
+ */
+export const resolveClientId = (): string => process.env[OAUTH_CLIENT_ID_ENV]?.trim() || OAUTH_CLIENT_ID
 
 export class OAuthError extends Schema.TaggedErrorClass<OAuthError>()('OAuthError', {
   message: Schema.String,
@@ -43,6 +59,8 @@ export interface OAuthAuthorization {
   readonly verifier: string
   readonly state: string
   readonly redirectUri: string
+  /** Client id used for both the authorize and token requests. */
+  readonly clientId: string
 }
 
 const b64url = (buffer: Buffer): string => buffer.toString('base64url')
@@ -59,9 +77,11 @@ export const buildAuthorizeUrl = (params: {
   challenge: string
   state: string
   redirectUri: string
+  /** Defaults to {@link OAUTH_CLIENT_ID} — override with {@link resolveClientId} output. */
+  clientId?: string
 }): string => {
   const url = new URL(OAUTH_AUTHORIZE_ENDPOINT)
-  url.searchParams.set('client_id', OAUTH_CLIENT_ID)
+  url.searchParams.set('client_id', params.clientId ?? OAUTH_CLIENT_ID)
   url.searchParams.set('code_challenge', params.challenge)
   url.searchParams.set('code_challenge_method', 'S256')
   url.searchParams.set('redirect_uri', params.redirectUri)
@@ -143,6 +163,8 @@ export const exchangeCode = (
   code: string,
   verifier: string,
   redirectUri: string,
+  /** Defaults to {@link OAUTH_CLIENT_ID} — must match the authorize request. */
+  clientId: string = OAUTH_CLIENT_ID,
 ): Effect.Effect<OAuthCredentials, OAuthError> =>
   Effect.tryPromise(() =>
     fetch(OAUTH_TOKEN_ENDPOINT, {
@@ -152,7 +174,7 @@ export const exchangeCode = (
         grant_type: 'authorization_code',
         code,
         redirect_uri: redirectUri,
-        client_id: OAUTH_CLIENT_ID,
+        client_id: clientId,
         code_verifier: verifier,
       }).toString(),
     }).then(async (res) => {
@@ -206,5 +228,5 @@ export const exchangeCallbackInput = (
   if (state !== null && state !== authorization.state) {
     return Effect.fail(new OAuthError({ message: 'The authorization state does not match.' }))
   }
-  return exchangeCode(code, authorization.verifier, authorization.redirectUri)
+  return exchangeCode(code, authorization.verifier, authorization.redirectUri, authorization.clientId)
 }
