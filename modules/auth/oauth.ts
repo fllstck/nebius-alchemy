@@ -17,6 +17,7 @@
 import * as Effect from 'effect/Effect'
 import * as Deferred from 'effect/Deferred'
 import * as Schema from 'effect/Schema'
+import { AUTH_SUCCESS_URL, AUTH_ERROR_URL } from 'alchemy/Auth/AuthProvider'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -90,12 +91,15 @@ export const startCallbackServer = (
         const code = url.searchParams.get('code')
         const state = url.searchParams.get('state')
         if (code != null && state === expectedState) {
-          res.writeHead(200, { 'content-type': 'text/html' })
-          res.end('<h2>Nebius login complete — you can close this window.</h2>')
+          // Same Alchemy-styled landing page as the Cloudflare provider.
+          res.writeHead(302, { Location: AUTH_SUCCESS_URL })
+          res.end()
           void Effect.runPromise(Deferred.succeed(deferred, code))
         } else {
-          res.writeHead(400, { 'content-type': 'text/plain' })
-          res.end(state == null ? 'Missing state' : state !== expectedState ? 'State mismatch' : 'Missing code')
+          res.writeHead(302, { Location: AUTH_ERROR_URL })
+          res.end()
+          // Leave the deferred pending on bad input — the paste fallback (or
+          // the 5-minute timeout) still has a chance to complete the login.
         }
       }),
     )
