@@ -505,12 +505,9 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
             ),
             Match.when('oauth', () =>
               Effect.gen(function* () {
-                // Existing stored OAuth token → validate it's still valid.
-                const stored = yield* credentialStore.read<NebiusOAuthCredentials>(profileName, OAUTH_STORAGE_KEY)
-                if (stored != null && stored.expiresAt > Date.now()) {
-                  return { method: 'oauth' as const }
-                }
-                // Otherwise run the browser login.
+                // `--configure` means re-setup: always run the browser flow,
+                // even when a valid token is already stored (mirrors the
+                // Cloudflare provider's configureOAuth).
                 yield* loginOAuth(profileName)
                 return { method: 'oauth' as const }
               }).pipe(
