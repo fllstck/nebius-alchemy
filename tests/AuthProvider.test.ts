@@ -160,6 +160,88 @@ describe('NebiusAuth', () => {
     })
   })
 
+  describe('resolveCredentials — oauth method', () => {
+    const oauthLayerWithStore = (stored: unknown) => {
+      const inMemory = new Map<string, unknown>()
+      const fakeStore = Layer.succeed(AlchemyCredentials.CredentialsStore, {
+        read: <T>(profile: string, provider: string) =>
+          Effect.succeed(inMemory.get(`${profile}:${provider}`) as T | undefined),
+        write: <T>(profile: string, provider: string, value: T) =>
+          Effect.sync(() => {
+            inMemory.set(`${profile}:${provider}`, value)
+          }),
+        delete: (profile: string, provider: string) =>
+          Effect.sync(() => {
+            inMemory.delete(`${profile}:${provider}`)
+          }),
+        deleteProfile: (profile: string) =>
+          Effect.sync(() => {
+            for (const key of inMemory.keys()) if (key.startsWith(`${profile}:`)) inMemory.delete(key)
+          }),
+      })
+      inMemory.set('test-profile:nebius-oauth', stored)
+      return Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+        Layer.provide(fakeStore),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            Layer.succeed(AuthProviders, {}),
+            PlatformNode.NodeServices.layer,
+            ConfigProvider.layer(ConfigProvider.fromUnknown({})),
+            fakeSaTokenMinter,
+            fakeSaBootstrap,
+          ),
+        ),
+      )
+    }
+
+    test('resolves a valid stored token', async () => {
+      const creds = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'oauth' }).pipe(
+          Effect.provide(
+            oauthLayerWithStore({
+              type: 'oauth',
+              accessToken: 'oauth-token-123',
+              expiresAt: Date.now() + 60_000,
+              projectId: 'project-oauth-1',
+            }),
+          ),
+        ),
+      )
+      expect(Redacted.value(creds.apiKey)).toBe('oauth-token-123')
+      expect(creds.source.type).toBe('oauth')
+      expect(creds.source.details).toBe('project-oauth-1')
+    })
+
+    test('fails with guidance when the token expired', async () => {
+      const error = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'oauth' }).pipe(
+          Effect.flip,
+          Effect.provide(
+            oauthLayerWithStore({
+              type: 'oauth',
+              accessToken: 'stale',
+              expiresAt: Date.now() - 1,
+              projectId: 'project-oauth-1',
+            }),
+          ),
+        ),
+      )
+      expect(error).toBeInstanceOf(AuthError)
+      if (error instanceof AuthError) expect(error.message).toContain('expired')
+    })
+
+    test('fails with guidance when nothing is stored', async () => {
+      const error = await Effect.runPromise(
+        resolveCredentials('test-profile', { method: 'oauth' }).pipe(
+          Effect.flip,
+          Effect.provide(oauthLayerWithStore(undefined)),
+        ),
+      )
+      expect(error).toBeInstanceOf(AuthError)
+      if (error instanceof AuthError) expect(error.message).toContain('alchemy login')
+    })
+  })
+
   describe('resolveCredentials — sa-key method', () => {
     test('fails with a clear message when SA env vars are missing', async () => {
       const error = await Effect.runPromise(

@@ -328,6 +328,38 @@ const getProjectNameImpl = (
     }
   })
 
+/** List the user's projects (tenant-scoped) — used by the OAuth project picker. */
+export const listProjects = (
+  token: Redacted.Redacted<string>,
+  tenantId: string,
+): Effect.Effect<ReadonlyArray<{ id: string; name: string }>, SaBootstrapError> =>
+  Effect.gen(function* () {
+    const transport = tokenTransport(token)
+    const channel = yield* transport.channelFor('nebius.iam.v2.ProjectService').pipe(
+      Effect.mapError((e) => new SaBootstrapError({ message: `Unknown IAM service: ${e.message}` })),
+    )
+    try {
+      const client = new NebiusProjectServiceSchema.ProjectServiceClient('unused', grpc.credentials.createSsl(), {
+        channelOverride: channel,
+      })
+      const response = yield* callUnary<NebiusProjectServiceSchema.ListProjectsResponse>(client, (callback) =>
+        client.list(
+          NebiusProjectServiceSchema.ListProjectsRequest.fromPartial({
+            parentId: tenantId,
+            pageSize: 100,
+          }),
+          callback,
+        ),
+      )
+      return response.items.map((project) => ({
+        id: project.metadata?.id ?? '',
+        name: project.metadata?.name ?? '',
+      }))
+    } finally {
+      channel.close()
+    }
+  })
+
 // ---------------------------------------------------------------------------
 // Bootstrap orchestration
 // ---------------------------------------------------------------------------

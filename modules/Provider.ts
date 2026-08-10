@@ -52,6 +52,7 @@ import * as Credentials from './Credentials.ts'
 import * as AuthProvider from './AuthProvider.ts'
 import * as SaToken from './auth/sa-token.ts'
 import * as SaBootstrap from './auth/sa-bootstrap.ts'
+import * as ProjectConfig from './auth/project-config.ts'
 
 export class Providers extends AlchemyProvider.ProviderCollection<Providers>()('Nebius') {}
 
@@ -154,6 +155,10 @@ export const providers = () =>
     Layer.provideMerge(SaBootstrap.SaBootstrapLive),
   ).pipe(
     Layer.provideMerge(AlchemyAuth.ProfileLive),
+    // Must precede CredentialsStoreLive: its CredentialsStore requirement is
+    // satisfied by that later merge (provideMerge only feeds SELF's
+    // accumulated requirements, never the other way).
+    Layer.provideMerge(ProjectConfig.NebiusProjectConfigProviderLive),
     Layer.provideMerge(AlchemyAuth.CredentialsStoreLive),
     Layer.orDie,
   )
