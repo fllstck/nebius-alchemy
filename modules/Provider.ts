@@ -146,9 +146,12 @@ export const providers = () =>
   ).pipe(
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),
     Layer.provideMerge(Credentials.fromAuthProvider),
+    // Order matters: `provideMerge(that)` only satisfies SELF's requirements
+    // with THAT's outputs — so NebiusAuth's ImplReq (SaTokenMinter,
+    // SaBootstrap) must be merged AFTER NebiusAuth itself.
+    Layer.provideMerge(AuthProvider.NebiusAuth),
     Layer.provideMerge(SaToken.SaTokenMinterLive),
     Layer.provideMerge(SaBootstrap.SaBootstrapLive),
-    Layer.provideMerge(AuthProvider.NebiusAuth),
   ).pipe(
     Layer.provideMerge(AlchemyAuth.ProfileLive),
     Layer.provideMerge(AlchemyAuth.CredentialsStoreLive),
