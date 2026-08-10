@@ -58,12 +58,16 @@ export type NebiusStoredCredentials = {
  * SA-key material persisted by the interactive bootstrap. The private key is
  * stored as plaintext JSON in the credential store — same trust model as
  * {@link NebiusStoredCredentials}; env vars override it for CI.
+ * `projectId` records which project the SA was bootstrapped for, so a later
+ * project change can be surfaced (and re-bootstrap offered) instead of
+ * failing later with a confusing PermissionDenied.
  */
 export type NebiusSaKeyCredentials = {
   type: 'saKey'
   serviceAccountId: string
   keyId: string
   privateKey: string
+  projectId: string
 }
 
 export type NebiusResolvedCredentials = {
@@ -284,6 +288,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       yield* credentialStore.write<NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY, {
         type: 'saKey',
         ...key,
+        projectId: Redacted.value(projectId),
       })
       yield* Clank.success('Nebius: service-account key created and stored.')
       yield* Clank.info('To use in CI, set:')
@@ -348,6 +353,36 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
                 // Material already present (env or store) → validate by minting.
                 const existing = yield* readSaKey(profileName).pipe(Effect.result)
                 if (Result.isSuccess(existing)) {
+                  // If the material comes from the credential store and was
+                  // bootstrapped for a DIFFERENT project than the current
+                  // NEBIUS_PROJECT_ID, offer to re-bootstrap instead of
+                  // failing later with a confusing PermissionDenied.
+                  const projectId = yield* getEnvRedacted('NEBIUS_PROJECT_ID')
+                  const fromEnv = yield* readSaKeyEnv()
+                  if (projectId != null && fromEnv == null) {
+                    const stored = yield* credentialStore.read<NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY)
+                    if (stored != null && stored.projectId !== Redacted.value(projectId)) {
+                      const action = yield* Clank.select({
+                        message: `The stored service-account key is for project ${stored.projectId}, but NEBIUS_PROJECT_ID is ${Redacted.value(projectId)}.`,
+                        options: [
+                          {
+                            value: 'keep' as const,
+                            label: 'Use the existing key',
+                            hint: 'the SA must already have access to the new project',
+                          },
+                          {
+                            value: 'rebootstrap' as const,
+                            label: 'Create a new key for this project',
+                            hint: 'bootstraps a new SA + key + grant',
+                          },
+                        ],
+                      })
+                      if (action === 'rebootstrap') {
+                        yield* bootstrapSaKey(profileName)
+                        return { method: 'sa-key' as const }
+                      }
+                    }
+                  }
                   yield* saTokenMinter.mint(existing.success)
                   return { method: 'sa-key' as const }
                 }

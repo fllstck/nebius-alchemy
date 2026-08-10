@@ -239,6 +239,7 @@ describe('NebiusAuth', () => {
         serviceAccountId: 'serviceaccount-stored',
         keyId: 'publickey-stored',
         privateKey: 'STORED-PEM',
+        projectId: 'project-stored',
       })
 
       const layer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
@@ -284,6 +285,7 @@ describe('NebiusAuth', () => {
         serviceAccountId: 'serviceaccount-stored',
         keyId: 'publickey-stored',
         privateKey: 'STORED-PEM',
+        projectId: 'project-stored',
       })
 
       const layer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
