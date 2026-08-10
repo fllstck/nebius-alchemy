@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { randomUUID } from 'node:crypto'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as ConfigProvider from 'effect/ConfigProvider'
@@ -16,6 +17,7 @@ import {
 } from '../modules/AuthProvider.ts'
 import * as SaToken from '../modules/auth/sa-token.ts'
 import * as SaBootstrap from '../modules/auth/sa-bootstrap.ts'
+import { writeSecureCredentials } from '../modules/auth/secure-credentials.ts'
 
 // ---------------------------------------------------------------------------
 // Layer construction
@@ -30,7 +32,7 @@ const fakeSaTokenMinter = Layer.succeed(SaToken.SaTokenMinter, {
 })
 
 /** Fake SaBootstrap — the interactive bootstrap flow never touches IAM here. */
-const fakeSaBootstrap = Layer.succeed(SaBootstrap.SaBootstrap, {
+const saBootstrapImpl = {
   bootstrap: (_token: Redacted.Redacted<string>) =>
     Effect.succeed({
       serviceAccountId: 'serviceaccount-bootstrapped',
@@ -38,7 +40,10 @@ const fakeSaBootstrap = Layer.succeed(SaBootstrap.SaBootstrap, {
       privateKey: '-----BEGIN PRIVATE KEY-----\nBOOTSTRAPPED\n-----END PRIVATE KEY-----',
     }),
   getProjectName: () => Effect.succeed('Test Project'),
-})
+  deactivateKey: (_token: Redacted.Redacted<string>, _keyId: string) => Effect.succeed(undefined),
+}
+
+const fakeSaBootstrap = Layer.succeed(SaBootstrap.SaBootstrap, saBootstrapImpl)
 
 /**
  * Base layer providing platform dependencies (FileSystem, ChildProcessSpawner,
@@ -434,6 +439,103 @@ describe('NebiusAuth', () => {
         expect(error.message).toContain('no longer supported')
         expect(error.message).toContain('alchemy login')
       }
+    })
+  })
+
+  describe('logout — sa-key deactivates the authorized key server-side', () => {
+    const SA_KEY_PROVIDER = 'nebius-sa-key'
+
+    /** Layer with a capturing deactivateKey. */
+    const logoutLayer = (
+      calls: Array<{ keyId: string }>,
+      deactivate: () => Effect.Effect<void, SaBootstrap.SaBootstrapError>,
+    ) =>
+      Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+        Layer.provide(credentialsLayer),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            Layer.succeed(AuthProviders, {}),
+            baseServices,
+            fakeSaTokenMinter,
+            Layer.succeed(SaBootstrap.SaBootstrap, {
+              ...saBootstrapImpl,
+              deactivateKey: (_token: Redacted.Redacted<string>, keyId: string) =>
+                Effect.sync(() => {
+                  calls.push({ keyId })
+                  return undefined
+                }).pipe(Effect.andThen(deactivate)),
+            }),
+          ),
+        ),
+      )
+
+    /** Logout effect for the sa-key method (provided at the call site). */
+    const logoutSaKey = (profile: string) =>
+      Effect.gen(function* () {
+        const auth = yield* getAuthProvider<NebiusAuthConfig, NebiusResolvedCredentials>(NEBIUS_AUTH_PROVIDER_NAME)
+        return yield* auth.logout(profile, { method: 'sa-key' })
+      })
+
+    test('deactivates the key server-side, then removes local credentials', async () => {
+      const profile = `logout-test-${randomUUID()}`
+      const calls: Array<{ keyId: string }> = []
+      const layer = logoutLayer(calls, () => Effect.succeed(undefined))
+      await Effect.gen(function* () {
+        const store = yield* AlchemyCredentials.CredentialsStore
+        try {
+          yield* writeSecureCredentials(store, profile, SA_KEY_PROVIDER, {
+            type: 'saKey',
+            serviceAccountId: 'serviceaccount-logout',
+            keyId: 'publickey-logout',
+            privateKey: '-----BEGIN PRIVATE KEY-----\nLOGOUT\n-----END PRIVATE KEY-----',
+            projectId: 'project-logout',
+          })
+          yield* logoutSaKey(profile).pipe(Effect.provide(layer))
+
+          // Server-side deactivation was requested with the stored key ID.
+          expect(calls).toEqual([{ keyId: 'publickey-logout' }])
+          // Local material is gone.
+          const remaining = yield* store.read(profile, SA_KEY_PROVIDER)
+          expect(remaining).toBeUndefined()
+        } finally {
+          yield* store.deleteProfile(profile)
+        }
+      }).pipe(Effect.provide(Layer.mergeAll(baseServices, credentialsLayer)), Effect.runPromise)
+    })
+
+    test('deactivation failure falls back to local-only cleanup (no throw)', async () => {
+      const profile = `logout-test-${randomUUID()}`
+      const calls: Array<{ keyId: string }> = []
+      const layer = logoutLayer(calls, () =>
+        Effect.fail(new SaBootstrap.SaBootstrapError({ message: 'SA lacks IAM permission to deactivate' })),
+      )
+      await Effect.gen(function* () {
+        const store = yield* AlchemyCredentials.CredentialsStore
+        try {
+          yield* writeSecureCredentials(store, profile, SA_KEY_PROVIDER, {
+            type: 'saKey',
+            serviceAccountId: 'serviceaccount-logout',
+            keyId: 'publickey-logout',
+            privateKey: '-----BEGIN PRIVATE KEY-----\nLOGOUT\n-----END PRIVATE KEY-----',
+            projectId: 'project-logout',
+          })
+          // Logout must NOT fail even though deactivation errored.
+          yield* logoutSaKey(profile).pipe(Effect.provide(layer))
+          expect(calls).toEqual([{ keyId: 'publickey-logout' }])
+          const remaining = yield* store.read(profile, SA_KEY_PROVIDER)
+          expect(remaining).toBeUndefined()
+        } finally {
+          yield* store.deleteProfile(profile)
+        }
+      }).pipe(Effect.provide(Layer.mergeAll(baseServices, credentialsLayer)), Effect.runPromise)
+    })
+
+    test('with no stored key, still succeeds (local cleanup only)', async () => {
+      const profile = `logout-test-${randomUUID()}`
+      const calls: Array<{ keyId: string }> = []
+      const layer = logoutLayer(calls, () => Effect.succeed(undefined))
+      await Effect.runPromise(logoutSaKey(profile).pipe(Effect.provide(layer)))
+      expect(calls).toEqual([])
     })
   })
 

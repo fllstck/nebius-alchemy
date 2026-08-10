@@ -1,6 +1,6 @@
 import { AuthProviderLayer } from 'alchemy/Auth/AuthProvider'
 import { CredentialsStore } from 'alchemy/Auth/Credentials'
-import { Redacted } from 'effect'
+import { Duration, Redacted } from 'effect'
 import * as Effect from 'effect/Effect'
 import { AuthError, type ConfigureContext } from 'alchemy/Auth/AuthProvider'
 import { retryOnce } from 'alchemy/Auth/Env'
@@ -593,9 +593,41 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       Match.value(config).pipe(
         Match.when({ method: 'env' }, () => Effect.void),
         Match.when({ method: 'sa-key' }, () =>
-          credentialStore
-            .delete(profileName, SA_STORAGE_KEY)
-            .pipe(Effect.andThen(Clank.success('Nebius: SA-key credentials removed.'))),
+          Effect.gen(function* () {
+            // Deactivate the authorized key server-side BEFORE deleting local
+            // material: the stored private key is the only way to mint a token
+            // for this SA, so the deactivation must happen first. Best-effort —
+            // a failure (network, missing IAM grant, already-deactivated key)
+            // only warns and still clears the local credentials.
+            const stored = yield* credentialStore.read<NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY)
+            if (stored) {
+              const key: SaToken.SaKey = {
+                serviceAccountId: stored.serviceAccountId,
+                keyId: stored.keyId,
+                privateKey: stored.privateKey,
+              }
+              yield* saTokenMinter
+                .mint(key)
+                .pipe(
+                  Effect.flatMap((token) => saBootstrap.deactivateKey(Redacted.make(token), stored.keyId)),
+                  Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
+                  Effect.timeoutOrElse({
+                    duration: Duration.seconds(45),
+                    orElse: () => Effect.fail(new AuthError({ message: 'Timed out waiting for key deactivation.' })),
+                  }),
+                  Effect.matchEffect({
+                    onSuccess: () =>
+                      Clank.success(`Nebius: authorized key ${stored.keyId} deactivated on the server.`),
+                    onFailure: (e) =>
+                      Clank.warn(
+                        `Nebius: could not deactivate authorized key ${stored.keyId} on the server (${e.message}). Removing local credentials only.`,
+                      ),
+                  }),
+                )
+            }
+            yield* credentialStore.delete(profileName, SA_STORAGE_KEY)
+            yield* Clank.success('Nebius: SA-key credentials removed.')
+          }),
         ),
         Match.when({ method: 'oauth' }, () =>
           credentialStore

@@ -217,6 +217,46 @@ const createAuthPublicKey = (
       ),
   )
 
+/**
+ * Deactivate an authorized key server-side (the `sa-key` logout path).
+ *
+ * The call is authenticated with a token minted from the key itself (the
+ * RFC 8693 exchange in `sa-token.ts`) — the SA's own token can manage its
+ * authorized keys. The long-running Deactivate operation is polled to
+ * completion so the key is guaranteed deactivated before the caller reports
+ * success. Callers must treat this as best-effort: a failure (including a
+ * deactivated/revoked key, or a missing IAM grant on the SA) is surfaced as
+ * an error so `logout` can fall back to local-only cleanup.
+ */
+const deactivateAuthPublicKey = (
+  token: Redacted.Redacted<string>,
+  keyId: string,
+): Effect.Effect<void, SaBootstrapError> =>
+  Effect.gen(function* () {
+    const transport = tokenTransport(token)
+    const channel = yield* transport.channelFor('nebius.iam.v1.AuthPublicKeyService').pipe(
+      Effect.mapError((e) => new SaBootstrapError({ message: `Unknown IAM service: ${e.message}` })),
+    )
+    try {
+      const client = new NebiusAuthPublicKeyServiceSchema.AuthPublicKeyServiceClient('unused', grpc.credentials.createSsl(), {
+        channelOverride: channel,
+      })
+      const op = yield* callUnary<Operation>(client, (callback) =>
+        client.deactivate(
+          NebiusAuthPublicKeyServiceSchema.DeactivateAuthPublicKeyRequest.fromPartial({ id: keyId }),
+          callback,
+        ),
+      )
+      yield* GrpcUtils.pollOperation(op.id, 'nebius.iam.v1.AuthPublicKeyService', transport, {
+        deadline: new Date(Date.now() + 30_000),
+      }).pipe(
+        Effect.mapError((e) => new SaBootstrapError({ message: `Key deactivation failed: ${e.message}` })),
+      )
+    } finally {
+      channel.close()
+    }
+  })
+
 const createGroup = (
   token: Redacted.Redacted<string>,
   parentId: string,
@@ -428,6 +468,11 @@ export class SaBootstrap extends Context.Service<
       token: Redacted.Redacted<string>,
       projectId: string,
     ) => Effect.Effect<string | undefined, SaBootstrapError>
+    /** Deactivate an authorized key server-side (`sa-key` logout). */
+    readonly deactivateKey: (
+      token: Redacted.Redacted<string>,
+      keyId: string,
+    ) => Effect.Effect<void, SaBootstrapError>
   }
 >()('SaBootstrap') {}
 
@@ -435,4 +480,5 @@ export const SaBootstrapLive = Layer.succeed(SaBootstrap, {
   bootstrap: (token, options): Effect.Effect<SaKey, SaBootstrapError> => bootstrapWithToken(token, options),
   getProjectName: (token, projectId): Effect.Effect<string | undefined, SaBootstrapError> =>
     getProjectNameImpl(token, projectId),
+  deactivateKey: (token, keyId): Effect.Effect<void, SaBootstrapError> => deactivateAuthPublicKey(token, keyId),
 })
