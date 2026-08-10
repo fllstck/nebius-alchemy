@@ -62,6 +62,10 @@ export const NebiusStaticKeyProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusStaticKey>, never, any>)
   : AlchemyProvider.succeed(NebiusStaticKey, {
+  // Nebius does not cascade-delete associated resources on SA delete, so the
+  // SA must outlive every key: nuke deletes static keys before their SA.
+  nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
+
   // precreate issues the key and captures the one-time token in output.
   // This ensures the token is always available for downstream consumers.
   precreate: Effect.fn('Nebius.iam.v1.StaticKey.precreate')(function* ({ id, news, session }) {
@@ -147,10 +151,29 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     return Alchemy.AdoptPolicy.Unowned(attrs)
   }),
 
+  // Static keys are per-service-account, not per-project — enumerate every SA
+  // in the tenant and fan out to each SA's keys. Without this, nuke can't see
+  // static keys and would leak long-lived credentials (default 6 months, up to
+  // 3 years) when it deletes the SA.
   list: Effect.fn('Nebius.iam.v1.StaticKey.list')(function* () {
-    // No project-scoped list — static keys are per-service-account.
-    yield* Effect.void
-    return []
+    const iam = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const projects = yield* iam.project.list(tenantId)
+    const rows = yield* Effect.forEach(projects, (project) =>
+      iam.serviceAccount.list(project.metadata!.id).pipe(
+        Effect.flatMap((sas) =>
+          Effect.forEach(sas, (sa) =>
+            iam.staticKey.list(sa.metadata!.id).pipe(
+              Effect.map((keys) => keys.map((k) => toFriendlyAttributes(k))),
+              Effect.catch(() => Effect.succeed([] as StaticKeySchema.StaticKeyAttributes[])),
+            ),
+          ),
+        ),
+        Effect.map((nested) => nested.flat()),
+        Effect.catch(() => Effect.succeed([] as StaticKeySchema.StaticKeyAttributes[])),
+      ),
+    )
+    return rows.flat()
   }),
 
   // eslint-disable-next-line require-yield

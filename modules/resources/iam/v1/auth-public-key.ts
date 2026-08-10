@@ -51,6 +51,10 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusAuthPublicKey>, never, any>)
   : AlchemyProvider.succeed(NebiusAuthPublicKey, {
+  // The authorized key is a sub-resource of a ServiceAccount — nuke deletes
+  // keys before their SA (Nebius does not cascade-delete associated resources).
+  nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
+
   reconcile: Effect.fn('Nebius.iam.v1.AuthPublicKey.reconcile')(function* ({ id, news, output, session }) {
     news = yield* AuthPublicKeySchema.validateAuthPublicKeyProps(news)
 

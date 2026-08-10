@@ -1,5 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Config from 'effect/Config'
 import * as Schedule from 'effect/Schedule'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -47,6 +48,10 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusGroupMembership>, never, any>)
   : AlchemyProvider.succeed(NebiusGroupMembership, {
+  // GroupMembership is a sub-resource of a Group — nuke deletes memberships
+  // before their group (Nebius does not cascade-delete associated resources).
+  nuke: { dependsOn: ['Nebius.iam.v1.Group'] },
+
   reconcile: Effect.fn('Nebius.iam.v1.GroupMembership.reconcile')(function* ({ id, news, output, session }) {
     news = yield* GroupMembershipSchema.validateGroupMembershipProps(news)
 
@@ -125,8 +130,29 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     return Alchemy.AdoptPolicy.Unowned(attrs)
   }),
 
-  // list is per-group (parentId from props), not project-scoped — return []
-  list: Effect.fn('Nebius.iam.v1.GroupMembership.list')(() => Effect.succeed([])),
+  // GroupMembership is a sub-resource of a Group — enumerate every project
+  // group and list its members. Without this, nuke can't delete memberships
+  // before their group, so group deletes would fail or leak memberships.
+  list: Effect.fn('Nebius.iam.v1.GroupMembership.list')(function* () {
+    const iam = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const projects = yield* iam.project.list(tenantId)
+    const rows = yield* Effect.forEach(projects, (project) =>
+      iam.group.list(project.metadata!.id).pipe(
+        Effect.flatMap((groups) =>
+          Effect.forEach(groups, (group) =>
+            iam.groupMembership.listMembers(group.metadata!.id).pipe(
+              Effect.map((members) => members.map((m) => toFriendlyAttributes(m))),
+              Effect.catch(() => Effect.succeed([] as GroupMembershipSchema.GroupMembershipAttributes[])),
+            ),
+          ),
+        ),
+        Effect.map((nested) => nested.flat()),
+        Effect.catch(() => Effect.succeed([] as GroupMembershipSchema.GroupMembershipAttributes[])),
+      ),
+    )
+    return rows.flat()
+  }),
 
   // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.GroupMembership.diff')(function* ({ news, olds }) {

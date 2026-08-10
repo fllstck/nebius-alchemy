@@ -48,6 +48,10 @@ export const NebiusFederatedCredentialsProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusFederatedCredentials>, never, any>)
   : AlchemyProvider.succeed(NebiusFederatedCredentials, {
+  // Federated credentials belong to a ServiceAccount — nuke deletes them
+  // before their SA.
+  nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
+
   reconcile: Effect.fn('Nebius.iam.v1.FederatedCredentials.reconcile')(function* ({ id, news, output, session }) {
     news = yield* FedCredsSchema.validateFederatedCredentialsProps(news)
 

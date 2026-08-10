@@ -114,6 +114,10 @@ export const NebiusAccessKeyProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusAccessKey>, never, any>)
   : AlchemyProvider.succeed(NebiusAccessKey, {
+  // Access keys are issued to a ServiceAccount — nuke deletes keys before
+  // their SA (Nebius does not cascade-delete associated resources).
+  nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
+
   reconcile: Effect.fn('Nebius.iam.v2.AccessKey.reconcile')(function* ({ id, news, output, session }) {
     // Access keys are largely immutable — only description can be updated.
     // Creation happens HERE (in reconcile) — not in a precreate — because

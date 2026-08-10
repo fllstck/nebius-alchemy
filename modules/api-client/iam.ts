@@ -138,6 +138,10 @@ export interface StaticKeyService {
   readonly get: (
     id: string,
   ) => Effect.Effect.Effect<StaticKey, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  /** List static keys under a service account (nuke enumerates keys per-SA). */
+  readonly list: (
+    parentId: string,
+  ) => Effect.Effect.Effect<StaticKey[], GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
@@ -542,7 +546,19 @@ const makeStaticKeyService = Effect.Effect.gen(function* () {
       return { key, token }
     }) as any
 
-  return { ...withOperationPolling, issue } as unknown as StaticKeyService
+  // list — static keys are per-service-account (not per-project), so nuke
+  // fans out through SAs to enumerate them
+  const list = (
+    parentId: string,
+  ): Effect.Effect.Effect<StaticKey[], GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError> =>
+    GrpcUtils.paginateAll(
+      (req) => raw.list(req),
+      (parentId, pageToken) =>
+        NebiusStaticKeyServiceSchema.ListStaticKeysRequest.fromPartial({ parentId, pageSize: 100, pageToken }),
+      parentId,
+    )
+
+  return { ...withOperationPolling, issue, list } as unknown as StaticKeyService
 })
 
 // -- AccessKey v1 ----------------------------------------------------------

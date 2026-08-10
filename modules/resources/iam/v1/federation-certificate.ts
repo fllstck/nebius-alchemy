@@ -1,5 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -47,6 +48,10 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusFederationCertificate>, never, any>)
   : AlchemyProvider.succeed(NebiusFederationCertificate, {
+  // FederationCertificate is a sub-resource of a Federation — nuke deletes
+  // certificates before their federation.
+  nuke: { dependsOn: ['Nebius.iam.v1.Federation'] },
+
   reconcile: Effect.fn('Nebius.iam.v1.FederationCertificate.reconcile')(function* ({ id, news, output, session }) {
     news = yield* FedCertSchema.validateFederationCertificateProps(news)
 
@@ -107,8 +112,20 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // FederationCertificate list is per-federation, not per-project — sub-resource, return []
-  list: Effect.fn('Nebius.iam.v1.FederationCertificate.list')(() => Effect.succeed([])),
+  // FederationCertificate is a sub-resource of a Federation — enumerate every
+  // tenant federation and list its certificates.
+  list: Effect.fn('Nebius.iam.v1.FederationCertificate.list')(function* () {
+    const iam = yield* IamGrpc.IamGrpcService
+    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const federations = yield* iam.federation.list(tenantId)
+    const rows = yield* Effect.forEach(federations, (federation) =>
+      iam.federationCertificate.listByFederation(federation.metadata!.id).pipe(
+        Effect.map((certs) => certs.map((c) => toFriendlyAttributes(c))),
+        Effect.catch(() => Effect.succeed([] as FedCertSchema.FederationCertificateAttributes[])),
+      ),
+    )
+    return rows.flat()
+  }),
 
   // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.FederationCertificate.diff')(function* ({ news, olds }) {
