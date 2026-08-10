@@ -39,6 +39,7 @@ import * as NebiusAccessPermitServiceSchema from '../../schemas/nebius/iam/v1/ac
 import type { AccessPermit } from '../../schemas/nebius/iam/v1/access_permit.ts'
 import * as NebiusProjectServiceSchema from '../../schemas/nebius/iam/v2/project_service.ts'
 import type { Project } from '../../schemas/nebius/iam/v2/project.ts'
+import * as NebiusTenantServiceSchema from '../../schemas/nebius/iam/v1/tenant_service.ts'
 import type { SaKey } from './sa-token.ts'
 
 /** Raised when bootstrap provisioning fails (bad token, missing grant role, …). */
@@ -323,6 +324,31 @@ const getProjectNameImpl = (
         Effect.map((r) => (r._tag === 'Success' ? r.success.metadata?.name : undefined)),
       )
       return project
+    } finally {
+      channel.close()
+    }
+  })
+
+/** List the user's tenants (token-scoped) — used by the OAuth login. */
+export const listTenants = (
+  token: Redacted.Redacted<string>,
+): Effect.Effect<ReadonlyArray<{ id: string; name: string }>, SaBootstrapError> =>
+  Effect.gen(function* () {
+    const transport = tokenTransport(token)
+    const channel = yield* transport.channelFor('nebius.iam.v1.TenantService').pipe(
+      Effect.mapError((e) => new SaBootstrapError({ message: `Unknown IAM service: ${e.message}` })),
+    )
+    try {
+      const client = new NebiusTenantServiceSchema.TenantServiceClient('unused', grpc.credentials.createSsl(), {
+        channelOverride: channel,
+      })
+      const response = yield* callUnary<NebiusTenantServiceSchema.ListTenantsResponse>(client, (callback) =>
+        client.list(NebiusTenantServiceSchema.ListTenantsRequest.fromPartial({ pageSize: 100 }), callback),
+      )
+      return response.items.map((tenant) => ({
+        id: tenant.metadata?.id ?? '',
+        name: tenant.metadata?.name ?? '',
+      }))
     } finally {
       channel.close()
     }

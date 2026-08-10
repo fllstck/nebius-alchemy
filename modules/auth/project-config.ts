@@ -28,9 +28,16 @@ export const NebiusProjectConfigProviderLive = Layer.effect(
     const oauth = yield* store.read<NebiusAuthProvider.NebiusOAuthCredentials>(profileName, OAUTH_STORAGE_KEY)
     const saKey = yield* store.read<NebiusAuthProvider.NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY)
     const projectId = oauth?.projectId ?? saKey?.projectId
-    if (!projectId) return base
+    const tenantId = oauth?.tenantId
+    if (!projectId && !tenantId) return base
 
-    // env/base first, stored project as the fallback for the missing key.
-    return ConfigProvider.orElse(base, ConfigProvider.fromUnknown({ NEBIUS_PROJECT_ID: projectId }))
+    // env/base first, stored tenant/project as the fallback for missing keys.
+    return ConfigProvider.orElse(
+      base,
+      ConfigProvider.fromUnknown({
+        ...(tenantId ? { NEBIUS_TENANT_ID: tenantId } : {}),
+        ...(projectId ? { NEBIUS_PROJECT_ID: projectId } : {}),
+      }),
+    )
   }),
 )

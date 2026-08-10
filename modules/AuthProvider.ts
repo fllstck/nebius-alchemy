@@ -66,6 +66,7 @@ export type NebiusOAuthCredentials = {
   type: 'oauth'
   accessToken: string
   expiresAt: number
+  tenantId: string
   projectId: string
 }
 
@@ -349,15 +350,30 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         Effect.mapError((e) => new AuthError({ message: `Nebius OAuth login failed: ${e.message}`, cause: e })),
       )
 
-      // Project selection — Cloudflare's `selectAccount` analog.
-      const tenantId = yield* getEnvRedacted('NEBIUS_TENANT_ID')
-      if (!tenantId) {
-        return yield* new AuthError({ message: 'Set NEBIUS_TENANT_ID to list projects.' })
+      // Tenant + project selection — Cloudflare's `selectAccount` analog.
+      // The tenant comes from the token itself, so NEBIUS_TENANT_ID is NOT
+      // required; env only wins later via the project-config fallback.
+      const tenants = yield* SaBootstrap.listTenants(Redacted.make(credentials.accessToken)).pipe(
+        Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
+      )
+      if (tenants.length === 0) {
+        return yield* new AuthError({ message: 'No tenants found for the logged-in user.' })
       }
-      const projects = yield* SaBootstrap.listProjects(
-        Redacted.make(credentials.accessToken),
-        Redacted.value(tenantId),
-      ).pipe(Effect.mapError((e) => new AuthError({ message: e.message, cause: e })))
+      const tenantId =
+        tenants.length === 1
+          ? (tenants[0]!.id)
+          : yield* Clank.select({
+              message: 'Select the tenant',
+              options: tenants.map((t) => ({
+                value: t.id,
+                label: t.name || t.id,
+                hint: t.name ? t.id : undefined,
+              })),
+            })
+
+      const projects = yield* SaBootstrap.listProjects(Redacted.make(credentials.accessToken), tenantId).pipe(
+        Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
+      )
       if (projects.length === 0) {
         return yield* new AuthError({ message: 'No projects found for the logged-in user.' })
       }
@@ -374,6 +390,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         type: 'oauth',
         accessToken: credentials.accessToken,
         expiresAt: credentials.expiresAt,
+        tenantId,
         projectId,
       })
       yield* Clank.success(`Nebius: logged in. Project: ${projectId}`)

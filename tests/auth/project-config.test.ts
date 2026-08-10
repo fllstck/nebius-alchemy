@@ -43,6 +43,7 @@ const oauthStored = (projectId: string) => ({
   type: 'oauth',
   accessToken: 't',
   expiresAt: Date.now() + 60_000,
+  tenantId: 'tenant-from-login',
   projectId,
 })
 
