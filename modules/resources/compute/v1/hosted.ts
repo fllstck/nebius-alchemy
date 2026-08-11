@@ -26,7 +26,7 @@ import * as AlchemyNamespace from 'alchemy/Namespace'
 import * as Bundle from 'alchemy/Bundle'
 import * as Output from 'alchemy/Output'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
-import { S3Client } from '@bradenmacdonald/s3-lite-client'
+import { S3Client, S3Errors } from '@bradenmacdonald/s3-lite-client'
 
 import * as Iam from '../../iam/index.ts'
 import * as Storage from '../../storage/v1/index.ts'
@@ -154,7 +154,48 @@ const toBytes = (content: string | Uint8Array<ArrayBufferLike>): Uint8Array<Arra
 
 const sha256Hex = (data: string | Uint8Array): string => createHash('sha256').update(data).digest('hex')
 
-const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+const messageOf = (error: unknown): string => {
+  // Walk the cause chain (Effect.tryPromise wraps the real rejection in a
+  // generic UnknownException whose cause holds the actual S3 error).
+  const parts: string[] = []
+  let current: unknown = error
+  for (let i = 0; i < 5 && current !== undefined && current !== null; i++) {
+    if (current instanceof Error) {
+      parts.push(current.message)
+      current = (current as { cause?: unknown }).cause
+    } else if (typeof current === 'object') {
+      parts.push(JSON.stringify(current))
+      break
+    } else if (
+      typeof current === 'string' ||
+      typeof current === 'number' ||
+      typeof current === 'boolean' ||
+      typeof current === 'bigint' ||
+      typeof current === 'symbol'
+    ) {
+      parts.push(String(current))
+      break
+    } else {
+      break
+    }
+  }
+  return (
+    parts.filter((part) => part.length > 0 && part !== 'An error occurred in Effect.tryPromise').join(' → ') ||
+    (typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error))
+  )
+}
+
+/**
+ * Transient S3 failures worth retrying: IAM grants are eventually-consistent
+ * on Nebius (AccessDenied on a just-granted key is common in the same deploy),
+ * plus 5xx and network errors. 4xx (except 403) are permanent.
+ */
+const isTransientS3Error = (error: unknown): boolean => {
+  if (error instanceof S3Errors.ServerError) {
+    return error.statusCode === 403 || error.statusCode >= 500
+  }
+  return true
+}
 
 /** Deterministic AccessKey logical-id → physical-name derivation (mirrors the AccessKey provider). */
 const hostedRuntimeKeyLogicalId = (id: string) => `${id}HostedRuntimeKey`
@@ -724,12 +765,17 @@ export const uploadHostedArtifacts = Effect.fn('uploadHostedArtifacts')(function
 
   const put = (key: string, data: string | Uint8Array<ArrayBufferLike>) =>
     Effect.tryPromise(() => client.putObject(key, toBytes(data), { bucketName })).pipe(
-      Effect.catch((error: unknown) =>
-        Effect.fail(
-          new HostedRuntimeError({
-            message: `S3 upload of "${key}" to bucket "${bucketName}" failed: ${messageOf(error)}`,
-          }),
-        ),
+      // The upload grant (AccessPermit) is eventually-consistent — retry
+      // transient 403/5xx/network failures with a bounded backoff.
+      Effect.retry({
+        times: 5,
+        schedule: Schedule.exponential('1 second', 2),
+        while: isTransientS3Error,
+      }),
+      Effect.mapError((error: unknown) =>
+        new HostedRuntimeError({
+          message: `S3 upload of "${key}" to bucket "${bucketName}" failed: ${messageOf(error)}`,
+        }),
       ),
     )
 
@@ -1011,13 +1057,47 @@ export const cleanupHostedRuntime = Effect.fn('cleanupHostedRuntime')(function* 
       output.hostedSecretAccessKey,
     )
     yield* Effect.tryPromise(async () => {
+      // Collect the object keys under the prefix first — the generator can't
+      // be driven from an Effect context.
+      const keys: Array<string> = []
       for await (const obj of client.listObjects({
         prefix: `${output.assetPrefix}/`,
         bucketName: output.hostedBucketName,
       })) {
-        await client.deleteObject(obj.key, { bucketName: output.hostedBucketName })
+        keys.push(obj.key)
       }
-    }).pipe(Effect.ignore)
+      return keys
+    }).pipe(
+      Effect.flatMap((keys) =>
+        Effect.forEach(
+          keys,
+          (key) =>
+            Effect.tryPromise(() => client.deleteObject(key, { bucketName: output.hostedBucketName })).pipe(
+              // Bounded retry on transient 403/5xx/network — the grant may
+              // still be propagating; a silent leak (BucketNotEmpty) is worse
+              // than a wait.
+              Effect.retry({
+                times: 4,
+                schedule: Schedule.spaced('2 seconds'),
+                while: isTransientS3Error,
+              }),
+            ),
+          { concurrency: 'unbounded' },
+        ),
+      ),
+      // Log failures loudly — a silent leak (BucketNotEmpty on the bucket
+      // delete) is worse than a noisy destroy.
+      Effect.tapError((error: unknown) =>
+        Effect.logWarning(
+          `Hosted assets S3 cleanup failed for ${output.hostedBucketName} (${output.assetPrefix}): ${messageOf(error)}`,
+        ),
+      ),
+      Effect.ignore,
+    )
+  } else {
+    yield* Effect.logWarning(
+      `Skipping hosted assets S3 cleanup — missing persisted state (bucket=${output?.hostedBucketName}, prefix=${output?.assetPrefix}, keyId=${output?.hostedAccessKeyId ? 'set' : 'missing'}, secret=${output?.hostedSecretAccessKey ? 'set' : 'missing'})`,
+    )
   }
 
   // 2. Dedicated fetch key — deterministic name lookup, already-gone = success.

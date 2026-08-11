@@ -64,20 +64,30 @@ integrationTest(
   'Nebius.compute.v1.Instance hosted runtime — bundle, boot, serve, clean',
   (stack) =>
     Effect.gen(function* () {
-      // Stage 1: network + subnet + the instance's service account.
-      const { network, subnet, sa } = yield* stack.deploy(
+      // Stage 1: network + subnet + the instance's service account + an
+      // ingress rule so the health probe can reach the hosted port.
+      const { network, subnet, sa, sg } = yield* stack.deploy(
         Effect.gen(function* () {
           const network = yield* Nebius.vpc.Network('HostedTest-Network', {})
           const subnet = yield* Nebius.vpc.Subnet('HostedTest-Subnet', { networkId: network.id })
           const sa = yield* Nebius.iam.ServiceAccount('HostedTest-SA', {
             description: 'hosted runtime test',
           })
-          return { network, subnet, sa }
+          const sg = yield* Nebius.vpc.SecurityGroup('HostedTest-SG', { networkId: network.id })
+          yield* Nebius.vpc.SecurityRule('HostedTest-SG-Rule', {
+            parentId: sg.id,
+            direction: 'INGRESS',
+            protocol: 'TCP',
+            access: 'ALLOW',
+            ingress: { sourceCidrs: ['0.0.0.0/0'], destinationPorts: [3000] },
+          })
+          return { network, subnet, sa, sg }
         }),
       )
       expect(network.id).toBeDefined()
       expect(subnet.id).toBeDefined()
       expect(sa.id).toBeDefined()
+      expect(sg.id).toBeDefined()
 
       // Stage 2: re-declare the deps + the hosted instance (main = fixture).
       process.env.HOSTED_TEST_SUBNET_ID = subnet.id
@@ -89,6 +99,14 @@ integrationTest(
           yield* Nebius.iam.ServiceAccount('HostedTest-SA', {
             description: 'hosted runtime test',
           })
+          const sg = yield* Nebius.vpc.SecurityGroup('HostedTest-SG', { networkId: network.id })
+          yield* Nebius.vpc.SecurityRule('HostedTest-SG-Rule', {
+            parentId: sg.id,
+            direction: 'INGRESS',
+            protocol: 'TCP',
+            access: 'ALLOW',
+            ingress: { sourceCidrs: ['0.0.0.0/0'], destinationPorts: [3000] },
+          })
           const instance = yield* Nebius.compute.Instance(INSTANCE_LOGICAL_ID, {
             serviceAccountId: sa.id,
             resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
@@ -97,7 +115,13 @@ integrationTest(
               managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
             },
             networkInterfaces: [
-              { subnetId: subnet.id, name: 'eth0', publicIpAddress: { static: false } },
+              {
+                subnetId: subnet.id,
+                name: 'eth0',
+                ipAddress: { allocationId: '' },
+                publicIpAddress: { static: false },
+                securityGroups: [{ id: sg.id }],
+              },
             ],
             main: FIXTURE_MAIN,
             port: 3000,
@@ -118,7 +142,7 @@ integrationTest(
       const compute = yield* ComputeGrpc.ComputeGrpcService
       const live = yield* compute.instance.get(instance.id)
       const publicIp = live.status?.networkInterfaces
-        ?.map((networkInterface) => networkInterface.publicIpAddress?.address)
+        ?.map((networkInterface) => networkInterface.publicIpAddress?.address?.split('/')[0])
         .find((address) => address)
       expect(publicIp).toBeDefined()
 

@@ -34,7 +34,7 @@ export default Nebius.compute.Instance(
         attachMode: 'READ_WRITE',
         managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
       },
-      networkInterfaces: [{ subnetId, name: 'eth0' }],
+      networkInterfaces: [{ subnetId, name: 'eth0', ipAddress: { allocationId: '' } }],
       port: 3000,
       // The shipped env file carries this — the program echoes it back so the
       // integration test can assert the env landed on the VM.

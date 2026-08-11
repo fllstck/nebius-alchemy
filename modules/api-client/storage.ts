@@ -4,6 +4,7 @@ import type { Bucket } from '../../schemas/nebius/storage/v1/bucket.ts'
 import * as NebiusTransferServiceSchema from '../../schemas/nebius/storage/v1/transfer_service.ts'
 import type { Transfer } from '../../schemas/nebius/storage/v1/transfer.ts'
 import type { TransferIteration } from '../../schemas/nebius/storage/v1/transfer.ts'
+import { Duration } from '../../schemas/google/protobuf/duration.ts'
 import * as GrpcUtils from './grpc-utils.ts'
 import { NebiusGrpcTransport } from './GrpcTransport.ts'
 import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata.ts'
@@ -112,7 +113,14 @@ export const StorageGrpcServiceLive = Effect.Layer.effect(
           NebiusBucketServiceSchema.GetBucketByNameRequest.fromPartial(req),
         create: (req) => NebiusBucketServiceSchema.CreateBucketRequest.fromPartial(req),
         update: (req) => NebiusBucketServiceSchema.UpdateBucketRequest.fromPartial(req),
-        delete: (id) => NebiusBucketServiceSchema.DeleteBucketRequest.fromPartial({ id }),
+        delete: (id) =>
+          NebiusBucketServiceSchema.DeleteBucketRequest.fromPartial({
+            id,
+            // Zero ttl = delete an Active bucket instantly (the API default is a
+            // long purge window whose operation blocks the deploy for ~10 min).
+            // IaC destroy semantics: release the bucket + its quota immediately.
+            ttl: Duration.fromPartial({}),
+          }),
       },
       // Cast: wrapWithOperationPolling returns WithOperationPolling which has
       // protobuf request types, but BucketService uses simplified inputs

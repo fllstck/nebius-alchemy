@@ -209,7 +209,7 @@ const readBackRunningHash = Effect.fn('readBackRunningHash')(function* ({
   session: { note(message: string): Effect.Effect<void> }
 }): Effect.fn.Return<string | undefined> {
   const publicIp = instance.status?.networkInterfaces
-    ?.map((networkInterface) => networkInterface.publicIpAddress?.address)
+    ?.map((networkInterface) => networkInterface.publicIpAddress?.address?.split('/')[0])
     .find((address) => address)
   if (!publicIp || shippedHash === undefined) return shippedHash
 
