@@ -677,7 +677,7 @@ ${indent(fetchScript, 6)}
 ${indent(unitFile, 6)}
 runcmd:
   - mkdir -p ${appDir}
-  - [bash, -c, 'if [ ! -x /root/.bun/bin/bun ]; then for attempt in 1 2 3 4 5; do curl -fsSL https://bun.sh/install | bash && break; sleep 5; done; fi']
+  - [bash, -c, 'command -v unzip >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y unzip) || true; if [ ! -x /root/.bun/bin/bun ]; then for attempt in 1 2 3 4 5; do curl -fsSL https://bun.sh/install | bash && break; sleep 5; done; fi']
   - systemctl daemon-reload
   - systemctl enable --now ${unitName}.service
 `
