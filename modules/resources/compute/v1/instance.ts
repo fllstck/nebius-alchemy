@@ -14,6 +14,7 @@ import * as ComputeGrpc from '../../../api-client/compute.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as InstanceSchema from './instance.schema.ts'
+import * as Hosted from './hosted.ts'
 import * as Factory from '../../factory.ts'
 
 // ----- RESOURCE TYPES
@@ -64,6 +65,10 @@ export const NebiusInstance: Alchemy.Platform<
   NebiusInstanceRuntimeContext
 > = Alchemy.Platform('Nebius.compute.v1.Instance', {
   createRuntimeContext: AlchemyServer.createHostRuntimeContext('Nebius.compute.v1.Instance'),
+  // Compose the hosted-mode identity (assets bucket + fetch key + grants) as
+  // REAL child resources at plan time when `main` is set. No-op for low-level
+  // instances and inside deployed bundles (see hosted.transformInstanceProps).
+  transformProps: (id, props) => Hosted.transformInstanceProps(id, props),
 })
 
 // ----- HELPERS
@@ -72,14 +77,24 @@ export const NebiusInstance: Alchemy.Platform<
  * Flatten a protobuf {@link NebiusInstanceSchema.Instance} (metadata + spec + status)
  * into {@link InstanceSchema.InstanceAttributes}.
  *
- * Hosted-mode attrs (`runtimeUnitName`, `assetPrefix`, `code.hash`) are provider
- * state, not protobuf fields — threaded via `hostedOverrides` (the same way AWS
- * EC2 returns `roleArn`/`assetPrefix` from provider state).
+ * Hosted-mode attrs (`runtimeUnitName`, `assetPrefix`, `code.hash`, and the
+ * internal `hosted*` cleanup state) are provider state, not protobuf fields —
+ * threaded via `hostedOverrides` (the same way AWS EC2 returns
+ * `roleArn`/`assetPrefix` from provider state).
  */
 const toFriendlyAttributes = (
   rawInstance: NebiusInstanceSchema.Instance,
   hostedOverrides: Partial<
-    Pick<InstanceSchema.InstanceAttributes, 'runtimeUnitName' | 'assetPrefix' | 'code'>
+    Pick<
+      InstanceSchema.InstanceAttributes,
+      | 'runtimeUnitName'
+      | 'assetPrefix'
+      | 'code'
+      | 'hostedBucketName'
+      | 'hostedRegion'
+      | 'hostedAccessKeyId'
+      | 'hostedSecretAccessKey'
+    >
   > = {},
 ): InstanceSchema.InstanceAttributes =>
   ResourceUtils.toFriendlyAttributes<InstanceSchema.InstanceAttributes>({

@@ -226,6 +226,12 @@ export const InstancePropsSchema = Schema.Struct({
    * instance (region-scoped S3 keys).
    */
   bucket: Schema.optional(Schema.String),
+  /**
+   * @internal composed by the hosted-runtime `transformProps` hook (see
+   * `compute/v1/hosted.ts`) — NOT user input. Carries the lazily-declared
+   * assets bucket + identity Outputs (resolved by the engine at apply time).
+   */
+  hosted: Schema.optional(Schema.Unknown),
 })
 
 export type InstanceProps = typeof InstancePropsSchema.Type
@@ -262,6 +268,15 @@ export const InstanceAttributesSchema = Schema.Struct({
   assetPrefix: Schema.optional(Schema.String),
   /** Bundle hash for hosted instances — what the VM is currently running. */
   code: Schema.optional(Schema.Struct({ hash: Schema.String })),
+  // -- @internal hosted-runtime state persisted for the delete lifecycle --
+  /** @internal assets bucket name for hosted artifacts (cleanup S3 objects). */
+  hostedBucketName: Schema.optional(Schema.String),
+  /** @internal assets bucket region (cleanup S3 endpoint). */
+  hostedRegion: Schema.optional(Schema.String),
+  /** @internal upload S3 access key id (cleanup creds). */
+  hostedAccessKeyId: Schema.optional(Schema.String),
+  /** @internal upload S3 secret access key (cleanup creds). */
+  hostedSecretAccessKey: Schema.optional(Schema.String),
 })
 
 export type InstanceAttributes = typeof InstanceAttributesSchema.Type
