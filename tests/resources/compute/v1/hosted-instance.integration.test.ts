@@ -81,6 +81,15 @@ integrationTest(
             access: 'ALLOW',
             ingress: { sourceCidrs: ['0.0.0.0/0'], destinationPorts: [3000] },
           })
+          // Egress: the custom SG replaces the default (which has no egress
+          // rules) — the VM needs outbound HTTPS for bun install + the S3 fetch.
+          yield* Nebius.vpc.SecurityRule('HostedTest-SG-Egress', {
+            parentId: sg.id,
+            direction: 'EGRESS',
+            protocol: 'ANY',
+            access: 'ALLOW',
+            egress: { destinationCidrs: ['0.0.0.0/0'] },
+          })
           return { network, subnet, sa, sg }
         }),
       )
@@ -106,6 +115,15 @@ integrationTest(
             protocol: 'TCP',
             access: 'ALLOW',
             ingress: { sourceCidrs: ['0.0.0.0/0'], destinationPorts: [3000] },
+          })
+          // Egress: the custom SG replaces the default (which has no egress
+          // rules) — the VM needs outbound HTTPS for bun install + the S3 fetch.
+          yield* Nebius.vpc.SecurityRule('HostedTest-SG-Egress', {
+            parentId: sg.id,
+            direction: 'EGRESS',
+            protocol: 'ANY',
+            access: 'ALLOW',
+            egress: { destinationCidrs: ['0.0.0.0/0'] },
           })
           const instance = yield* Nebius.compute.Instance(INSTANCE_LOGICAL_ID, {
             serviceAccountId: sa.id,

@@ -57,14 +57,15 @@ describe('hosted renderHostedUserData', () => {
     fetchSecretAccessKey: 'secret-fetch-key',
   })
 
-  test('installs bun (skips when present, retries network install)', () => {
-    expect(userData).toContain('if [ ! -x /root/.bun/bin/bun ]; then')
+  test('installs bun (skips when present, retries network install) via runcmd', () => {
+    expect(userData.startsWith('#cloud-config')).toBe(true)
     expect(userData).toContain('curl -fsSL https://bun.sh/install | bash')
     expect(userData).toContain('for attempt in 1 2 3 4 5; do')
+    expect(userData).toContain('if [ ! -x /root/.bun/bin/bun ]; then')
   })
 
-  test('writes a fetch script carrying the manifest flow + the DEDICATED read-only key', () => {
-    expect(userData).toContain(`cat >/usr/local/bin/api-runtime-abc123-fetch.sh <<'FETCH_EOF'`)
+  test('writes the fetch script (write_files) carrying the manifest flow + the DEDICATED read-only key', () => {
+    expect(userData).toContain('- path: /usr/local/bin/api-runtime-abc123-fetch.sh')
     // Manifest is the atomic pointer — the fetch reads it FIRST.
     expect(userData).toContain('manifest = json.loads(get_object(manifest_key))')
     expect(userData).toContain('compute/api-runtime-abc123/manifest.json')
@@ -79,8 +80,8 @@ describe('hosted renderHostedUserData', () => {
     expect(userData).toContain('AWS4-HMAC-SHA256')
   })
 
-  test('installs a systemd unit with unconditional ExecStartPre re-fetch + Restart=always', () => {
-    expect(userData).toContain('cat >/etc/systemd/system/api-runtime-abc123.service')
+  test('writes a systemd unit (write_files) with unconditional ExecStartPre re-fetch + Restart=always', () => {
+    expect(userData).toContain('- path: /etc/systemd/system/api-runtime-abc123.service')
     // ExecStartPre re-fetches on EVERY start — crash restarts self-heal.
     expect(userData).toContain('ExecStartPre=/usr/local/bin/api-runtime-abc123-fetch.sh')
     expect(userData).toContain('Restart=always')
@@ -89,18 +90,18 @@ describe('hosted renderHostedUserData', () => {
     expect(userData).toContain('ExecStart=/root/.bun/bin/bun --no-install /opt/api-runtime-abc123/index.mjs')
     // --no-install: never fall into bun's auto-install path.
     expect(userData).toContain('--no-install')
+    // runcmd enables + starts the service.
     expect(userData).toContain('systemctl enable --now api-runtime-abc123.service')
   })
 
   test('the fetch key appears ONLY in the fetch script, never in the unit or env file', () => {
-    const fetchScriptSection = userData.slice(
-      userData.indexOf("<<'FETCH_EOF'"),
-      userData.indexOf('\nFETCH_EOF\n'),
-    )
-    const unitSection = userData.slice(userData.indexOf("<<'UNIT_EOF'"))
-    expect(fetchScriptSection).toContain('secret-fetch-key')
-    expect(unitSection).not.toContain('secret-fetch-key')
-    expect(unitSection).not.toContain('AKIAFETCHKEY123')
+    const fetchStart = userData.indexOf('- path: /usr/local/bin/api-runtime-abc123-fetch.sh')
+    const unitStart = userData.indexOf('- path: /etc/systemd/system/api-runtime-abc123.service')
+    const fetchSection = userData.slice(fetchStart, unitStart)
+    const rest = userData.slice(unitStart)
+    expect(fetchSection).toContain('secret-fetch-key')
+    expect(rest).not.toContain('secret-fetch-key')
+    expect(rest).not.toContain('AKIAFETCHKEY123')
   })
 })
 
@@ -150,19 +151,26 @@ describe('hosted planHostedUploads', () => {
 })
 
 describe('hosted mergeUserData', () => {
-  const bootstrap = '#!/bin/bash\n# generated\n'
+  const bootstrap = '#cloud-config\nwrite_files: []\nruncmd: []\n'
   const user = '#!/bin/bash\necho hello\n'
 
   test('returns the bootstrap alone when no user data', () => {
     expect(mergeUserData(bootstrap)).toBe(bootstrap)
   })
 
-  test('appends the user bootstrap after the generated one', () => {
+  test('merges via MIME multipart — bootstrap part first, user script part after', () => {
     const merged = mergeUserData(bootstrap, user)
-    expect(merged.startsWith('#!/bin/bash\n# generated')).toBe(true)
-    expect(merged).toContain('# User supplied bootstrap')
-    expect(merged).toContain('echo hello')
-    // The user's shebang is stripped (already one script).
-    expect(merged).not.toContain('#!/bin/bash\necho hello')
+    expect(merged.startsWith('Content-Type: multipart/mixed; boundary="//alchemy-nebius//"')).toBe(true)
+    expect(merged).toContain('Content-Type: text/cloud-config; charset="us-ascii"')
+    expect(merged).toContain('Content-Type: text/x-shellscript; charset="us-ascii"')
+    expect(merged.indexOf('text/cloud-config')).toBeLessThan(merged.indexOf('text/x-shellscript'))
+    expect(merged).toContain(user)
+    expect(merged.trimEnd().endsWith('--//alchemy-nebius//--')).toBe(true)
+  })
+
+  test('a user #cloud-config part keeps the cloud-config content type', () => {
+    const merged = mergeUserData(bootstrap, '#cloud-config\npackages: []\n')
+    expect(merged).toContain('text/cloud-config; charset="us-ascii"')
+    expect(merged).not.toContain('text/x-shellscript')
   })
 })

@@ -495,54 +495,35 @@ export const renderEnvFile = (env: Record<string, unknown>): string =>
 // Cloud-init user-data
 // ---------------------------------------------------------------------------
 
+/** Prepend `spaces` spaces to every line (YAML literal-block indentation). */
+const indent = (text: string, spaces: number): string =>
+  text
+    .split('\n')
+    .map((line) => `${' '.repeat(spaces)}${line}`)
+    .join('\n')
+
 /**
- * Cloud-init user-data for the hosted instance (target image:
- * `ubuntu24.04-driverless` default — cloud-init + systemd + python3 present).
- *
- * First-boot only: installs bun (skip if present; needs outbound HTTPS),
- * writes the fetch script (carrying the DEDICATED read-only key — the key
- * lives ONLY here, never in the program's env), and installs + starts the
- * systemd unit. The unit's `ExecStartPre` re-fetches the manifest + files
- * UNCONDITIONALLY on every start, so code updates (stop→start or a crash
- * restart) converge to the latest manifest without any user-data change.
+ * The fetch script (written to disk by cloud-init): reads the stable manifest
+ * (the atomic pointer) then pulls every content-addressed file + env. Runs on
+ * EVERY service start via `ExecStartPre`, so a restart always converges to the
+ * latest bundle. The dedicated read-only access key is embedded here — and
+ * nowhere else.
  */
-export const renderHostedUserData = ({
-  unitName,
+const renderFetchScript = ({
+  appDir,
   bucketName,
   region,
   manifestKey,
   fetchAccessKeyId,
   fetchSecretAccessKey,
 }: {
-  unitName: string
+  appDir: string
   bucketName: string
   region: Region
   manifestKey: string
   fetchAccessKeyId: string
   fetchSecretAccessKey: string
-}): string => {
-  const appDir = `/opt/${unitName}`
-  return `#!/bin/bash
-set -uo pipefail
-
-export HOME=/root
-
-# bun — skip if present; retry the network install a few times.
-if [ ! -x /root/.bun/bin/bun ]; then
-  for attempt in 1 2 3 4 5; do
-    curl -fsSL https://bun.sh/install | bash && break
-    sleep 5
-  done
-fi
-
-mkdir -p "${appDir}"
-
-# Fetch script: reads the stable manifest (the atomic pointer) then pulls
-# every content-addressed file + env. Runs on EVERY service start via
-# ExecStartPre, so a restart always converges to the latest bundle. The
-# dedicated read-only access key is embedded here — and nowhere else.
-cat >/usr/local/bin/${unitName}-fetch.sh <<'FETCH_EOF'
-#!/usr/bin/env bash
+}): string => `#!/usr/bin/env bash
 set -uo pipefail
 export HOME=/root
 
@@ -631,11 +612,10 @@ with open(os.path.join(app_dir, "env"), "wb") as f:
     f.write(env_data)
 print("fetched bundle", manifest_key)
 PYEOF
-FETCH_EOF
-chmod +x /usr/local/bin/${unitName}-fetch.sh
+`
 
-cat >/etc/systemd/system/${unitName}.service <<'UNIT_EOF'
-[Unit]
+/** The systemd unit for the hosted runtime service. */
+const renderUnitFile = ({ unitName, appDir }: { unitName: string; appDir: string }): string => `[Unit]
 Description=Alchemy Nebius instance runtime ${unitName}
 After=network-online.target
 Wants=network-online.target
@@ -654,19 +634,84 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-UNIT_EOF
+`
 
-systemctl daemon-reload
-systemctl enable --now ${unitName}.service
+/**
+ * Cloud-init user-data for the hosted instance (target image:
+ * `ubuntu24.04-driverless` default) in **`#cloud-config`** format (empirically
+ * verified to run on the Nebius cloud images — plain shell-script user-data
+ * does not reliably execute there).
+ *
+ * First-boot only: writes the fetch script + systemd unit (`write_files`),
+ * installs bun (skip if present; needs outbound HTTPS), and enables + starts
+ * the unit (`runcmd`). The unit's `ExecStartPre` re-fetches the manifest +
+ * files UNCONDITIONALLY on every start, so code updates (stop→start or a
+ * crash restart) converge to the latest manifest without any user-data change.
+ */
+export const renderHostedUserData = ({
+  unitName,
+  bucketName,
+  region,
+  manifestKey,
+  fetchAccessKeyId,
+  fetchSecretAccessKey,
+}: {
+  unitName: string
+  bucketName: string
+  region: Region
+  manifestKey: string
+  fetchAccessKeyId: string
+  fetchSecretAccessKey: string
+}): string => {
+  const appDir = `/opt/${unitName}`
+  const fetchScript = renderFetchScript({ appDir, bucketName, region, manifestKey, fetchAccessKeyId, fetchSecretAccessKey })
+  const unitFile = renderUnitFile({ unitName, appDir })
+  return `#cloud-config
+write_files:
+  - path: /usr/local/bin/${unitName}-fetch.sh
+    permissions: '0755'
+    content: |
+${indent(fetchScript, 6)}
+  - path: /etc/systemd/system/${unitName}.service
+    content: |
+${indent(unitFile, 6)}
+runcmd:
+  - mkdir -p ${appDir}
+  - [bash, -c, 'if [ ! -x /root/.bun/bin/bun ]; then for attempt in 1 2 3 4 5; do curl -fsSL https://bun.sh/install | bash && break; sleep 5; done; fi']
+  - systemctl daemon-reload
+  - systemctl enable --now ${unitName}.service
 `
 }
 
-/** Generated bootstrap user-data first, the user's cloud-init after. */
+/**
+ * Merge the user's cloud-init data into the generated bootstrap using
+ * cloud-init's MIME multipart convention (each part processed by its own
+ * handler): the generated `#cloud-config` bootstrap first, the user's data
+ * after. The user part is `text/cloud-config` when it declares itself, else
+ * `text/x-shellscript`.
+ */
 export const mergeUserData = (hosted: string, userData?: string): string => {
   if (!userData) return hosted
-  return `${hosted}\n\n# User supplied bootstrap\n${userData.replace(/^#!\/bin\/bash\s*/, '')}`
+  const boundary = '//alchemy-nebius//'
+  const userContentType = userData.startsWith('#cloud-config')
+    ? 'text/cloud-config'
+    : 'text/x-shellscript'
+  return [
+    'Content-Type: multipart/mixed; boundary="' + boundary + '"',
+    'MIME-Version: 1.0',
+    '',
+    '--' + boundary,
+    'Content-Type: text/cloud-config; charset="us-ascii"',
+    '',
+    hosted,
+    '--' + boundary,
+    `Content-Type: ${userContentType}; charset="us-ascii"`,
+    '',
+    userData,
+    '--' + boundary + '--',
+    '',
+  ].join('\n')
 }
-
 // ---------------------------------------------------------------------------
 // Upload
 // ---------------------------------------------------------------------------
