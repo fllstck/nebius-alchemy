@@ -52,7 +52,9 @@ const subnetNetworkId = (subnetId: string) =>
 
 /** Poll a URL until it answers 2xx; returns the JSON body. */
 const probeJson = async (url: string): Promise<unknown> => {
-  const deadline = Date.now() + 5 * 60 * 1000
+  // Nebius's SG/network rules can take ~10 min to propagate to a fresh
+  // instance's ENI — probe well past the boot window.
+  const deadline = Date.now() + 15 * 60 * 1000
   let lastError: unknown
   while (Date.now() < deadline) {
     try {
@@ -208,5 +210,5 @@ integrationTest(
       const body = (yield* Effect.promise(() => probeJson(`http://${publicIp}:3000/`))) as Record<string, unknown>
       expect(body).toEqual({ ok: true, echo: 'hello-from-env' })
     }).pipe(safeDestroy(stack, verifyAssetsCleanup)),
-  { timeout: 10 * 60 * 1000 },
+  { timeout: 20 * 60 * 1000 },
 )

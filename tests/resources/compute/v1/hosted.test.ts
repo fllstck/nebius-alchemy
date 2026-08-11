@@ -62,8 +62,9 @@ describe('hosted renderHostedUserData', () => {
     expect(userData).toContain('curl -fsSL https://bun.sh/install | bash')
     expect(userData).toContain('for attempt in 1 2 3 4 5; do')
     expect(userData).toContain('if [ ! -x /root/.bun/bin/bun ]; then')
-    // The bun installer requires unzip — the driverless image doesn't ship it.
+    // The bun installer needs unzip + a set HOME (cloud-init runcmd sets neither).
     expect(userData).toContain('apt-get install -y unzip')
+    expect(userData).toContain('export HOME=/root')
   })
 
   test('writes the fetch script (write_files) carrying the manifest flow + the DEDICATED read-only key', () => {
