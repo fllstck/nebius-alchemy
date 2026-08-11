@@ -6,6 +6,7 @@ import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 import * as AlchemyTags from 'alchemy/Tags'
+import * as AlchemyServer from 'alchemy/Server'
 
 import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
@@ -20,10 +21,50 @@ import * as Factory from '../../factory.ts'
 export type NebiusInstance = Alchemy.Resource<
   'Nebius.compute.v1.Instance',
   InstanceSchema.InstanceProps,
-  InstanceSchema.InstanceAttributes
+  InstanceSchema.InstanceAttributes,
+  never,
+  // Provider requirement: mirror the pre-Platform constructor (Req = Provider<R>),
+  // so `yield* Instance(...)` inside a stack keeps its provider requirement
+  // (discharged by `Nebius.providers()`) instead of collapsing to `undefined`.
+  AlchemyProvider.Provider<NebiusInstance>
 >
 
-export const NebiusInstance = Alchemy.Resource<NebiusInstance>('Nebius.compute.v1.Instance')
+/**
+ * Services the bundled hosted program (the `impl` passed to the constructor
+ * alongside `main`) may require.
+ *
+ * - `ServerHost` — `host.run`/`serve` loops; wired automatically by `Platform`
+ *   for host runtime contexts.
+ * - `Stack` / `Stage` — provided in the bundle bootstrap from the shipped
+ *   `ALCHEMY_STACK_NAME` / `ALCHEMY_STAGE` env (mirrors the AWS EC2 bootstrap).
+ *
+ * Nebius API config/credentials are deliberately NOT platform services: the
+ * deploy-side `NebiusCredentials` service resolves via `AlchemyProfile`/auth
+ * providers that don't exist on the VM. Bundled code reads Nebius config from
+ * the shipped env file (region, project, keys) through the
+ * `reifyBoundConfigProvider` interceptor — `Config.string('NEBIUS_REGION')`
+ * etc. — and calls Nebius APIs via typed bindings (Task 5).
+ */
+export type NebiusInstanceServices = AlchemyServer.ServerHost | Alchemy.Stack | Alchemy.Stage
+
+export type NebiusInstanceShape = Alchemy.Main<NebiusInstanceServices>
+
+export type NebiusInstanceRuntimeContext = AlchemyServer.HostRuntimeContext
+
+/**
+ * Nebius.compute.v1.Instance — ONE resource, two modes: `main` omitted =
+ * low-level primitive (plain CRUD); `main` set = hosted runtime that bundles
+ * the Effect program and runs it on the machine (Effectful Constructor
+ * pattern, mirroring `AWS.EC2.Instance`).
+ */
+export const NebiusInstance: Alchemy.Platform<
+  NebiusInstance,
+  NebiusInstanceServices,
+  NebiusInstanceShape,
+  NebiusInstanceRuntimeContext
+> = Alchemy.Platform('Nebius.compute.v1.Instance', {
+  createRuntimeContext: AlchemyServer.createHostRuntimeContext('Nebius.compute.v1.Instance'),
+})
 
 // ----- HELPERS
 
