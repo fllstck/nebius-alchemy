@@ -19,13 +19,36 @@ import { Nebius, test } from '../../../helpers/stack.ts'
 import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
 import * as ComputeGrpc from '../../../../modules/api-client/compute.ts'
+import * as VpcGrpc from '../../../../modules/api-client/vpc.ts'
 import * as StorageGrpc from '../../../../modules/api-client/storage.ts'
+import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 import * as IamGrpc from '../../../../modules/api-client/iam.ts'
 
 const PROJECT = process.env.NEBIUS_PROJECT_ID ?? ''
 const FIXTURE_MAIN = new URL('../../../fixtures/hosted-instance-program.ts', import.meta.url).href
 const INSTANCE_LOGICAL_ID = 'HostedTestInstance'
 const FETCH_KEY_NAME = `ak-${`${INSTANCE_LOGICAL_ID}HostedRuntimeKey`.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
+
+/**
+ * Optional stable subnet override: Nebius's public-IP path on FRESHLY-created
+ * networks is unreachable for 10-40+ min (SYN dropped). Point the test at a
+ * PRE-EXISTING subnet (e.g. one left over from a previous run, or a
+ * `nebius vpc network create-default`-provisioned network) to bypass the
+ * propagation delay: `NEBIUS_TEST_SUBNET_ID=<id>`.
+ */
+const STABLE_SUBNET_ID = process.env.NEBIUS_TEST_SUBNET_ID
+
+/** Resolve a subnet's network id (for the SG when reusing a stable subnet). */
+const subnetNetworkId = (subnetId: string) =>
+  Effect.gen(function* () {
+    const vpc = yield* VpcGrpc.VpcGrpcService
+    const subnet = yield* vpc.subnet.get(subnetId)
+    const networkId = subnet.spec?.networkId
+    if (!networkId) {
+      return yield* Effect.die(new Error(`Stable subnet ${subnetId} has no networkId`))
+    }
+    return networkId as VpcIds.NetworkId
+  })
 
 /** Poll a URL until it answers 2xx; returns the JSON body. */
 const probeJson = async (url: string): Promise<unknown> => {
@@ -65,15 +88,23 @@ integrationTest(
   (stack) =>
     Effect.gen(function* () {
       // Stage 1: network + subnet + the instance's service account + an
-      // ingress rule so the health probe can reach the hosted port.
-      const { network, subnet, sa, sg } = yield* stack.deploy(
+      // ingress rule so the health probe can reach the hosted port. When
+      // NEBIUS_TEST_SUBNET_ID is set, reuse that STABLE subnet (fresh-network
+      // public-IP propagation is unreliable — see the note above) and only
+      // create the SG + rules on its network.
+      const { networkId, subnet, sa, sg } = yield* stack.deploy(
         Effect.gen(function* () {
-          const network = yield* Nebius.vpc.Network('HostedTest-Network', {})
-          const subnet = yield* Nebius.vpc.Subnet('HostedTest-Subnet', { networkId: network.id })
+          const fresh = STABLE_SUBNET_ID === undefined
+          const networkId = fresh
+            ? (yield* Nebius.vpc.Network('HostedTest-Network', {})).id
+            : yield* subnetNetworkId(STABLE_SUBNET_ID)
+          const subnet = fresh
+            ? yield* Nebius.vpc.Subnet('HostedTest-Subnet', { networkId })
+            : { id: STABLE_SUBNET_ID }
           const sa = yield* Nebius.iam.ServiceAccount('HostedTest-SA', {
             description: 'hosted runtime test',
           })
-          const sg = yield* Nebius.vpc.SecurityGroup('HostedTest-SG', { networkId: network.id })
+          const sg = yield* Nebius.vpc.SecurityGroup('HostedTest-SG', { networkId })
           yield* Nebius.vpc.SecurityRule('HostedTest-SG-Rule', {
             parentId: sg.id,
             direction: 'INGRESS',
@@ -90,25 +121,27 @@ integrationTest(
             access: 'ALLOW',
             egress: { destinationCidrs: ['0.0.0.0/0'] },
           })
-          return { network, subnet, sa, sg }
+          return { networkId, subnet, sa, sg }
         }),
       )
-      expect(network.id).toBeDefined()
+      expect(networkId).toBeDefined()
       expect(subnet.id).toBeDefined()
       expect(sa.id).toBeDefined()
       expect(sg.id).toBeDefined()
 
-      // Stage 2: re-declare the deps + the hosted instance (main = fixture).
+      // Stage 2: re-declare the stack-owned deps + the hosted instance (main = fixture).
       process.env.HOSTED_TEST_SUBNET_ID = subnet.id
       process.env.HOSTED_TEST_SA_ID = sa.id
       const { instance } = yield* stack.deploy(
         Effect.gen(function* () {
-          yield* Nebius.vpc.Network('HostedTest-Network', {})
-          yield* Nebius.vpc.Subnet('HostedTest-Subnet', { networkId: network.id })
+          if (STABLE_SUBNET_ID === undefined) {
+            yield* Nebius.vpc.Network('HostedTest-Network', {})
+            yield* Nebius.vpc.Subnet('HostedTest-Subnet', { networkId })
+          }
           yield* Nebius.iam.ServiceAccount('HostedTest-SA', {
             description: 'hosted runtime test',
           })
-          const sg = yield* Nebius.vpc.SecurityGroup('HostedTest-SG', { networkId: network.id })
+          const sg = yield* Nebius.vpc.SecurityGroup('HostedTest-SG', { networkId })
           yield* Nebius.vpc.SecurityRule('HostedTest-SG-Rule', {
             parentId: sg.id,
             direction: 'INGRESS',

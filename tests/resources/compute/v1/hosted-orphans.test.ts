@@ -65,7 +65,7 @@ const hostedInstanceProps = {
     attachMode: 'READ_WRITE',
     managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
   },
-  networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0' }],
+  networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
 } as const
 
 const hostedInstanceEffect = Effect.gen(function* () {

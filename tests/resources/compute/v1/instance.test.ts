@@ -40,9 +40,9 @@ const validInstanceProps = {
   resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
   bootDisk: {
     attachMode: 'READ_WRITE',
-    managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
+    managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 } },
   },
-  networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0' }],
+  networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
 }
 
 describe('Nebius.compute.v1.Instance', () => {
@@ -165,6 +165,29 @@ describe('Nebius.compute.v1.Instance', () => {
         SchemaModule.validateInstanceProps({
           ...validInstanceProps,
           bootDisk: { attachMode: 'READ_WRITE' },
+        }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects a boot disk smaller than the 64 GiB floor (hangs provisioning)', async () => {
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          bootDisk: {
+            attachMode: 'READ_WRITE',
+            managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
+          },
+        }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects a network interface without ipAddress (the API requires it)', async () => {
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0' }],
         }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')

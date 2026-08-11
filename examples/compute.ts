@@ -46,7 +46,8 @@ export default Alchemy.Stack(
   { providers: Nebius.providers(), state: Alchemy.localState() },
   Effect.gen(function* () {
     const imageFamily = yield* Config.string('IMAGE_FAMILY').pipe(Config.withDefault('ubuntu24.04-driverless'))
-    const diskSizeGb = yield* Config.string('DISK_SIZE_GB').pipe(Config.withDefault('10'), Config.map(Number))
+    // Nebius enforces a 64 GiB boot-disk floor (smaller disks hang provisioning).
+    const diskSizeGb = yield* Config.string('DISK_SIZE_GB').pipe(Config.withDefault('64'), Config.map(Number))
     const subnetId = yield* Config.string('SUBNET_ID')
     const serviceAccountId = yield* Config.string('SERVICE_ACCOUNT_ID')
 
@@ -73,7 +74,7 @@ export default Alchemy.Stack(
         existingDisk: { id: disk.id },
         attachMode: 'READ_WRITE',
       },
-      networkInterfaces: [{ subnetId, name: 'eth0' }],
+      networkInterfaces: [{ subnetId, name: 'eth0', ipAddress: { allocationId: '' } }],
       preemptible: { onPreemption: 'STOP' },
     })
 

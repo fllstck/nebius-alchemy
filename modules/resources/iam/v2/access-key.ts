@@ -1,6 +1,7 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
+import * as Schema from 'effect/Schema'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -8,10 +9,20 @@ import * as AlchemyDiff from 'alchemy/Diff'
 import * as NebiusAccessKeyV2Schema from '../../../../schemas/nebius/iam/v2/access_key.ts'
 import * as NebiusAccessSchema from '../../../../schemas/nebius/iam/v1/access.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
+import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as AccessKeySchema from './access-key.schema.ts'
 import * as Factory from '../../factory.ts'
+
+/** A deterministic-name access key already exists (orphan from an interrupted destroy). */
+export class AccessKeyCollisionError extends Schema.TaggedErrorClass<AccessKeyCollisionError>()(
+  'AccessKeyCollisionError',
+  {
+    keyName: Schema.String,
+    message: Schema.String,
+  },
+) {}
 import * as ServiceAccountSchema from '../v1/service-account.schema.ts'
 
 // ----- RESOURCE TYPES
@@ -80,20 +91,37 @@ const create = Effect.fn('Nebius.iam.v2.AccessKey.create')(function* ({
 
   // Step 1: Create the access key (operation-backed, polls internally).
   yield* session.note(`Creating access key for service account (${news.serviceAccountId})`)
-  const key = yield* iamGrpcService.accessKeyV2.create({
-    metadata: {
-      parentId,
-      name,
-    },
-    spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
-      account: NebiusAccessSchema.Account.fromPartial({
-        serviceAccount: { id: news.serviceAccountId },
+  const key = yield* iamGrpcService.accessKeyV2
+    .create({
+      metadata: {
+        parentId,
+        name,
+      },
+      spec: NebiusAccessKeyV2Schema.AccessKeySpec.fromJSON({
+        account: NebiusAccessSchema.Account.fromPartial({
+          serviceAccount: { id: news.serviceAccountId },
+        }),
+        description: news.description || '',
+        ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
+        secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
       }),
-      description: news.description || '',
-      ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
-      secretDeliveryMode: NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(secretDeliveryMode),
-    }),
-  })
+    })
+    .pipe(
+      // Deterministic names (`ak-<logicalId>`) collide with a key orphaned by
+      // an interrupted destroy — fail with a clear remediation instead of the
+      // raw ALREADY_EXISTS gRPC error (the one-time secret is lost, so the key
+      // can't be adopted; it must be deleted manually or by a completed destroy).
+      Effect.catchIf(
+        (e: unknown): e is GrpcUtils.GrpcError => e instanceof GrpcUtils.GrpcError && e.code === 6,
+        () =>
+          new AccessKeyCollisionError({
+            keyName: name,
+            message:
+              `Access key "${name}" already exists — it is an orphan from an interrupted destroy (the one-time secret is lost, so it cannot be adopted). ` +
+              `Delete it (nebius iam v2 access-key delete <id>) or complete the previous destroy.`,
+          }),
+      ),
+    )
 
   // Step 2: Fetch the one-time secret (for non-MYSTERY_BOX modes)
   let secret = ''

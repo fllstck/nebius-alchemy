@@ -85,8 +85,8 @@ const DiskTypeSchema = Schema.Union([
 ])
 
 const ManagedDiskSpecSchema = Schema.Struct({
-  /** Disk size in gibibytes. */
-  sizeGibibytes: Schema.optional(Schema.Finite),
+  /** Disk size in gibibytes. Must be ≥ 64 GiB when set — smaller disks hang provisioning (platform behavior). */
+  sizeGibibytes: Schema.optional(Schema.Finite.check(Validation.isValidBootDiskSizeGibibytes)),
   /** Block size in bytes. Default: 4096. */
   blockSizeBytes: Schema.optional(Schema.Finite),
   /** Disk type determines performance and reliability characteristics. */
@@ -147,18 +147,32 @@ const PublicIPAddressSchema = Schema.Struct({
   static: Schema.Boolean,
 })
 
+/**
+ * The Nebius compute API rejects a network interface without `ipAddress`
+ * (`spec.network_interfaces[0].ip_address: value is required`) — catch it at
+ * validation time with a clear message instead of a raw gRPC rejection.
+ */
+const networkInterfaceValid = Schema.makeFilter((networkInterface: Record<string, unknown>) => {
+  if (networkInterface.ipAddress === undefined) {
+    return {
+      path: ['ipAddress'],
+      issue: 'Network interface requires `ipAddress` (use `{ allocationId: "" }` for auto-allocation) — the API rejects a missing ip_address',
+    }
+  }
+})
+
 const NetworkInterfaceSpecSchema = Schema.Struct({
   /** Subnet ID to attach this interface to. */
   subnetId: Schema.String,
   /** Interface name (truncated to 15 chars inside VM OS). Required by the API. */
   name: Schema.String,
-  /** Private IPv4 address associated with the interface. */
+  /** Private IPv4 address associated with the interface. The API REQUIRES this field (use `{ allocationId: "" }` for auto-allocation). */
   ipAddress: Schema.optional(IPAddressSchema),
   /** Public IPv4 address associated with the interface. */
   publicIpAddress: Schema.optional(PublicIPAddressSchema),
   /** Security group IDs. Empty = default security group. */
   securityGroups: Schema.optional(Schema.Array(SecurityGroupIdSchema)),
-})
+}).check(networkInterfaceValid)
 
 const PreemptibleSchema = Schema.Struct({
   onPreemption: Schema.Literal('STOP'),

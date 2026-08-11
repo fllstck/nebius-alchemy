@@ -49,6 +49,19 @@ export const isValidPort = Schema.makeFilter(
   { title: 'valid port' },
 )
 
+/**
+ * Nebius compute boot disks must be ≥ 64 GiB — smaller disks hang provisioning
+ * and fail with a platform internal error (no cloud-init ever runs). The API
+ * accepts the request; the platform silently stalls. Catch it at validation.
+ */
+export const isValidBootDiskSizeGibibytes = Schema.makeFilter(
+  (n: number) =>
+    n >= 64
+      ? undefined
+      : `Boot disk must be at least 64 GiB, got ${n} GiB — smaller disks hang provisioning (cloud-init never runs)`,
+  { title: 'boot disk size ≥ 64 GiB' },
+)
+
 // ---------------------------------------------------------------------------
 // Shared error
 // ---------------------------------------------------------------------------
