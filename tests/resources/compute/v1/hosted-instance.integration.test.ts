@@ -112,7 +112,12 @@ integrationTest(
             resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
             bootDisk: {
               attachMode: 'READ_WRITE',
-              managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
+              managedDisk: {
+                name: 'boot-disk',
+                // Nebius enforces a 64 GiB boot-disk floor — smaller disks
+                // hang provisioning (cloud-init never runs).
+                spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 },
+              },
             },
             networkInterfaces: [
               {
