@@ -73,6 +73,7 @@ The `agent-patterns/` directory contains concise summaries extracted from the ve
 | `agent-patterns/effect-services.md` | Context.Service, Layer.effect, Layer composition                 |
 | `agent-patterns/alchemy-test-patterns.md` | Alchemy scratch-stack deploy semantics (partial re-deploys DELETE prior resources), staged-deploy pattern, precreate-vs-ref-resolution timing, idempotent deletes |
 | `agent-patterns/alchemy-bindings.md`      | Binding impl patterns: Output passthrough (never inline-resolve), reconcile-create vs precreate, Effect-native Worker entry structure (dev vs remote `main`), shared-env once-per-host dedupe, Effect HTTP gotchas, Node `.ts`-extension imports |
+| `agent-patterns/alchemy-effectful.md`     | Effectful-compute patterns: the `Platform`/Effectful Constructor shape (constructor + provider split), `main` as the low-level↔hosted toggle, RuntimeContext (`run`/`serve`/`exports.program`), bundle→ship→reconcile, phase split (`__ALCHEMY_RUNTIME__` + `ALCHEMY_PHASE`), and applying it to the Nebius Instance (cloud-init + S3 assets + service accounts) |
 
 ## Quick Reference Commands
 
