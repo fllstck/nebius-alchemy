@@ -258,8 +258,14 @@ const makeStorageHttpBinding = <Req, A>(options: {
   ) => (request: Req) => Effect.Effect<A, StorageError, never>
 }) =>
   Effect.gen(function* () {
-    const host = yield* Worker
-    const env = yield* WorkerEnvironment
+    // The ambient host (resolves the construction context's `Self`): the
+    // Nebius instance (default) or a Cloudflare Worker (compat wrapper).
+    const host = yield* Binding.Host
+    // Worker-only runtime env — Option so the instance path doesn't require
+    // the WorkerEnvironment service (the instance reads `process.env`, which
+    // the shipped env file populates via systemd EnvironmentFile).
+    const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+    const env = BindHost.runtimeEnv(host, workerEnv)
 
     return Effect.fn(function* (
       bucket: NebiusBucket,
@@ -268,7 +274,7 @@ const makeStorageHttpBinding = <Req, A>(options: {
     > {
       const BucketName = bucket.name
 
-      if (!globalThis.__ALCHEMY_RUNTIME__) {
+      if (!globalThis.__ALCHEMY_RUNTIME__ && host !== undefined) {
         const region = yield* Effect.orDie(
           Config.string('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION)),
         )
@@ -282,11 +288,23 @@ const makeStorageHttpBinding = <Req, A>(options: {
           bucket.id,
           options.role,
         )
-        yield* BindHost.registerEnvOnce(
-          host,
-          `Nebius.storage.v1.Bucket.${options.capability}`,
-          bindingEnv(BucketName, region, identity),
-        )
+        const envValues = bindingEnv(BucketName, region, identity)
+        if (BindHost.isNebiusInstanceHost(host)) {
+          // Instance host (default): the `{ env }` contract — the reconcile
+          // merges it into the shipped env file (EC2 precedent).
+          yield* BindHost.bindInstanceHostEnv(
+            host,
+            `Nebius.storage.v1.Bucket.${options.capability}`,
+            envValues,
+          )
+        } else if (BindHost.isCloudflareWorkerHost(host)) {
+          // Worker host (compat wrapper): Cloudflare env bindings, once per host.
+          yield* BindHost.registerEnvOnce(
+            host,
+            `Nebius.storage.v1.Bucket.${options.capability}`,
+            envValues,
+          )
+        }
       }
 
       let client: S3Client | undefined

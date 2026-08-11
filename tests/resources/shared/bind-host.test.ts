@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
 import * as Redacted from 'effect/Redacted'
 import type { Worker } from 'alchemy/Cloudflare/Workers'
 import * as BindHost from '../../../modules/resources/shared/bind-host.ts'
@@ -96,6 +97,79 @@ describe('bind-host', () => {
         }),
       )
       expect(calls).toHaveLength(0)
+    })
+  })
+
+  // ── Task 5: host-kind guards + instance-host env registration ───────────
+
+  describe('host-kind guards', () => {
+    test('isNebiusInstanceHost matches Nebius.compute.v1.Instance hosts', () => {
+      expect(BindHost.isNebiusInstanceHost({ Type: 'Nebius.compute.v1.Instance' })).toBe(true)
+      expect(BindHost.isNebiusInstanceHost({ Type: 'Cloudflare.Worker' })).toBe(false)
+      expect(BindHost.isNebiusInstanceHost(undefined)).toBe(false)
+    })
+
+    test('isCloudflareWorkerHost matches Cloudflare.Worker hosts', () => {
+      expect(BindHost.isCloudflareWorkerHost({ Type: 'Cloudflare.Worker' })).toBe(true)
+      expect(BindHost.isCloudflareWorkerHost({ Type: 'Nebius.compute.v1.Instance' })).toBe(false)
+    })
+
+    test('isNebiusBindingHost accepts either host kind', () => {
+      expect(BindHost.isNebiusBindingHost({ Type: 'Nebius.compute.v1.Instance' })).toBe(true)
+      expect(BindHost.isNebiusBindingHost({ Type: 'Cloudflare.Worker' })).toBe(true)
+      expect(BindHost.isNebiusBindingHost({ Type: 'AWS.Lambda.Function' })).toBe(false)
+    })
+  })
+
+  describe('bindInstanceHostEnv', () => {
+    test('registers the { env, policyStatements: [] } contract, unwrapping CF-only markers', async () => {
+      const { host, calls } = makeMockHost()
+      await Effect.runPromise(
+        BindHost.bindInstanceHostEnv(host as never, 'Nebius.storage.GetObject', {
+          NEBIUS_BUCKET_NAME: 'my-bucket',
+          // CF-only decorations resolve to plain values for the env file.
+          NEBIUS_SECRET_ACCESS_KEY: Redacted.make('s3cr3t'),
+          NEBIUS_ENDPOINT_AUTH_TOKEN: BindHost.secret('tok'),
+        }),
+      )
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.sid).toBe('Nebius.storage.GetObject')
+      const data = calls[0]!.data as { env: Record<string, unknown>; policyStatements: never[] }
+      expect(data.policyStatements).toEqual([])
+      expect(data.env.NEBIUS_BUCKET_NAME).toBe('my-bucket')
+      expect(data.env.NEBIUS_SECRET_ACCESS_KEY).toBe('s3cr3t')
+      expect(data.env.NEBIUS_ENDPOINT_AUTH_TOKEN).toBe('tok')
+    })
+
+    test('keeps Output values intact (resolved by the engine at apply time)', async () => {
+      const { host, calls } = makeMockHost()
+      const output = { kind: 'output' } as never
+      await Effect.runPromise(
+        BindHost.bindInstanceHostEnv(host as never, 'sid', {
+          NEBIUS_ACCESS_KEY_ID: output,
+        }),
+      )
+      const data = calls[0]!.data as { env: Record<string, unknown> }
+      expect(data.env.NEBIUS_ACCESS_KEY_ID).toBe(output)
+    })
+  })
+
+  describe('runtimeEnv', () => {
+    const workerEnv = { NEBIUS_ENDPOINT_URL: 'https://worker.example' } as const
+
+    test('uses WorkerEnvironment on a Cloudflare.Worker host', () => {
+      const env = BindHost.runtimeEnv({ Type: 'Cloudflare.Worker' }, Option.some(workerEnv))
+      expect(env.NEBIUS_ENDPOINT_URL).toBe('https://worker.example')
+    })
+
+    test('falls back to process.env on an instance host (shipped env file)', () => {
+      process.env.TEST_NEB = 'vm-value'
+      try {
+        const env = BindHost.runtimeEnv({ Type: 'Nebius.compute.v1.Instance' }, Option.some(workerEnv))
+        expect(env.TEST_NEB).toBe('vm-value')
+      } finally {
+        delete process.env.TEST_NEB
+      }
     })
   })
 })

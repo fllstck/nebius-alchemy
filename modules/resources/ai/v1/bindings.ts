@@ -20,7 +20,7 @@
  */
 import * as Binding from 'alchemy/Binding'
 import * as Output from 'alchemy/Output'
-import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
+import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Schema from 'effect/Schema'
@@ -426,34 +426,45 @@ export interface ChatCompletions extends Binding.Service<
 export const ChatCompletions = Binding.Service<ChatCompletions>('Nebius.ai.v1.Endpoint.ChatCompletions')
 
 /**
- * ChatCompletionsHttp — the Cloudflare Worker implementation layer.
+ * ChatCompletionsHttp — the binding implementation layer (host-agnostic).
  *
- * Deploy-time (CLI): injects `NEBIUS_ENDPOINT_URL` + `NEBIUS_ENDPOINT_AUTH_TOKEN`
- * into the Worker env — once per host (registerEnvOnce). No host identity, no
+ * Hosts: `Nebius.compute.v1.Instance` (default — env flows into the shipped
+ * env file) and `Cloudflare.Worker` (compat wrapper — Cloudflare env
+ * bindings, once per host via registerEnvOnce). No host identity, no
  * AccessPermit, no gRPC (AD8): endpoint auth is a bearer token, so the module
  * is statically workerd-safe — no dynamic import, the bundler has nothing to
  * DCE.
  *
- * Runtime (deployed Worker / `alchemy dev`): reads the injected env off
- * `WorkerEnvironment` and delegates to the fetch client.
+ * Runtime: the env is `WorkerEnvironment` on a Worker, `process.env` on an
+ * instance (populated by the shipped env file).
  */
 export const ChatCompletionsHttp = Layer.effect(
   ChatCompletions,
   Effect.gen(function* () {
-    const host = yield* Worker
-    const env = yield* WorkerEnvironment
+    const host = yield* Binding.Host
+    const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+    const env = BindHost.runtimeEnv(host, workerEnv)
 
     return Effect.fn(function* (
       endpoint: NebiusEndpoint,
     ): Effect.fn.Return<
       (request: ChatCompletionRequest) => Effect.Effect<ChatCompletionsResult, AiError>
     > {
-      if (!globalThis.__ALCHEMY_RUNTIME__) {
-        yield* BindHost.registerEnvOnce(
-          host,
-          'Nebius.ai.v1.Endpoint.ChatCompletions',
-          endpointToEnv(endpoint),
-        )
+      if (!globalThis.__ALCHEMY_RUNTIME__ && host !== undefined) {
+        const envValues = endpointToEnv(endpoint)
+        if (BindHost.isNebiusInstanceHost(host)) {
+          yield* BindHost.bindInstanceHostEnv(
+            host,
+            'Nebius.ai.v1.Endpoint.ChatCompletions',
+            envValues,
+          )
+        } else if (BindHost.isCloudflareWorkerHost(host)) {
+          yield* BindHost.registerEnvOnce(
+            host,
+            'Nebius.ai.v1.Endpoint.ChatCompletions',
+            envValues,
+          )
+        }
       }
 
       // Runtime: resolve env per call — the client is stateless, no memoization

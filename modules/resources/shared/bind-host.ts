@@ -14,8 +14,10 @@
  *   Not part of the package's public namespace surface.
  */
 import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
 import * as Output from 'alchemy/Output'
 import * as Redacted from 'effect/Redacted'
+import type { ResourceLike } from 'alchemy/Resource'
 import { type Worker, type WorkerBinding } from 'alchemy/Cloudflare/Workers'
 
 /**
@@ -127,3 +129,64 @@ export const registerEnvOnce = Effect.fn('registerEnvOnce')(function* (
   for (const name of Object.keys(fresh)) registeredEnvNames.add(`${host.LogicalId}:${name}`)
   yield* bindWorkerEnv(host, sid, fresh)
 })
+
+// ---------------------------------------------------------------------------
+// Host-kind guards + generic env registration (Task 5)
+// ---------------------------------------------------------------------------
+
+/** A host exposing the alchemy `{ env, policyStatements }` bind contract. */
+export interface EnvBindingHost extends ResourceLike {
+  bind: (sid: string, data: { env: Record<string, unknown>; policyStatements: never[] }) => Effect.Effect<void>
+}
+
+/** `Nebius.compute.v1.Instance` — the default binding host (Effectful Constructor runtime). */
+export const isNebiusInstanceHost = (host: unknown): host is EnvBindingHost =>
+  typeof host === 'object' && host !== null && (host as { Type?: unknown }).Type === 'Nebius.compute.v1.Instance'
+
+/** `Cloudflare.Worker` — the compatibility wrapper host. */
+export const isCloudflareWorkerHost = (host: unknown): host is Worker =>
+  typeof host === 'object' && host !== null && (host as { Type?: unknown }).Type === 'Cloudflare.Worker'
+
+/** Any host the Nebius bindings can attach to (instance — default — or Worker). */
+export const isNebiusBindingHost = (host: unknown): host is EnvBindingHost | Worker =>
+  isNebiusInstanceHost(host) || isCloudflareWorkerHost(host)
+
+/**
+ * Unwrap a binding env value to the plain value the INSTANCE env file needs.
+ * Cloudflare-only decorations (the `secret()` marker, Redacted) are resolved
+ * here — the instance's env file is plaintext on the VM, and the reconcile's
+ * `hostedEnv()` merge expects plain values (Outputs resolve at apply).
+ */
+const unwrapForInstance = (value: EnvValue | SecretValue): unknown => {
+  if (isSecretValue(value)) {
+    const inner = value.value
+    return Redacted.isRedacted(inner) ? Redacted.value(inner) : inner
+  }
+  if (Redacted.isRedacted(value)) return Redacted.value(value)
+  return value
+}
+
+/**
+ * Register env bindings on an INSTANCE host (the default path).
+ *
+ * The payload is the alchemy `{ env, policyStatements }` contract (EC2
+ * precedent): the instance reconcile merges `data.env` into the shipped env
+ * file. `policyStatements` is always empty — Nebius authorizes via IAM
+ * AccessPermits, not inline policies. The values are stored with Outputs
+ * intact (resolved by the engine at apply time); the CF-only secret markers
+ * are unwrapped here.
+ */
+export const bindInstanceHostEnv = Effect.fn('bindInstanceHostEnv')(function* (
+  host: EnvBindingHost,
+  sid: string,
+  env: Record<string, EnvValue | SecretValue>,
+): Effect.fn.Return<void> {
+  const plain = Object.fromEntries(Object.entries(env).map(([name, value]) => [name, unwrapForInstance(value)]))
+  yield* host.bind(sid, { env: plain, policyStatements: [] })
+})
+
+/** The generic runtime env source: `WorkerEnvironment` when on a Worker, `process.env` otherwise. */
+export const runtimeEnv = (host: unknown, workerEnv: Option.Option<Readonly<Record<string, unknown>>>): Readonly<Record<string, unknown>> =>
+  isCloudflareWorkerHost(host) && Option.isSome(workerEnv)
+    ? workerEnv.value
+    : process.env

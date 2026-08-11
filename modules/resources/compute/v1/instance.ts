@@ -22,11 +22,22 @@ import * as Factory from '../../factory.ts'
 
 // ----- RESOURCE TYPES
 
+/**
+ * The bind contract an instance exposes to capability bindings (the alchemy
+ * `{ env, policyStatements }` shape — EC2 precedent). `env` flows into the
+ * shipped env file; `policyStatements` stays empty — Nebius authorizes via
+ * IAM AccessPermits, not inline policies.
+ */
+export interface NebiusInstanceBinding {
+  env?: Record<string, unknown>
+  policyStatements?: never[]
+}
+
 export type NebiusInstance = Alchemy.Resource<
   'Nebius.compute.v1.Instance',
   InstanceSchema.InstanceProps,
   InstanceSchema.InstanceAttributes,
-  never,
+  NebiusInstanceBinding,
   // Provider requirement: mirror the pre-Platform constructor (Req = Provider<R>),
   // so `yield* Instance(...)` inside a stack keeps its provider requirement
   // (discharged by `Nebius.providers()`) instead of collapsing to `undefined`.

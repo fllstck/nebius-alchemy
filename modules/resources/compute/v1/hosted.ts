@@ -67,7 +67,7 @@ const DEFAULT_REGION: Region = 'eu-north1'
 
 /** Binding contract accepted by Nebius-hosted runtimes: environment variables injected into the shipped env file. */
 export interface NebiusHostedBinding {
-  env?: Record<string, string>
+  env?: Record<string, unknown>
 }
 
 /**
@@ -924,7 +924,7 @@ const hostedEnv = ({
   userEnv: Record<string, string> | undefined
   bindings: Array<ResourceBinding<NebiusHostedBinding> & { action?: string }>
 }): Record<string, unknown> => {
-  const bindingEnv: Record<string, string> = {}
+  const bindingEnv: Record<string, unknown> = {}
   for (const binding of bindings) {
     if (binding.action === 'delete') continue
     Object.assign(bindingEnv, binding.data?.env)

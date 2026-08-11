@@ -15,9 +15,10 @@ import * as BindingsSchema from '../../../../modules/resources/ai/v1/bindings.sc
 import type { NebiusEndpoint } from '../../../../modules/resources/ai/v1/endpoint.ts'
 import { defaultStreamFrames, startOpenAiMock } from '../../../helpers/openai-mock.ts'
 
-/** The Worker resource's Self service — a mock host satisfies it (runtime tag match). */
+/** The Worker resource's Self service — a mock host satisfies it (both the generic tag `Binding.Host` resolves and the per-type tag). */
 // oxlint-disable-next-line no-explicit-any — mock host satisfies the Worker shape
-const mockSelf = (host: any) => Layer.succeed(Self('Cloudflare.Worker'), host)
+const mockSelf = (host: any) =>
+  Layer.mergeAll(Layer.succeed(Self, host), Layer.succeed(Self('Cloudflare.Worker'), host))
 
 /** Build resolved env for the mock URL. */
 const valuesFor = (mockUrl: string, token = 'test-token'): Bindings.AiEnv => ({
@@ -256,5 +257,40 @@ describe('Nebius.ai.v1 bindings — runtime client', () => {
     } finally {
       mock.stop()
     }
+  })
+
+  test('ChatCompletionsHttp runtime side on an INSTANCE host reads process.env', async () => {
+    const mock = startOpenAiMock()
+    const saved = globalThis.__ALCHEMY_RUNTIME__
+    ;(globalThis as any).__ALCHEMY_RUNTIME__ = true
+    process.env.NEBIUS_ENDPOINT_URL = mock.url
+    process.env.NEBIUS_ENDPOINT_AUTH_TOKEN = 'env-token'
+    try {
+      // No WorkerEnvironment provided — the instance host reads `process.env`
+      // (the shipped env file populates it via systemd EnvironmentFile).
+      const chat = await Effect.runPromise(
+        // oxlint-disable-next-line no-explicit-any
+        (Bindings.ChatCompletions({} as unknown as NebiusEndpoint).pipe(
+          Effect.provide(Bindings.ChatCompletionsHttp),
+          Effect.provide(mockSelf({ Type: 'Nebius.compute.v1.Instance', LogicalId: 'MockInstance' })),
+          // oxlint-disable-next-line no-explicit-any
+        ) as unknown as Effect.Effect<
+          (
+            request: BindingsSchema.ChatCompletionRequest,
+          ) => Effect.Effect<Bindings.ChatCompletionsResult, Bindings.AiError, never>,
+          never,
+          never
+        >),
+      )
+      const result = await Effect.runPromise(chat(simpleRequest()))
+      expect(result.stream).toBe(false)
+      // The env came from process.env, not a WorkerEnvironment layer.
+      expect(mock.requests[0]?.authorization).toBe('Bearer env-token')
+    } finally {
+      ;(globalThis as any).__ALCHEMY_RUNTIME__ = saved
+      delete process.env.NEBIUS_ENDPOINT_URL
+      delete process.env.NEBIUS_ENDPOINT_AUTH_TOKEN
+    }
+    mock.stop()
   })
 })

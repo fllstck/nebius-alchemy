@@ -215,9 +215,10 @@ integrationTest(
 const BIND_KEY = 'bindings/impl-roundtrip.txt'
 const BIND_PAYLOAD = 'through the binding impl'
 
-/** The Worker resource's Self service — the mock host satisfies it. */
+/** The Worker resource's Self service — the mock host satisfies it (both the generic tag `Binding.Host` resolves and the per-type tag). */
 // oxlint-disable-next-line no-explicit-any — mock host satisfies the Worker shape
-const mockSelf = (host: any) => Layer.succeed(Self('Cloudflare.Worker'), host)
+const mockSelf = (host: any) =>
+  Layer.mergeAll(Layer.succeed(Self, host), Layer.succeed(Self('Cloudflare.Worker'), host))
 
 integrationTest(
   test.provider,
