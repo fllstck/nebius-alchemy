@@ -170,4 +170,41 @@ describe('Nebius.compute.v1.Instance', () => {
       expect(result._tag).toBe('PropsValidationError')
     })
   })
+
+  describe('spec stripping (hosted props never reach InstanceSpec.fromJSON)', () => {
+    test('hosted props are removed and the merged user-data is injected', async () => {
+      const spec = Module.hostedSpecInput(
+        {
+          ...validInstanceProps,
+          main: '/app/entry.ts',
+          handler: 'default',
+          port: 8080,
+          env: { FOO: 'bar' },
+          build: { output: { minify: true } },
+          isExternal: false,
+          bucket: 'shared-bucket',
+          hosted: { bucketName: 'x' },
+          cloudInitUserData: 'echo user',
+        } as SchemaModule.InstanceProps,
+        '# generated bootstrap\necho user',
+      )
+      for (const key of ['main', 'handler', 'port', 'env', 'build', 'isExternal', 'bucket', 'hosted']) {
+        expect(key in spec).toBe(false)
+      }
+      // The merged bootstrap (generated first, user's after) is what the API stores.
+      expect(spec.cloudInitUserData).toBe('# generated bootstrap\necho user')
+      // The spec input keeps the low-level fields.
+      expect(spec.serviceAccountId).toBe('sa-abc123')
+      expect(spec.resources).toBeDefined()
+    })
+
+    test('low-level mode keeps the user cloud-init untouched', async () => {
+      const spec = Module.hostedSpecInput(
+        { ...validInstanceProps, cloudInitUserData: 'echo user' } as SchemaModule.InstanceProps,
+        undefined,
+      )
+      expect(spec.cloudInitUserData).toBe('echo user')
+      expect('main' in spec).toBe(false)
+    })
+  })
 })

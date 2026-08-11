@@ -121,37 +121,68 @@ at cold start inside the artifact (builds live clients). Two mechanisms:
   (the host context JSON-serializes on set, `JSON.parse`s on get). Ship
   `ALCHEMY_STACK_NAME` + `ALCHEMY_STAGE` alongside.
 
-## Applying this to the Nebius Instance
+## As-built: the Nebius Instance (modules/resources/compute/v1)
 
-Current `Nebius.compute.v1.Instance` is exactly the low-level half (plain
-Observe→Ensure→Sync CRUD). The hook already exists: `cloudInitUserData` in
-`InstancePropsSchema` — the same mechanism AWS uses (`userData` merged with
-the generated bootstrap). Everything needed ships in
-`alchemy@2.0.0-beta.70`: `Platform` (from `alchemy`), `createHostRuntimeContext`
-(`alchemy/Server`), `Bundle.build`/`virtualEntryPlugin` (`alchemy/Bundle`).
+`Nebius.compute.v1.Instance` is ONE resource, two modes: `main` omitted =
+low-level primitive (plain CRUD); `main` set = hosted runtime that bundles the
+Effect program and runs it on the machine. Constructor + provider split
+(`instance.ts`), support module `hosted.ts` (mirrors `AWS/EC2/hosted.ts`).
 
-Design:
-
-1. **Extend props** with the hosted set: `main?`, `handler?`, `port?`, `env?`,
-   `build?`, `isExternal?` — and surface a constructor on
-   `Platform("Nebius.compute.v1.Instance", { createRuntimeContext:
-   createHostRuntimeContext(...) })`, keeping the current low-level path when
-   `main` is omitted.
-2. **Reconcile in host mode**: bundle + zip, upload bundle + env file to a
-   Nebius S3 bucket (`storage.<region>.nebius.cloud`; region-scoped keys —
-   there's already `Nebius.storage.v1.Bucket`), generate cloud-init user-data
-   (install bun, fetch bundle via S3 keys or pre-signed URL, systemd unit
-   running `bun index.mjs`), merge with `news.cloudInitUserData`.
-3. **Bindings**: contract `{ env, policyStatements }`; instead of an EC2
-   instance profile, attach statements to the instance's `serviceAccountId`
-   (Nebius metadata service mints tokens) and merge env into the shipped env
-   file.
+1. **Constructor** — `Platform("Nebius.compute.v1.Instance", { createRuntimeContext:
+   createHostRuntimeContext(...), transformProps })`. `Services = ServerHost |
+   Stack | Stage` — Nebius config/credentials are NOT platform services (the
+   deploy-side `NebiusCredentials` needs auth providers that don't exist on the
+   VM); bundled code reads `NEBIUS_*` from the shipped env via the
+   `reifyBoundConfigProvider` interceptor and calls APIs via typed bindings.
+   The `NebiusInstance` TYPE keeps `Providers = Provider<R>` so `yield*
+   Instance(...)` in a stack retains its provider requirement (the Platform
+   overload otherwise collapses it to `undefined` and breaks the Stack Req
+   check).
+2. **transformProps** — plan-time composition of the hosted identity as REAL
+   child resources (namespaced under the instance id, `Namespace.push(id)` —
+   the ECS pattern): the per-stack assets bucket (`HostedAssets-<stack>`,
+   shared across instances — duplicate-FQN registration is idempotent), the
+   shared binding identity (`hostIdentity(id)` + `storage.editor` grant for
+   uploads), and a DEDICATED read-only fetch identity (SA + group + membership
+   + AccessKey + `storage.viewer` grant) whose secret lives ONLY in the VM
+   fetch script. Removing the instance orphans all of them (verified: the
+   orphan pass turns every persisted child row into a delete).
+3. **Reconcile (host mode)** — `resolveHostedRuntime` bundles (rolldown via
+   `alchemy/Bundle` + the Nebius bootstrap virtual entry), uploads
+   content-addressed files + env, then a MANIFEST at a stable key written LAST
+   (the atomic pointer — the VM reads the manifest first, so a torn upload is
+   invisible until it lands), and renders cloud-init user-data (install bun;
+   fetch script with the dedicated key doing python3-stdlib SigV4 GETs;
+   systemd unit with `ExecStartPre` re-fetch + `Restart=always`). Hosted props
+   are STRIPPED before `InstanceSpec.fromJSON` (`hostedSpecInput`); the merged
+   user-data goes in as `cloudInitUserData`. Waits for RUNNING (and observed
+   transient states) with progress notes. User-supplied `bucket?` = region
+   check (`BucketRegionMismatch`) + prefix-scoped bucket-policy rules
+   (read-modify-write with resourceVersion retry).
+4. **Restart + read-back (Deviation 1)** — stop→start via the `stopped` spec
+   flag ONLY when `output.code.hash !== runtime.code.hash` (AWS reboots every
+   reconcile; Nebius has no reboot API). The unconditional `ExecStartPre`
+   re-fetch converges the code on start; `Restart=always` self-heals crashes.
+   After restart, `readBackRunningHash` probes `http://<publicIp>:<port>/`
+   (bounded ~2 min): process-up ⟹ the running code IS the shipped hash (the
+   fetch must succeed before bun runs); probe silent ⟹ keep the OLD hash so
+   the next reconcile restarts again. No public IP ⟹ assume converged.
+5. **Bindings (Task 5)** — the storage/AI bindings are host-agnostic via
+   `Binding.Host` (resolves the ambient `Self` tag): the INSTANCE is the
+   default host (payload `{ env, policyStatements: [] }` — the EC2 contract;
+   Nebius authorizes via IAM AccessPermits, not inline policies) and
+   Cloudflare Worker is the compat wrapper (payload `{ bindings }`,
+   `registerEnvOnce`). The reconcile merges `bindings[].data.env` into the
+   shipped env file (`hostedEnv`). Runtime env: `WorkerEnvironment` on a
+   Worker, `process.env` on an instance.
 
 Nebius gotchas vs the AWS reference: no instance-profile role bootstrap (use
-service accounts), no `rebootInstances` (Nebius `start`/`stop`/`update`
-semantics), and `InstanceSpec.fromJSON(news)` must thread the hosted props
-through (hosted fields are platform-level, not spec-level). Host-mode diff:
-`main` presence toggles host mode → replace; code/env changes → update.
+IAM AccessPermits on the identity's group), no `rebootInstances` (Nebius
+`start`/`stop`/`update` semantics), and `InstanceSpec.fromJSON(news)` must NOT
+receive the hosted props (strip them — platform-level, not spec-level).
+Host-mode diff: `main` presence toggles host mode → replace; code/env changes
+→ update. The diff re-bundles at plan time to catch code-only changes (a file
+change with identical props still plans an update when the hash differs).
 
 Two deliberate deviations from the AWS reference (AWS reboots every hosted
 reconcile and replaces on `userData` change):
@@ -164,8 +195,8 @@ reconcile and replaces on `userData` change):
    user-data in place so it replaces; Nebius `cloudInitUserData` IS a spec
    field the update API accepts, so a user cloud-init change updates the
    running instance. (The generated bootstrap user-data stays stable because
-   bundle/env S3 keys are stable under `assetPrefix` — only the object
-   contents change.)
+   the manifest/env object keys are stable under `assetPrefix` — only the
+   object contents change.)
 
 ## Related
 

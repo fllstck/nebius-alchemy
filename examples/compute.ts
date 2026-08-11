@@ -17,7 +17,7 @@
  *   NEBIUS_PROJECT_ID        (required)
  *   SUBNET_ID                (required for Instance)
  *   SERVICE_ACCOUNT_ID       (required for Instance)
- *   IMAGE_FAMILY             (optional)  Default: ubuntu-22-04-lts
+ *   IMAGE_FAMILY             (optional)  Default: ubuntu24.04-driverless
  *   DISK_SIZE_GB             (optional)  Default: 10
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -45,7 +45,7 @@ export default Alchemy.Stack(
   'Compute',
   { providers: Nebius.providers(), state: Alchemy.localState() },
   Effect.gen(function* () {
-    const imageFamily = yield* Config.string('IMAGE_FAMILY').pipe(Config.withDefault('ubuntu-22-04-lts'))
+    const imageFamily = yield* Config.string('IMAGE_FAMILY').pipe(Config.withDefault('ubuntu24.04-driverless'))
     const diskSizeGb = yield* Config.string('DISK_SIZE_GB').pipe(Config.withDefault('10'), Config.map(Number))
     const subnetId = yield* Config.string('SUBNET_ID')
     const serviceAccountId = yield* Config.string('SERVICE_ACCOUNT_ID')

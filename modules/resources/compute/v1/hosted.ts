@@ -630,12 +630,74 @@ export const mergeUserData = (hosted: string, userData?: string): string => {
 // Upload
 // ---------------------------------------------------------------------------
 
+/** One planned S3 write — files + env first, the MANIFEST (atomic pointer) LAST. */
+export interface HostedUploadWrite {
+  key: string
+  content: string | Uint8Array<ArrayBufferLike>
+  /** The atomic pointer object — always the final write of a plan. */
+  manifest: boolean
+}
+
+/** The ordered S3 write plan for a hosted bundle — pure, unit-testable. */
+export interface HostedUploadPlan {
+  writes: Array<HostedUploadWrite>
+  manifest: HostedManifest | undefined
+  envKey: string
+}
+
 /**
- * Upload the bundle files (content-addressed, immutable), the env file
- * (content-addressed), and the MANIFEST (stable key, written LAST — the
- * atomic pointer the VM converges to). Never retries a partial manifest: the
- * fetch reads the manifest first, so a torn upload is invisible until the
- * manifest lands.
+ * Plan the upload: content-addressed bundle files + env, then the manifest at
+ * its STABLE key (`<assetPrefix>/manifest.json`) as the LAST write. The VM
+ * reads the manifest first, so a torn upload is invisible until the manifest
+ * lands — the manifest is the atomic pointer the VM converges to.
+ */
+export const planHostedUploads = ({
+  assetPrefix,
+  files,
+  env,
+}: {
+  assetPrefix: string
+  files: Array<Bundle.BundleFile>
+  env: Record<string, unknown>
+}): HostedUploadPlan => {
+  const writes: Array<HostedUploadWrite> = []
+
+  // 1. Content-addressed files — immutable object keys (hash in the key).
+  const uploaded: Array<{ path: string; key: string; hash: string }> = []
+  for (const file of files) {
+    const key = `${assetPrefix}/files/${file.hash}/${file.path}`
+    writes.push({ key, content: file.content, manifest: false })
+    uploaded.push({ path: file.path, key, hash: file.hash })
+  }
+
+  // 2. Env file — content-addressed too (a stable env key would let a VM
+  //    fetching the OLD manifest observe the NEW env mid-deploy).
+  const envText = renderEnvFile(env)
+  const envKey = `${assetPrefix}/env/${sha256Hex(envText)}`
+  writes.push({ key: envKey, content: envText, manifest: false })
+
+  // 3. Manifest LAST — the atomic pointer (entry + chunks + env).
+  const [entry, ...chunks] = uploaded
+  if (!entry) {
+    return { writes, manifest: undefined, envKey }
+  }
+  const manifest: HostedManifest = {
+    schema: 1,
+    entry,
+    chunks,
+    env: { key: envKey, hash: sha256Hex(envText) },
+  }
+  writes.push({
+    key: `${assetPrefix}/manifest.json`,
+    content: JSON.stringify(manifest, null, 2),
+    manifest: true,
+  })
+  return { writes, manifest, envKey }
+}
+
+/**
+ * Upload the planned writes (files + env, then the manifest LAST — the
+ * atomic pointer the VM converges to).
  */
 export const uploadHostedArtifacts = Effect.fn('uploadHostedArtifacts')(function* ({
   assetPrefix,
@@ -655,6 +717,10 @@ export const uploadHostedArtifacts = Effect.fn('uploadHostedArtifacts')(function
   env: Record<string, unknown>
 }): Effect.fn.Return<{ manifestKey: string; manifest: HostedManifest }, HostedRuntimeError> {
   const client = makeS3Client(region, bucketName, accessKeyId, secretAccessKey)
+  const plan = planHostedUploads({ assetPrefix, files, env })
+  if (!plan.manifest) {
+    return yield* new HostedRuntimeError({ message: 'Hosted bundle produced no entry file' })
+  }
 
   const put = (key: string, data: string | Uint8Array<ArrayBufferLike>) =>
     Effect.tryPromise(() => client.putObject(key, toBytes(data), { bucketName })).pipe(
@@ -667,36 +733,11 @@ export const uploadHostedArtifacts = Effect.fn('uploadHostedArtifacts')(function
       ),
     )
 
-  // 1. Content-addressed files — immutable object keys (hash in the key).
-  const uploaded: Array<{ path: string; key: string; hash: string }> = []
-  for (const file of files) {
-    const key = `${assetPrefix}/files/${file.hash}/${file.path}`
-    yield* put(key, file.content)
-    uploaded.push({ path: file.path, key, hash: file.hash })
+  for (const write of plan.writes) {
+    yield* put(write.key, write.content)
   }
 
-  // 2. Env file — content-addressed too (a stable env key would let a VM
-  //    fetching the OLD manifest observe the NEW env mid-deploy).
-  const envText = renderEnvFile(env)
-  const envHash = sha256Hex(envText)
-  const envKey = `${assetPrefix}/env/${envHash}`
-  yield* put(envKey, envText)
-
-  // 3. Manifest LAST — the atomic pointer (entry + chunks + env).
-  const [entry, ...chunks] = uploaded
-  if (!entry) {
-    return yield* new HostedRuntimeError({ message: 'Hosted bundle produced no entry file' })
-  }
-  const manifest: HostedManifest = {
-    schema: 1,
-    entry,
-    chunks,
-    env: { key: envKey, hash: envHash },
-  }
-  const manifestKey = `${assetPrefix}/manifest.json`
-  yield* put(manifestKey, JSON.stringify(manifest, null, 2))
-
-  return { manifestKey, manifest }
+  return { manifestKey: `${assetPrefix}/manifest.json`, manifest: plan.manifest }
 })
 
 // ---------------------------------------------------------------------------

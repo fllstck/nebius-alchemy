@@ -4,6 +4,7 @@ import {
   quoteEnvValue,
   renderHostedUserData,
   mergeUserData,
+  planHostedUploads,
 } from '../../../../modules/resources/compute/v1/hosted.ts'
 
 const { describe, expect, test } = BunTest
@@ -100,6 +101,51 @@ describe('hosted renderHostedUserData', () => {
     expect(fetchScriptSection).toContain('secret-fetch-key')
     expect(unitSection).not.toContain('secret-fetch-key')
     expect(unitSection).not.toContain('AKIAFETCHKEY123')
+  })
+})
+
+describe('hosted planHostedUploads', () => {
+  const files = [
+    { path: 'index.mjs', content: 'console.log(1)', hash: 'hash-entry' },
+    { path: 'chunk-abc.mjs', content: 'console.log(2)', hash: 'hash-chunk' },
+  ]
+  const env = { FOO: 'bar', PORT: 3000 }
+
+  test('writes the manifest LAST (the atomic pointer)', () => {
+    const { writes, manifest } = planHostedUploads({ assetPrefix: 'compute/unit', files, env })
+    expect(writes.filter((write) => write.manifest)).toHaveLength(1)
+    const manifestIndex = writes.findIndex((write) => write.manifest)
+    expect(manifestIndex).toBe(writes.length - 1)
+    expect(writes[manifestIndex]!.key).toBe('compute/unit/manifest.json')
+    expect(manifest).toBeDefined()
+  })
+
+  test('content-addresses files and env (immutable keys)', () => {
+    const { writes } = planHostedUploads({ assetPrefix: 'compute/unit', files, env })
+    const keys = writes.map((write) => write.key)
+    expect(keys).toContain('compute/unit/files/hash-entry/index.mjs')
+    expect(keys).toContain('compute/unit/files/hash-chunk/chunk-abc.mjs')
+    // Env key embeds the env content hash (stable key would let a VM on the
+    // OLD manifest observe the NEW env mid-deploy).
+    const envWrite = writes[2]!
+    expect(envWrite.key).toMatch(/^compute\/unit\/env\/[0-9a-f]{64}$/)
+    expect(envWrite.content).toBe(renderEnvFile(env))
+  })
+
+  test('manifest lists entry first, then chunks, plus the env key', () => {
+    const { manifest } = planHostedUploads({ assetPrefix: 'compute/unit', files, env })
+    expect(manifest).toEqual({
+      schema: 1,
+      entry: { path: 'index.mjs', key: 'compute/unit/files/hash-entry/index.mjs', hash: 'hash-entry' },
+      chunks: [{ path: 'chunk-abc.mjs', key: 'compute/unit/files/hash-chunk/chunk-abc.mjs', hash: 'hash-chunk' }],
+      env: { key: expect.stringMatching(/^compute\/unit\/env\/[0-9a-f]{64}$/), hash: expect.stringMatching(/^[0-9a-f]{64}$/) },
+    })
+  })
+
+  test('empty file list produces no manifest write', () => {
+    const { writes, manifest } = planHostedUploads({ assetPrefix: 'compute/unit', files: [], env })
+    expect(writes.some((write) => write.manifest)).toBe(false)
+    expect(manifest).toBeUndefined()
   })
 })
 

@@ -125,8 +125,9 @@ const HOSTED_SPEC_KEYS = new Set(['main', 'handler', 'port', 'env', 'build', 'is
 /**
  * The spec INPUT: the user's props minus the hosted props, with the merged
  * cloud-init user-data (generated bootstrap first, user's after) injected.
+ * Exported for unit tests (spec-stripping invariant).
  */
-const hostedSpecInput = (news: InstanceSchema.InstanceProps, userData: string | undefined): Record<string, unknown> => {
+export const hostedSpecInput = (news: InstanceSchema.InstanceProps, userData: string | undefined): Record<string, unknown> => {
   const spec: Record<string, unknown> = { ...news }
   for (const key of HOSTED_SPEC_KEYS) delete spec[key]
   if (userData !== undefined) spec.cloudInitUserData = userData
