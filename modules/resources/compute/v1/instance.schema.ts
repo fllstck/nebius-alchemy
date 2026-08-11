@@ -165,6 +165,19 @@ const PreemptibleSchema = Schema.Struct({
 })
 
 // ---------------------------------------------------------------------------
+// Hosted runtime props (platform-level — not InstanceSpec fields)
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundler configuration for the hosted process entrypoint: rolldown
+ * `input`/`output` overrides plus `alchemy/Bundle` options (`pure`,
+ * `bundleAnalyzer`). The full rolldown option surface isn't mirrored in
+ * Schema — validated as an opaque object (all keys preserved) and consumed
+ * by the hosted runtime module as `Bundle.BundleConfig`.
+ */
+const BundleConfigSchema = Schema.Record(Schema.String, Schema.Unknown)
+
+// ---------------------------------------------------------------------------
 // Instance Props (user input)
 // ---------------------------------------------------------------------------
 
@@ -194,6 +207,25 @@ export const InstancePropsSchema = Schema.Struct({
   hostname: Schema.optional(Schema.String),
   /** Cloud-init user data for instance initialization. */
   cloudInitUserData: Schema.optional(Schema.String),
+  // -- Hosted runtime (platform-level, stripped before InstanceSpec.fromJSON) --
+  /** Module entrypoint for the bundled instance program. When omitted, the instance behaves as a low-level Nebius compute resource. */
+  main: Schema.optional(Schema.String),
+  /** Named export to load from `main`. Default: "default". */
+  handler: Schema.optional(Schema.String),
+  /** Port exposed by the hosted process. Default: 3000. */
+  port: Schema.optional(Schema.Finite.check(Validation.isValidPort)),
+  /** Additional environment variables for the hosted process. */
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  /** Bundler configuration for the hosted process entrypoint. */
+  build: Schema.optional(BundleConfigSchema),
+  /** Skip the virtual-entry wrapper — `main` is the runnable entry itself. */
+  isExternal: Schema.optional(Schema.Boolean),
+  /**
+   * Assets bucket NAME for hosted bundles/env files. Omitted = provider-declared
+   * bucket keyed on the stack id. Must be in the same project/region as the
+   * instance (region-scoped S3 keys).
+   */
+  bucket: Schema.optional(Schema.String),
 })
 
 export type InstanceProps = typeof InstancePropsSchema.Type
@@ -224,6 +256,12 @@ export const InstanceAttributesSchema = Schema.Struct({
     Schema.Literal('DELETING'),
     Schema.Literal('ERROR'),
   ]),
+  /** Deterministic runtime unit name for hosted instances. */
+  runtimeUnitName: Schema.optional(Schema.String),
+  /** Asset prefix for hosted bundles and env files. */
+  assetPrefix: Schema.optional(Schema.String),
+  /** Bundle hash for hosted instances — what the VM is currently running. */
+  code: Schema.optional(Schema.Struct({ hash: Schema.String })),
 })
 
 export type InstanceAttributes = typeof InstanceAttributesSchema.Type

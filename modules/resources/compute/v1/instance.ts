@@ -30,11 +30,21 @@ export const NebiusInstance = Alchemy.Resource<NebiusInstance>('Nebius.compute.v
 /**
  * Flatten a protobuf {@link NebiusInstanceSchema.Instance} (metadata + spec + status)
  * into {@link InstanceSchema.InstanceAttributes}.
+ *
+ * Hosted-mode attrs (`runtimeUnitName`, `assetPrefix`, `code.hash`) are provider
+ * state, not protobuf fields — threaded via `hostedOverrides` (the same way AWS
+ * EC2 returns `roleArn`/`assetPrefix` from provider state).
  */
-const toFriendlyAttributes = (rawInstance: NebiusInstanceSchema.Instance): InstanceSchema.InstanceAttributes =>
+const toFriendlyAttributes = (
+  rawInstance: NebiusInstanceSchema.Instance,
+  hostedOverrides: Partial<
+    Pick<InstanceSchema.InstanceAttributes, 'runtimeUnitName' | 'assetPrefix' | 'code'>
+  > = {},
+): InstanceSchema.InstanceAttributes =>
   ResourceUtils.toFriendlyAttributes<InstanceSchema.InstanceAttributes>({
     rawResource: rawInstance,
     resourceSchema: NebiusInstanceSchema.Instance,
+    overrides: hostedOverrides,
   })
 
 // ----- PROVIDER
