@@ -1,10 +1,38 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Path from 'effect/Path'
+import { NodeFileSystem } from '@effect/platform-node'
 import * as Module from '../../../../modules/resources/compute/v1/instance.ts'
+import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/instance.schema.ts'
 import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
+
+/** Run the provider diff with a custom persisted `output` (default: none). */
+// oxlint-disable-next-line no-explicit-any — test helper bridging Effect.fn's any-captured context
+const runDiffWithOutput = async (
+  provider: { diff?: (input: any) => Effect.Effect<any, any, any> },
+  news: unknown,
+  olds: unknown,
+  output: unknown,
+  // extra layer providers for code-hash diff (FileSystem/Path)
+  ...providers: Array<(effect: Effect.Effect<any, any, any>) => Effect.Effect<any, any, any>>
+): Promise<unknown> => {
+  if (!provider.diff) throw new Error('provider has no diff lifecycle')
+  let effect: Effect.Effect<any, any, any> = provider.diff({
+    id: 'test-id',
+    fqn: 'test',
+    instanceId: 'inst',
+    olds,
+    news,
+    oldBindings: [],
+    newBindings: [],
+    output,
+  })
+  for (const provide of providers) effect = provide(effect)
+  return runEffect(effect)
+}
 
 /** Minimal valid Instance props (all required sub-schemas populated). */
 const validInstanceProps = {
@@ -36,6 +64,81 @@ describe('Nebius.compute.v1.Instance', () => {
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
       expect(await runDiff(svc, { name: 'my-instance' }, { name: 'my-instance' })).toBeUndefined()
+    })
+
+    // ── host-mode diff rules (Task 4) ─────────────────────────────────────
+
+    test('host-mode toggle ON (main added) is a replace', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(svc, { main: '/app/entry.ts' }, {}),
+      ).toEqual({ action: 'replace' })
+    })
+
+    test('host-mode toggle OFF (main removed) is a replace', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(svc, {}, { main: '/app/entry.ts' }),
+      ).toEqual({ action: 'replace' })
+    })
+
+    test('hosted prop changes are in-place updates with stable attrs', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const update = { action: 'update', stables: ['id', 'parentId', 'name'] }
+
+      expect(await runDiff(svc, { main: '/app/a.ts' }, { main: '/app/b.ts' })).toEqual(update)
+      expect(await runDiff(svc, { handler: 'x' }, { handler: 'default' })).toEqual(update)
+      expect(await runDiff(svc, { port: 4000 }, { port: 3000 })).toEqual(update)
+      expect(await runDiff(svc, { env: { FOO: 'bar' } }, { env: {} })).toEqual(update)
+      expect(await runDiff(svc, { build: { output: { minify: true } } }, { build: {} })).toEqual(update)
+    })
+
+    test('user cloud-init change is an update, not a replace (Deviation 2)', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(svc, { cloudInitUserData: 'echo new' }, { cloudInitUserData: 'echo old' }),
+      ).toEqual({ action: 'update', stables: ['id', 'parentId', 'name'] })
+    })
+
+    test('code-only change plans an update when the bundle hash differs', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const { writeFile, rm } = await import('node:fs/promises')
+      const entry = `${process.cwd()}/tests/.hosted-diff-entry.ts`
+      await writeFile(entry, "import * as Effect from 'effect/Effect'\nexport default Effect.succeed({})\n")
+      try {
+        const news = { ...validInstanceProps, main: entry }
+        const olds = { ...validInstanceProps, main: entry }
+        const bundle = await runEffect(
+          Hosted.bundleProgram('test-id', news as never).pipe(
+            Effect.provide(NodeFileSystem.layer),
+            Effect.provide(Path.layer),
+          ),
+        )
+
+        // Same hash as what the VM runs → noop.
+        const noop = await runDiffWithOutput(
+          svc,
+          news,
+          olds,
+          { code: { hash: bundle.hash } },
+          Effect.provide(NodeFileSystem.layer),
+          Effect.provide(Path.layer),
+        )
+        expect(noop).toBeUndefined()
+
+        // Different hash (the VM runs an older bundle) → update.
+        const update = await runDiffWithOutput(
+          svc,
+          news,
+          olds,
+          { code: { hash: 'stale-hash' } },
+          Effect.provide(NodeFileSystem.layer),
+          Effect.provide(Path.layer),
+        )
+        expect(update).toEqual({ action: 'update', stables: ['id', 'parentId', 'name'] })
+      } finally {
+        await rm(entry, { force: true })
+      }
     })
   })
 

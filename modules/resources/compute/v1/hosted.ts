@@ -22,6 +22,7 @@ import type * as PlatformError from 'effect/PlatformError'
 import type * as rolldown from 'rolldown'
 import { createHash } from 'node:crypto'
 import * as Alchemy from 'alchemy'
+import * as AlchemyNamespace from 'alchemy/Namespace'
 import * as Bundle from 'alchemy/Bundle'
 import * as Output from 'alchemy/Output'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
@@ -211,68 +212,78 @@ export const transformInstanceProps = Effect.fn('transformInstanceProps')(functi
   const news = props as InstanceSchema.InstanceProps | undefined
   if (!news?.main) return props
 
-  const stack = yield* Alchemy.Stack
-  const region = (yield* Config.string('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION))) as Region
+  // Scope the composed children under the instance's logical id (the ECS
+  // `transformProps` pattern) so their FQNs can't collide with user
+  // resources, and so removing the instance orphans them as a group.
+  return yield* AlchemyNamespace.push(
+    id,
+    Effect.gen(function* () {
+      const stack = yield* Alchemy.Stack
+      const region = (yield* Config.string('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION))) as Region
 
-  // 1. Assets bucket — provider-declared per-stack bucket unless the user
-  //    supplied one (the "one bucket for all assets" escape hatch).
-  const userBucketName = news.bucket
-  const defaultBucket =
-    userBucketName === undefined
-      ? yield* unrequiring(Storage.Bucket(`HostedAssets-${stack.name}`, {}))
-      : undefined
-  const bucketId = defaultBucket?.id
-  const bucketName = userBucketName ?? defaultBucket!.name
+      // 1. Assets bucket — provider-declared per-stack bucket unless the user
+      //    supplied one (the "one bucket for all assets" escape hatch).
+      //    Keyed on the stack name so every hosted instance in the stack
+      //    shares ONE bucket (idempotent duplicate-FQN registration).
+      const userBucketName = news.bucket
+      const defaultBucket =
+        userBucketName === undefined
+          ? yield* unrequiring(Storage.Bucket(`HostedAssets-${stack.name}`, {}))
+          : undefined
+      const bucketId = defaultBucket?.id
+      const bucketName = userBucketName ?? defaultBucket!.name
 
-  // 2. Shared binding identity — upload creds (+ editor grant on the DEFAULT bucket).
-  const identity = yield* hostIdentity(id)
-  if (bucketId) {
-    yield* grantBucketAccess(`${id}HostedUploadAccess`, identity, bucketId, 'storage.editor')
-  }
+      // 2. Shared binding identity — upload creds (+ editor grant on the DEFAULT bucket).
+      const identity = yield* hostIdentity(id)
+      if (bucketId) {
+        yield* grantBucketAccess(`${id}HostedUploadAccess`, identity, bucketId, 'storage.editor')
+      }
 
-  // 3. Dedicated read-only fetch identity (+ viewer grant on the DEFAULT bucket).
-  const fetchSa = yield* unrequiring(
-    Iam.ServiceAccount(`${id}HostedRuntimeSA`, {
-      description: 'Alchemy hosted-runtime bundle fetch identity (read-only)',
+      // 3. Dedicated read-only fetch identity (+ viewer grant on the DEFAULT bucket).
+      const fetchSa = yield* unrequiring(
+        Iam.ServiceAccount(`${id}HostedRuntimeSA`, {
+          description: 'Alchemy hosted-runtime bundle fetch identity (read-only)',
+        }),
+      )
+      const fetchGroup = yield* unrequiring(Iam.Group(`${id}HostedRuntimeGroup`))
+      yield* unrequiring(
+        Iam.GroupMembership(`${id}HostedRuntimeMembership`, {
+          parentId: fetchGroup.id,
+          memberId: fetchSa.id,
+        }),
+      )
+      const fetchKey = yield* unrequiring(
+        Iam.AccessKey(hostedRuntimeKeyLogicalId(id), {
+          serviceAccountId: fetchSa.id,
+          secretDeliveryMode: 'INLINE',
+        }),
+      )
+      if (bucketId) {
+        yield* unrequiring(
+          Iam.AccessPermit(`${id}HostedFetchAccess`, {
+            parentId: fetchGroup.id,
+            resourceId: bucketId,
+            role: 'storage.viewer',
+          }),
+        )
+      }
+
+      return {
+        ...props,
+        hosted: {
+          bucketName,
+          bucketId,
+          region,
+          hostAccessKeyId: identity.awsAccessKeyId,
+          hostSecretAccessKey: identity.secretAccessKey,
+          hostGroupId: identity.groupId,
+          fetchAccessKeyId: fetchKey.awsAccessKeyId,
+          fetchSecretAccessKey: fetchKey.secretAccessKey,
+          fetchGroupId: fetchGroup.id,
+        } satisfies NebiusHostedCompositionInput,
+      }
     }),
   )
-  const fetchGroup = yield* unrequiring(Iam.Group(`${id}HostedRuntimeGroup`))
-  yield* unrequiring(
-    Iam.GroupMembership(`${id}HostedRuntimeMembership`, {
-      parentId: fetchGroup.id,
-      memberId: fetchSa.id,
-    }),
-  )
-  const fetchKey = yield* unrequiring(
-    Iam.AccessKey(hostedRuntimeKeyLogicalId(id), {
-      serviceAccountId: fetchSa.id,
-      secretDeliveryMode: 'INLINE',
-    }),
-  )
-  if (bucketId) {
-    yield* unrequiring(
-      Iam.AccessPermit(`${id}HostedFetchAccess`, {
-        parentId: fetchGroup.id,
-        resourceId: bucketId,
-        role: 'storage.viewer',
-      }),
-    )
-  }
-
-  return {
-    ...props,
-    hosted: {
-      bucketName,
-      bucketId,
-      region,
-      hostAccessKeyId: identity.awsAccessKeyId,
-      hostSecretAccessKey: identity.secretAccessKey,
-      hostGroupId: identity.groupId,
-      fetchAccessKeyId: fetchKey.awsAccessKeyId,
-      fetchSecretAccessKey: fetchKey.secretAccessKey,
-      fetchGroupId: fetchGroup.id,
-    } satisfies NebiusHostedCompositionInput,
-  }
 })
 
 // ---------------------------------------------------------------------------
