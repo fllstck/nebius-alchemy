@@ -153,6 +153,20 @@ semantics), and `InstanceSpec.fromJSON(news)` must thread the hosted props
 through (hosted fields are platform-level, not spec-level). Host-mode diff:
 `main` presence toggles host mode → replace; code/env changes → update.
 
+Two deliberate deviations from the AWS reference (AWS reboots every hosted
+reconcile and replaces on `userData` change):
+
+1. **Restart only when `code.hash` changes** — EC2 `rebootInstances` runs on
+   every hosted reconcile; on Nebius restart via stop→start (or a systemd
+   unit whose `ExecStartPre` re-fetches the bundle) only when
+   `output.code.hash !== new hash`. Cheaper, and there's no reboot API anyway.
+2. **User-data change is an `update`, not a `replace`** — EC2 can't change
+   user-data in place so it replaces; Nebius `cloudInitUserData` IS a spec
+   field the update API accepts, so a user cloud-init change updates the
+   running instance. (The generated bootstrap user-data stays stable because
+   bundle/env S3 keys are stable under `assetPrefix` — only the object
+   contents change.)
+
 ## Related
 
 - `alchemy-bindings.md` — binding impls, env derivation leniency, D8 provider
