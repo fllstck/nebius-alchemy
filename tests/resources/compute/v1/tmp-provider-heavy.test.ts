@@ -23,9 +23,24 @@ write_files:
   - path: /root/online-marker
     content: |
       online-marker-written
+  - path: /etc/systemd/system/diag-test.service
+    content: |
+      [Unit]
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      WorkingDirectory=/root
+      ExecStart=/usr/bin/python3 -m http.server 3000
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
 runcmd:
-  - [bash, -c, 'export HOME=/root; command -v unzip >/dev/null 2>&1 || (apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y unzip) || true; if [ ! -x /root/.bun/bin/bun ]; then for attempt in 1 2 3 4 5; do curl -fsSL https://bun.sh/install | bash && break; sleep 5; done; fi']
-  - [sh, -c, "cd /root && nohup python3 -m http.server 3000 >/tmp/http.log 2>&1 & echo $! > /tmp/http.pid"]
+  - systemctl daemon-reload
+  - systemctl enable --now diag-test.service
 `
 
 integrationTest(
