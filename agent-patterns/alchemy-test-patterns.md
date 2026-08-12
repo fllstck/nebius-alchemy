@@ -50,6 +50,34 @@ const { key } = yield* stack.deploy(
 )
 ```
 
+Same trap with compute networking (seen live 2026-08-12): a two-deploy test
+that created SG + rules in stage 1 and the instance in stage 2 silently
+DELETED the SG + rules on stage 2 (not re-declared) — the instance stayed
+attached to the now-deleting SG, the SG delete hung on the ENI, and the
+health probe ran to its deadline looking like a "network convergence" issue.
+
+```ts
+// ❌ Bad — deploy #2 deletes the SG + rules, the probe can never succeed.
+const { sg } = yield* stack.deploy(/* SG + ingress + egress */)
+yield* stack.deploy(/* instance referencing sg.id */)
+
+// ✅ Good — the complete set in ONE deploy (or re-declare SG + rules in
+//    stage 2 exactly as stage 1 declared them — what the hosted-instance e2e
+//    does: tests/resources/compute/v1/hosted-instance.integration.test.ts).
+const { instance } = yield* stack.deploy(
+  Effect.gen(function* () {
+    const sg = yield* Nebius.vpc.SecurityGroup('SG', { networkId })
+    yield* Nebius.vpc.SecurityRule('SG-Ingress', { parentId: sg.id, ... })
+    yield* Nebius.vpc.SecurityRule('SG-Egress', { parentId: sg.id, ... })
+    const instance = yield* Nebius.compute.Instance('Instance', {
+      networkInterfaces: [{ subnetId, securityGroups: [{ id: sg.id }], ... }],
+      ...
+    })
+    return { instance }
+  }),
+)
+```
+
 Rules that fall out of this:
 
 1. **Every deploy's effect must contain the complete desired resource set.**
@@ -128,6 +156,28 @@ If integration-test failures look like server-side phantom resources or
 (`Plan: N to create, M to delete`) — a `delete` appearing in a deploy plan
 that shouldn't delete anything is the smoking gun. The failure is almost
 always the test's deploy pattern, not the backend.
+
+## Diagnostic: RUNNING instance, empty serial console, all ports SYN-dropped
+
+When an instance is RUNNING but nothing is ever reachable and the serial
+console is empty, bisect in this order (all three seen live 2026-08-12):
+
+1. **Boot image** — `disk get <id>` and check `status.source_image_id`. A
+   missing source image means a BLANK boot disk: no OS boots, no serial
+   output, no cloud-init, no listener — ports are dropped because NOTHING is
+   listening, not because the network is broken. (CLI-created instances show
+   the image; blank-disk ones don't.)
+2. **SG rules** — `security-rule list --parent-id <sg>`: an empty list means
+   default-deny drops everything. A zero-rule SG on a RUNNING instance is
+   usually a killed test that created the SG but never got to the rules.
+3. **Network age** — freshly-created networks can take 10-40+ min to
+   converge public-IP (1:1 NAT) routing; reuse a stable converged subnet for
+   tests (`NEBIUS_TEST_SUBNET_ID`).
+
+For an apples-to-apples baseline against a CLI smoke test, mirror it through
+the provider with the same spec (SG + rules + instance in ONE deploy, dynamic
+public IP, marker cloud-init) — `tests/resources/compute/v1/instance-minimal-online.test.ts`
+(provider path came online in 91s).
 
 ## Related
 

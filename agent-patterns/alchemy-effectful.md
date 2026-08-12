@@ -198,6 +198,49 @@ reconcile and replaces on `userData` change):
    the manifest/env object keys are stable under `assetPrefix` — only the
    object contents change.)
 
+## Live-run findings (2026-08-12): the e2e "public-IP blocker" was a missing OS
+
+The SLOW_TESTS hosted e2e appeared blocked by a "platform public-IP issue"
+(ports SYN-dropped, empty serial console) for weeks. A direct CLI-vs-provider
+comparison (`instance-minimal-online.test.ts` — the CLI smoke test mirrored
+through the provider: SG + rules + instance in ONE deploy, dynamic public IP,
+marker cloud-init on :8080) proved the provider path is NOT slower
+(**online in 91s**; the CLI path with an identical spec was comparable). The
+real causes, in diagnosis order:
+
+1. **Hosted instances must have a boot image — the provider must default it.**
+   The hosted e2e's instance props had `bootDisk.managedDisk.spec = { type,
+   sizeGibibytes }` with NO `sourceImageId` → Nebius provisions a **blank**
+   boot disk → no OS → no kernel/serial output, cloud-init never runs,
+   nothing listens (every port SYN-dropped). Symptom cluster: instance
+   RUNNING + empty serial console + all ports filtered → check the disk's
+   `status.source_image_id` FIRST (a CLI-created instance shows it; a
+   blank-disk instance doesn't). `hosted.ts`'s comment says "target image:
+   `ubuntu24.04-driverless` default" but nothing wired it up — the provider
+   should resolve the latest public image
+   (`image.getLatestByFamily({ parentId: 'project-<region>public-images',
+   imageFamily })`) and inject `sourceImageId` when absent (the AWS reference
+   defaults the AMI too).
+2. **Fresh-network public-IP convergence is real but secondary.** On
+   freshly-created networks the dynamic public-IP path (1:1 NAT for the
+   `static: false` allocation) can take 10-40+ min to converge — for CLI- AND
+   provider-created instances alike. In this project the default network had
+   been DELETED, so every test's fresh network hit the convergence window;
+   after recreating the default network and letting it sit ~17h, both paths
+   came online in <5 min. Test workaround: reuse a stable converged subnet
+   (`NEBIUS_TEST_SUBNET_ID`); the recreated default network is fine.
+3. **"10+ min hang" was a scratch-stack test bug, not the network.** The
+   first minimal-test draft used two `stack.deploy()` calls; the second
+   deploy DELETED the SG + rules from stage 1 (re-plan semantics — see
+   `alchemy-test-patterns.md`), the SG delete hung on the still-attached ENI,
+   and the probe ran to its deadline. Single deploy fixed it.
+4. **api-client trap (fixed):** `image.getLatestByFamily` was typed as
+   `(parentId, imageFamily)` but `wrapGrpcClient` produces single-request-
+   object methods — the runtime shape is `({ parentId, imageFamily })`. The
+   server silently defaults `parentId` to `project-<region>public-images`, so
+   the failure mode was an empty `imageFamily` in the error detail, not a
+   missing parent.
+
 ## Related
 
 - `alchemy-bindings.md` — binding impls, env derivation leniency, D8 provider
