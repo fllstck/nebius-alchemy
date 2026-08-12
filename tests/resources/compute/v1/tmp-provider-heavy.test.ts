@@ -9,6 +9,7 @@ import { expect } from 'bun:test'
 import { Nebius, test } from '../../../helpers/stack.ts'
 import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
+import { runDiskName } from '../../../helpers/run-token.ts'
 import * as ComputeGrpc from '../../../../modules/api-client/compute.ts'
 import * as Ids from '../../../../modules/resources/compute/v1/ids.ts'
 import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
@@ -23,6 +24,16 @@ write_files:
   - path: /root/online-marker
     content: |
       online-marker-written
+  - path: /usr/local/bin/diag-fetch.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -uo pipefail
+      export HOME=/root
+      export AWS_ACCESS_KEY_ID=NAKIDUMMYKEYDUMMYKEY
+      export AWS_SECRET_ACCESS_KEY=DUMMYSECRETDUMMYSECRET
+      echo fetch-attempt >> /tmp/fetch.log
+      exit 0
   - path: /etc/systemd/system/diag-test.service
     content: |
       [Unit]
@@ -32,6 +43,7 @@ write_files:
       [Service]
       Type=simple
       WorkingDirectory=/root
+      ExecStartPre=/usr/local/bin/diag-fetch.sh
       ExecStart=/usr/bin/python3 -m http.server 3000
       Restart=always
       RestartSec=5
@@ -76,7 +88,7 @@ integrationTest(
             bootDisk: {
               attachMode: 'READ_WRITE',
               managedDisk: {
-                name: 'diag-heavy-boot',
+                name: runDiskName('diag-heavy-boot'),
                 spec: { sizeGibibytes: 64, type: 'NETWORK_SSD', sourceImageId: imageId },
               },
             },

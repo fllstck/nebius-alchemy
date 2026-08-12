@@ -20,6 +20,7 @@ import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
 import * as ComputeGrpc from '../../../../modules/api-client/compute.ts'
 import * as VpcGrpc from '../../../../modules/api-client/vpc.ts'
+import { runDiskName } from '../../../helpers/run-token.ts'
 import * as StorageGrpc from '../../../../modules/api-client/storage.ts'
 import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 import * as IamGrpc from '../../../../modules/api-client/iam.ts'
@@ -166,7 +167,9 @@ integrationTest(
             bootDisk: {
               attachMode: 'READ_WRITE',
               managedDisk: {
-                name: 'boot-disk',
+                // Per-run name — a fixed name collides with the orphan of a
+                // crashed previous run (disk names are unique per project).
+                name: runDiskName('boot-disk'),
                 // Nebius enforces a 64 GiB boot-disk floor — smaller disks
                 // hang provisioning (cloud-init never runs). The image is
                 // REQUIRED (blank disk = no OS); the platform resolves the

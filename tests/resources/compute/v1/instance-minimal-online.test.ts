@@ -27,6 +27,7 @@ import { expect } from 'bun:test'
 import { Nebius, test } from '../../../helpers/stack.ts'
 import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
+import { runDiskName } from '../../../helpers/run-token.ts'
 import * as ComputeGrpc from '../../../../modules/api-client/compute.ts'
 import * as VpcGrpc from '../../../../modules/api-client/vpc.ts'
 import * as Ids from '../../../../modules/resources/compute/v1/ids.ts'
@@ -95,7 +96,7 @@ integrationTest(
             bootDisk: {
               attachMode: 'READ_WRITE',
               managedDisk: {
-                name: 'minimal-online-boot',
+                name: runDiskName('minimal-online-boot'),
                 spec: { sizeGibibytes: 64, type: 'NETWORK_SSD', sourceImageId: imageId },
               },
             },

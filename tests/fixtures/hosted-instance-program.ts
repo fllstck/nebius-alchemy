@@ -16,6 +16,7 @@ import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
 import * as Nebius from '@fllstck/nebius-alchemy'
+import { runDiskName } from '../helpers/run-token.ts'
 
 export default Nebius.compute.Instance(
   'HostedTestInstance',
@@ -33,7 +34,7 @@ export default Nebius.compute.Instance(
       bootDisk: {
         attachMode: 'READ_WRITE',
         managedDisk: {
-          name: 'boot-disk',
+          name: runDiskName('boot-disk'),
           // Nebius enforces a 64 GiB boot-disk floor — smaller disks hang
           // provisioning (cloud-init never runs). The image is REQUIRED
           // (blank disk = no OS); the platform resolves the family. At the VM

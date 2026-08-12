@@ -3,6 +3,7 @@ import { Nebius, test } from '../../../helpers/stack.ts'
 import { expect } from 'bun:test'
 import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
+import { runDiskName } from '../../../helpers/run-token.ts'
 
 integrationTest(test.provider, 'Nebius.compute.v1.Instance lifecycle', (stack) =>
   Effect.gen(function* () {
@@ -20,7 +21,7 @@ integrationTest(test.provider, 'Nebius.compute.v1.Instance lifecycle', (stack) =
           bootDisk: {
             attachMode: 'READ_WRITE',
             managedDisk: {
-              name: 'boot-disk',
+              name: runDiskName('boot-disk'),
               spec: {
                 sizeGibibytes: 64,
                 type: 'NETWORK_SSD',
