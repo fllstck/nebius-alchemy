@@ -35,8 +35,15 @@ export default Nebius.compute.Instance(
         managedDisk: {
           name: 'boot-disk',
           // Nebius enforces a 64 GiB boot-disk floor — smaller disks hang
-          // provisioning (cloud-init never runs).
-          spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 },
+          // provisioning (cloud-init never runs). The image is REQUIRED
+          // (blank disk = no OS); the platform resolves the family. At the VM
+          // these props never hit the API, but plan-side validation still
+          // requires an image, so the fixture stays valid.
+          spec: {
+            type: 'NETWORK_SSD',
+            sizeGibibytes: 64,
+            sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
+          },
         },
       },
       networkInterfaces: [{ subnetId, name: 'eth0', ipAddress: { allocationId: '' } }],

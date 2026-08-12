@@ -63,7 +63,14 @@ const hostedInstanceProps = {
   resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
   bootDisk: {
     attachMode: 'READ_WRITE',
-    managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
+    managedDisk: {
+      name: 'boot-disk',
+      spec: {
+        type: 'NETWORK_SSD',
+        sizeGibibytes: 64,
+        sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
+      },
+    },
   },
   networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
 } as const

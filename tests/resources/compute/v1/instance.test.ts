@@ -5,7 +5,7 @@ import { NodeFileSystem } from '@effect/platform-node'
 import * as Module from '../../../../modules/resources/compute/v1/instance.ts'
 import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/instance.schema.ts'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import { resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -40,7 +40,14 @@ const validInstanceProps = {
   resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
   bootDisk: {
     attachMode: 'READ_WRITE',
-    managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 } },
+    managedDisk: {
+      name: 'boot-disk',
+      spec: {
+        type: 'NETWORK_SSD',
+        sizeGibibytes: 64,
+        sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
+      },
+    },
   },
   networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
 }
@@ -58,12 +65,14 @@ describe('Nebius.compute.v1.Instance', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
-      expect(await runDiff(svc, { name: 'new-instance' }, { name: 'old-instance' })).toEqual({ action: 'replace' })
+      expect(
+        await runDiff(svc, { ...validInstanceProps, name: 'new-instance' }, { ...validInstanceProps, name: 'old-instance' }),
+      ).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
-      expect(await runDiff(svc, { name: 'my-instance' }, { name: 'my-instance' })).toBeUndefined()
+      expect(await runDiff(svc, { ...validInstanceProps, name: 'my-instance' }, { ...validInstanceProps, name: 'my-instance' })).toBeUndefined()
     })
 
     // ── host-mode diff rules (Task 4) ─────────────────────────────────────
@@ -71,14 +80,14 @@ describe('Nebius.compute.v1.Instance', () => {
     test('host-mode toggle ON (main added) is a replace', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
       expect(
-        await runDiff(svc, { main: '/app/entry.ts' }, {}),
+        await runDiff(svc, { ...validInstanceProps, main: '/app/entry.ts' }, { ...validInstanceProps }),
       ).toEqual({ action: 'replace' })
     })
 
     test('host-mode toggle OFF (main removed) is a replace', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
       expect(
-        await runDiff(svc, {}, { main: '/app/entry.ts' }),
+        await runDiff(svc, { ...validInstanceProps }, { ...validInstanceProps, main: '/app/entry.ts' }),
       ).toEqual({ action: 'replace' })
     })
 
@@ -86,17 +95,21 @@ describe('Nebius.compute.v1.Instance', () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
       const update = { action: 'update', stables: ['id', 'parentId', 'name'] }
 
-      expect(await runDiff(svc, { main: '/app/a.ts' }, { main: '/app/b.ts' })).toEqual(update)
-      expect(await runDiff(svc, { handler: 'x' }, { handler: 'default' })).toEqual(update)
-      expect(await runDiff(svc, { port: 4000 }, { port: 3000 })).toEqual(update)
-      expect(await runDiff(svc, { env: { FOO: 'bar' } }, { env: {} })).toEqual(update)
-      expect(await runDiff(svc, { build: { output: { minify: true } } }, { build: {} })).toEqual(update)
+      expect(await runDiff(svc, { ...validInstanceProps, main: '/app/a.ts' }, { ...validInstanceProps, main: '/app/b.ts' })).toEqual(update)
+      expect(await runDiff(svc, { ...validInstanceProps, handler: 'x' }, { ...validInstanceProps, handler: 'default' })).toEqual(update)
+      expect(await runDiff(svc, { ...validInstanceProps, port: 4000 }, { ...validInstanceProps, port: 3000 })).toEqual(update)
+      expect(await runDiff(svc, { ...validInstanceProps, env: { FOO: 'bar' } }, { ...validInstanceProps, env: {} })).toEqual(update)
+      expect(await runDiff(svc, { ...validInstanceProps, build: { output: { minify: true } } }, { ...validInstanceProps, build: {} })).toEqual(update)
     })
 
     test('user cloud-init change is an update, not a replace (Deviation 2)', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
       expect(
-        await runDiff(svc, { cloudInitUserData: 'echo new' }, { cloudInitUserData: 'echo old' }),
+        await runDiff(
+          svc,
+          { ...validInstanceProps, cloudInitUserData: 'echo new' },
+          { ...validInstanceProps, cloudInitUserData: 'echo old' },
+        ),
       ).toEqual({ action: 'update', stables: ['id', 'parentId', 'name'] })
     })
 
@@ -170,15 +183,64 @@ describe('Nebius.compute.v1.Instance', () => {
       expect(result._tag).toBe('PropsValidationError')
     })
 
+    test('rejects a boot disk with neither sourceImageId nor sourceImageFamily', async () => {
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          bootDisk: {
+            attachMode: 'READ_WRITE',
+            managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 } },
+          },
+        }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('accepts a boot disk with sourceImageFamily (platform resolves the image)', async () => {
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          bootDisk: {
+            attachMode: 'READ_WRITE',
+            managedDisk: {
+              name: 'boot-disk',
+              spec: { type: 'NETWORK_SSD', sizeGibibytes: 64, sourceImageFamily: { imageFamily: 'ubuntu24.04-cuda12' } },
+            },
+          },
+        }),
+      )
+      expect(result.bootDisk.managedDisk?.spec?.sourceImageFamily?.imageFamily).toBe('ubuntu24.04-cuda12')
+    })
+
     test('rejects a boot disk smaller than the 64 GiB floor (hangs provisioning)', async () => {
       const result = await runEffect(
         SchemaModule.validateInstanceProps({
           ...validInstanceProps,
           bootDisk: {
             attachMode: 'READ_WRITE',
-            managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } },
+            managedDisk: {
+              name: 'boot-disk',
+              spec: { type: 'NETWORK_SSD', sizeGibibytes: 10, sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' } },
+            },
           },
         }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('diff fails fast at plan time on a boot disk without an image', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const result = await runEffect(
+        // oxlint-disable-next-line no-explicit-any — loose cast mirrors runDiff helper
+        (svc as { diff: (input: any) => Effect.Effect<any, any, any> }).diff(
+          diffInput({
+            ...validInstanceProps,
+            bootDisk: {
+              attachMode: 'READ_WRITE',
+              managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 } },
+            },
+          }),
+        ).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
     })

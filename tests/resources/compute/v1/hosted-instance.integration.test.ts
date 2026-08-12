@@ -168,8 +168,14 @@ integrationTest(
               managedDisk: {
                 name: 'boot-disk',
                 // Nebius enforces a 64 GiB boot-disk floor — smaller disks
-                // hang provisioning (cloud-init never runs).
-                spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 },
+                // hang provisioning (cloud-init never runs). The image is
+                // REQUIRED (blank disk = no OS); the platform resolves the
+                // latest image of the family.
+                spec: {
+                  type: 'NETWORK_SSD',
+                  sizeGibibytes: 64,
+                  sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
+                },
               },
             },
             networkInterfaces: [

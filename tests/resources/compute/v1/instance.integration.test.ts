@@ -22,8 +22,9 @@ integrationTest(test.provider, 'Nebius.compute.v1.Instance lifecycle', (stack) =
             managedDisk: {
               name: 'boot-disk',
               spec: {
-                sizeGibibytes: 10,
+                sizeGibibytes: 64,
                 type: 'NETWORK_SSD',
+                sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
               },
             },
           },

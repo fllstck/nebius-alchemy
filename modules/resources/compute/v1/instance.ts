@@ -456,6 +456,12 @@ export const NebiusInstanceProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fails `alchemy plan` fast, BEFORE any API
+    // call (same checks reconcile runs): boot-disk image required, 64 GiB
+    // floor, network-interface ipAddress, GPU/platform pairing, …
+    // (Side-effect only: diff reads the raw props, not the validated defaults.)
+    yield* InstanceSchema.validateInstanceProps(news)
+
     const nameRequiresReplace = Factory.nameChangeRequiresReplace(news, olds)
 
     // Host-mode toggle (`main` presence change) → replace (EC2 hostModeChanged).

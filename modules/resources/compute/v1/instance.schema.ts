@@ -84,6 +84,28 @@ const DiskTypeSchema = Schema.Union([
   Schema.Literal('NETWORK_SSD_IO_M3'),
 ])
 
+/** Source image family to create the disk from the latest image (the platform resolves it). */
+const SourceImageFamilySchema = Schema.Struct({
+  imageFamily: Schema.String,
+  /** Defaults to the region's public-images parent (`project-<region>public-images`). */
+  parentId: Schema.optional(Schema.String),
+})
+
+/**
+ * Nebius provisions a BLANK boot disk when no source image is given — no OS,
+ * no serial output, every port dropped (looks RUNNING, serves nothing). Fail
+ * fast with a clear message instead of a dead VM.
+ */
+const bootDiskImageRequired = Schema.makeFilter((spec: Record<string, unknown>) => {
+  if (spec.sourceImageId === undefined && spec.sourceImageFamily === undefined) {
+    return {
+      path: ['sourceImageId'],
+      issue:
+        'Boot disk requires an OS image: set `sourceImageId`, or `sourceImageFamily: { imageFamily: "ubuntu24.04-driverless" }` — without one Nebius provisions a blank disk (no OS, no serial output, all ports dropped)',
+    }
+  }
+})
+
 const ManagedDiskSpecSchema = Schema.Struct({
   /** Disk size in gibibytes. Must be ≥ 64 GiB when set — smaller disks hang provisioning (platform behavior). */
   sizeGibibytes: Schema.optional(Schema.Finite.check(Validation.isValidBootDiskSizeGibibytes)),
@@ -93,9 +115,11 @@ const ManagedDiskSpecSchema = Schema.Struct({
   type: DiskTypeSchema,
   /** ID of the source image to create the disk from. */
   sourceImageId: Schema.optional(Ids.ImageId),
+  /** Source image family to create the disk from the latest image (the platform resolves it — see `SourceImageFamily`). */
+  sourceImageFamily: Schema.optional(SourceImageFamilySchema),
   /** Prevents deletion whilst set. */
   forbidDeletion: Schema.optional(Schema.Boolean),
-})
+}).check(bootDiskImageRequired)
 
 const ManagedDiskSchema = Schema.Struct({
   name: Schema.String,
