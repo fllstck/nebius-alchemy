@@ -66,8 +66,7 @@ export type UpdateImageInput = UpdateInput
 export interface ImageService {
   readonly get: (id: string) => Effect.Effect.Effect<Image, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getLatestByFamily: (
-    parentId: string,
-    imageFamily: string,
+    req: { parentId: string; imageFamily: string },
   ) => Effect.Effect.Effect<Image, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   /** List all images in a project (paginates automatically). */
   readonly list: (
