@@ -37,6 +37,20 @@ const toFriendlyAttributes = (
 
 // ----- PROVIDER
 
+/**
+ * Platform defaults (priority 500, STATEFUL) applied to the rule props BEFORE
+ * the create/drift spec is built: the API echoes them back on create, so a
+ * spec built without them differs from the echo (0 vs 500, 0 vs STATEFUL) →
+ * every reconcile sees drift and rewrites the rule. Those spurious updates
+ * have correlated with wedged ENI attachments in the hosted e2e — keep rules
+ * stable. Exported for unit tests.
+ */
+export const withRuleSpecDefaults = (news: SecurityRuleSchema.SecurityRuleProps): Record<string, unknown> => ({
+  ...news,
+  priority: news.priority ?? 500,
+  type: news.type ?? 'STATEFUL',
+})
+
 /** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
 export const NebiusSecurityRuleProvider: Layer.Layer<
   AlchemyProvider.Provider<NebiusSecurityRule>,
@@ -54,6 +68,10 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
   reconcile: Effect.fn('Nebius.vpc.v1.SecurityRule.reconcile')(function* ({ id, news, output, session }) {
     news = news || {}
     news = yield* SecurityRuleSchema.validateSecurityRuleProps(news)
+
+    // Platform defaults sent EXPLICITLY — see `withRuleSpecDefaults` (keeps
+    // the spec echo equal to desired so the drift check never fires).
+    const specNews = withRuleSpecDefaults(news)
 
     const vpcGrpcService = yield* VpcGrpc.VpcGrpcService
 
@@ -75,12 +93,12 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
       rule = yield* vpcGrpcService.securityRule.create({
         metadata: { parentId: news.parentId, name, labels },
         // fromJSON required: SecurityRuleSpec has enums (direction, protocol, access, type)
-        spec: NebiusSecurityRuleSchema.SecurityRuleSpec.fromJSON(news),
+        spec: NebiusSecurityRuleSchema.SecurityRuleSpec.fromJSON(specNews),
       })
     }
 
     // 3. Sync
-    const desired = NebiusSecurityRuleSchema.SecurityRuleSpec.fromJSON(news)
+    const desired = NebiusSecurityRuleSchema.SecurityRuleSpec.fromJSON(specNews)
     if (
       rule.spec &&
       (rule.spec.access !== desired.access ||

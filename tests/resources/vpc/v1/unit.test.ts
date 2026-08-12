@@ -134,6 +134,32 @@ describe('Nebius.vpc.v1.SecurityRule', () => {
       expect(result._tag).toBe('PropsValidationError')
     })
   })
+
+  describe('spec defaults (no spurious drift-update)', () => {
+    test('platform defaults applied when absent', () => {
+      expect(
+        SecurityRuleModule.withRuleSpecDefaults({
+          parentId: 'securitygroup-abc',
+          direction: 'INGRESS',
+          protocol: 'TCP',
+          access: 'ALLOW',
+          ingress: { sourceCidrs: ['0.0.0.0/0'], destinationPorts: [3000] },
+        } as unknown as SecurityRuleSchema.SecurityRuleProps),
+      ).toMatchObject({ priority: 500, type: 'STATEFUL' })
+    })
+    test('explicit values preserved', () => {
+      expect(
+        SecurityRuleModule.withRuleSpecDefaults({
+          parentId: 'securitygroup-abc',
+          direction: 'INGRESS',
+          protocol: 'TCP',
+          access: 'ALLOW',
+          priority: 10,
+          type: 'STATELESS',
+        } as unknown as SecurityRuleSchema.SecurityRuleProps),
+      ).toMatchObject({ priority: 10, type: 'STATELESS' })
+    })
+  })
 })
 
 describe('Nebius.vpc.v1.RouteTable', () => {
