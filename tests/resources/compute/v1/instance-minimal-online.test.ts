@@ -64,15 +64,17 @@ integrationTest(
       const imageId = Ids.ImageId.make(image.metadata!.id)
       console.log(`[minimal-online] image ${IMAGE_FAMILY} → ${imageId}`)
 
-      // Stage 1: SG + rules (fresh, provider-created — mirrors the CLI script
-      // that created `cli-online-test-sg` with the same rule shape).
-      const { subnetId, sgId } = yield* stack.deploy(
+      // Single deploy: SG + rules + instance together. (Alchemy scratch-stack
+      // semantics: a later deploy() DELETES resources not re-declared — so the
+      // SG/rules must live in the SAME deploy as the instance.)
+      const { instance } = yield* stack.deploy(
         Effect.gen(function* () {
           const networkId =
             STABLE_SUBNET_ID === undefined
               ? (yield* Nebius.vpc.Network('MinimalOnline-Network', {})).id
               : yield* subnetNetworkId(STABLE_SUBNET_ID)
-          const subnetId = STABLE_SUBNET_ID ?? (yield* Nebius.vpc.Subnet('MinimalOnline-Subnet', { networkId })).id
+          const subnetId =
+            STABLE_SUBNET_ID ?? (yield* Nebius.vpc.Subnet('MinimalOnline-Subnet', { networkId })).id
           const sg = yield* Nebius.vpc.SecurityGroup('MinimalOnline-SG', { networkId })
           yield* Nebius.vpc.SecurityRule('MinimalOnline-SG-Ingress', {
             parentId: sg.id,
@@ -88,15 +90,6 @@ integrationTest(
             access: 'ALLOW',
             egress: { destinationCidrs: ['0.0.0.0/0'] },
           })
-          return { networkId, subnetId, sgId: sg.id }
-        }),
-      )
-      console.log(`[minimal-online] SG+rules deployed after ${((Date.now() - t0) / 1000).toFixed(0)}s`)
-
-      // Stage 2: the instance (byte-identical spec shape to the CLI test —
-      // no SA, marker cloud-init on :8080, dynamic public IP).
-      const { instance } = yield* stack.deploy(
-        Effect.gen(function* () {
           const instance = yield* Nebius.compute.Instance('MinimalOnlineInstance', {
             resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
             bootDisk: {
@@ -112,7 +105,7 @@ integrationTest(
                 name: 'eth0',
                 ipAddress: { allocationId: '' },
                 publicIpAddress: { static: false },
-                securityGroups: [{ id: sgId }],
+                securityGroups: [{ id: sg.id }],
               },
             ],
             serviceAccountId: '',
