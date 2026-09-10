@@ -1,5 +1,6 @@
 /**
- * M2 — Storage bindings for Cloudflare Worker hosts.
+ * M2 — Storage bindings (Nebius.compute.v1.Instance — the default host — and
+ * Cloudflare.Worker as the compatibility wrapper).
  *
  * Typed runtime clients for `Nebius.storage.Bucket` object operations. One
  * line at the call site yields the capability and derives, at deploy time:
@@ -24,8 +25,7 @@ import * as Layer from 'effect/Layer'
 import * as Output from 'alchemy/Output'
 import * as Schema from 'effect/Schema'
 import * as Binding from 'alchemy/Binding'
-import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
-import { Self } from 'alchemy/Self'
+import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { S3Client, S3Errors, type S3ObjectMetadata } from '@bradenmacdonald/s3-lite-client'
 import * as BindHost from '../../shared/bind-host.ts'
 import type { HostIdentity } from '../../shared/host-identity.ts'
@@ -406,42 +406,10 @@ export const PutObjectHttp = Layer.effect(
 )
 
 // ---------------------------------------------------------------------------
-// Async-host wiring helper
+// (The async-host wiring helper `wireAsyncBindings` lived here. Deleted: it had
+// no callers and no tests, was typed `host: Worker` (Worker-only), and provided
+// only the per-type `Self('Cloudflare.Worker')` tag while `Binding.Host`
+// resolves the GENERIC `Self` — so its deploy-time wiring silently no-oped.
+// An async worker wires itself explicitly with `host.bind`; see
+// `examples/storage-async.bindings.ts`.)
 // ---------------------------------------------------------------------------
-
-/**
- * Run the deploy-time binding wiring for an ASYNC (non-Effect) Worker host.
- *
- * An Effect-native worker consumes the `*Http` layers inside its impl,
- * where `Self`/`WorkerEnvironment` are in scope. An async worker (`main` +
- * plain `fetch`) can't — so this runs the same layers against the deployed
- * host directly: mints the host identity (SA → editors grant → access key),
- * injects the `NEBIUS_S3_*` env bindings, and registers the bucket grants.
- * The worker then reads `env` at runtime with s3-lite-client.
- *
- * Deploy-time only. The runtime side of the layers is unused by async
- * workers.
- */
-export const wireAsyncBindings = Effect.fn('Nebius.storage.v1.Bucket.wireAsyncBindings')(function* (
-  host: Worker,
-  bucket: NebiusBucket,
-): Effect.fn.Return<void> {
-  // The layers' impls yield the Worker host via `Self`; provide it with the
-  // deployed host. The WorkerEnvironment is only consumed by the layers'
-  // runtime side, which async workers don't use — a dummy satisfies the build.
-  // The `as` cast erases the layer requirements (Worker/WorkerEnvironment —
-  // provided here) plus the contract's Provider requirements, which the
-  // stack's providers satisfy at runtime.
-  // provideHost erases R: it provides every requirement (Worker host,
-  // WorkerEnvironment, HTTP services) itself.
-  // oxlint-disable-next-line no-explicit-any
-  const provideHost = <A, E>(effect: Effect.Effect<A, E, any>): Effect.Effect<A, E, never> =>
-    effect.pipe(
-      Effect.provide(Layer.mergeAll(GetObjectHttp, PutObjectHttp)),
-      Effect.provide(Layer.succeed(Self('Cloudflare.Worker'), host)),
-      Effect.provide(Layer.succeed(WorkerEnvironment, {})),
-    ) as Effect.Effect<A, E, never>
-
-  yield* provideHost(GetObject(bucket))
-  yield* provideHost(PutObject(bucket))
-})

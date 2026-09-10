@@ -5,7 +5,6 @@ export {
   GetObjectHttp,
   PutObject,
   PutObjectHttp,
-  wireAsyncBindings,
   ObjectNotFound,
   BucketNotFound,
   AccessDenied,
