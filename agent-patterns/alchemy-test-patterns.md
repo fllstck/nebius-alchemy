@@ -179,6 +179,64 @@ the provider with the same spec (SG + rules + instance in ONE deploy, dynamic
 public IP, marker cloud-init) — `tests/resources/compute/v1/instance-minimal-online.test.ts`
 (provider path came online in 91s).
 
+## Never write test artifacts into shared `/tmp`
+
+Bundling tests (e.g. `Hosted.bundleProgram(...)`) produce a real bundle and
+must write it somewhere. Writing it straight into `/tmp` is a trap observed
+live in `tests/resources/compute/v1/hosted-boot.test.ts`:
+
+```ts
+// ❌ WRONG — shared, world-readable, fixed names, never cleaned up
+const entryPath = '/tmp/hosted-boot-entry.mjs'
+await Bun.write(entryPath, entry.content)
+for (const chunk of files.slice(1)) {
+  await Bun.write(`/tmp/${chunk.path}`, chunk.content)
+}
+```
+
+Three distinct problems, all of which showed up:
+
+1. **Shared namespace.** `/tmp` (→ `/private/tmp` on macOS) is `drwxrwxrwt`, so
+   any local user or process can read the bundled code. Here that bundle
+   contained the *entire* Nebius provider plus its auth/IAM clients.
+2. **No cleanup.** The test kills the spawned process in `finally` but never
+   deletes the files, so each run leaves ~5 MB behind — and it regenerates on
+   every `bun test`. Cleaning `/tmp` by hand is pointless; the next run
+   recreates it.
+3. **Fixed filenames.** Concurrent or repeated runs collide and overwrite each
+   other's chunks.
+
+Use a per-run private directory and remove it:
+
+```ts
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const dir = await mkdtemp(join(tmpdir(), 'nebius-hosted-'))
+try {
+  const entryPath = join(dir, 'entry.mjs')
+  await Bun.write(entryPath, entry.content)
+  for (const chunk of files.slice(1)) await Bun.write(join(dir, chunk.path), chunk.content)
+  // ...spawn and assert...
+} finally {
+  await rm(dir, { recursive: true, force: true })
+}
+```
+
+Related: files that some tests only *reference* (never write), such as
+`main: '/tmp/entry.ts'` in plan-only tests, are harmless — but prefer the
+`mkdtemp` convention anyway so a future edit cannot silently start writing
+there.
+
+### Also: a shrinking test count is a load failure, not progress
+
+When a suite reports *fewer total tests* after a dependency change (e.g. 535 →
+140), files are dying at import time and contributing zero tests. Treat a drop
+in the total as a hard failure signal, and check for module-resolution errors
+before reading individual failures. See `effect-versioning.md` for the
+version-drift cause this most often has.
+
 ## Related
 
 - `effect-fn.md`, `effect-schema.md`, `effect-services.md` — Effect patterns

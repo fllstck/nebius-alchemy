@@ -21,23 +21,40 @@ export type UserType = typeof User["Type"]  // ≡ User
 export type UserEncoded = typeof User["Encoded"]
 ```
 
-## Tagged error classes with Schema.TaggedErrorClass
+## Tagged error classes with Schema.TaggedError
 
-**Always use `Schema.TaggedErrorClass` for custom errors.** Never use plain `Error` subclasses.
+**Always use `Schema.TaggedError` for custom errors.** Never use plain `Error` subclasses.
+
+> **Renamed in effect 4.0.0-rc.112.** This was `Schema.TaggedErrorClass` up to
+> `4.0.0-beta.107`; the old name was **removed**, not aliased. If you see
+> `TaggedErrorClass` anywhere, it is stale — see `agent-patterns/effect-versioning.md`.
+> The call shape is unchanged, so the migration is a pure rename.
 
 ```ts
 import { Effect, Schema } from "effect"
 
 // Simple error
-export class ParseError extends Schema.TaggedErrorClass<ParseError>()("ParseError", {
+export class ParseError extends Schema.TaggedError<ParseError>()("ParseError", {
   input: Schema.String,
   message: Schema.String,
 }) {}
 
 // Error wrapping another error
-export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("DatabaseError", {
+export class DatabaseError extends Schema.TaggedError<DatabaseError>()("DatabaseError", {
   cause: Schema.Defect(),
 }) {}
+```
+
+Alchemy's own errors can also carry a brand marking them safe to show to users:
+
+```ts
+import { UserFacingError } from "alchemy/UserFacingError"
+
+export class MyError extends Schema.TaggedError<MyError>()("MyError", {
+  message: Schema.String,
+}) {
+  readonly [UserFacingError] = true
+}
 ```
 
 ### Catching typed errors
@@ -82,6 +99,6 @@ export const parseUserPayload = Effect.fn("parseUserPayload")((input: unknown) =
 
 - **Always validate untrusted data** with Schema — do NOT use predicates or manual parsing
 - **Schema.Class** gives you both a TypeScript type and a runtime validator
-- **Schema.TaggedErrorClass** gives you tagged errors catchable by string tag
+- **Schema.TaggedError** gives you tagged errors catchable by string tag
 - Register schema identifier strings with the `effect/LanguageService` for IDE support
 - Read the full `SCHEMA.md` in the vendored repo for advanced topics (transformations, flips, classes, etc.)

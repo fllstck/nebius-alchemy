@@ -9,7 +9,7 @@ These rules are hard requirements. Violations must be corrected immediately.
 - **MUST** use Effect V4 and Alchemy V2 (`alchemy@next`)
 - **MUST** use `Effect.fn("name")(function*() { ... })` for top-level functions returning Effect — do NOT create functions that return `Effect.gen(...)`
 - **MUST** use `Effect.fn.Return<A, E, R>` for the return type annotation on generators inside `Effect.fn`
-- **MUST** use `Schema.TaggedErrorClass` for all custom errors — never plain `Error` subclasses
+- **MUST** use `Schema.TaggedError` for all custom errors — never plain `Error` subclasses (renamed from `TaggedErrorClass` in effect 4.0.0-rc.112; the old name no longer exists)
 - **MUST** use `Schema.Class` for domain models (gives both TypeScript type and runtime validator)
 - **MUST** use `Context.Service` for service definitions
 - **MUST** validate untrusted data with Schema — never use predicates or manual parsing
@@ -69,9 +69,11 @@ The `agent-patterns/` directory contains concise summaries extracted from the ve
 | File                                | Contents                                                         |
 | ----------------------------------- | ---------------------------------------------------------------- |
 | `agent-patterns/effect-fn.md`       | Effect.fn vs Effect.gen, Effect.fn.Return, combinator attachment |
-| `agent-patterns/effect-schema.md`   | Schema.Class, Schema.TaggedErrorClass, decoding/encoding         |
+| `agent-patterns/effect-schema.md`   | Schema.Class, Schema.TaggedError, decoding/encoding              |
 | `agent-patterns/effect-services.md` | Context.Service, Layer.effect, Layer composition                 |
-| `agent-patterns/alchemy-test-patterns.md` | Alchemy scratch-stack deploy semantics (partial re-deploys DELETE prior resources), staged-deploy pattern, precreate-vs-ref-resolution timing, idempotent deletes |
+| `agent-patterns/effect-versioning.md` | Effect prerelease versioning: the caret-range drift trap that silently upgrades `rc.N` → `rc.N+1`, and how to pin/hold `@effect/*` packages |
+| `agent-patterns/alchemy-auth-provider.md` | The `AuthProviderImpl` contract: `configSchema`, lazy per-method `Interaction` resolution, error-channel limits, `CredentialsStore` schemas, `ProfileStore`/`resolveProviderConfig` |
+| `agent-patterns/alchemy-test-patterns.md` | Alchemy scratch-stack deploy semantics (partial re-deploys DELETE prior resources), staged-deploy pattern, precreate-vs-ref-resolution timing, idempotent deletes, temp-dir hygiene |
 | `agent-patterns/alchemy-bindings.md`      | Binding impl patterns: Output passthrough (never inline-resolve), reconcile-create vs precreate, Effect-native Worker entry structure (dev vs remote `main`), shared-env once-per-host dedupe, Effect HTTP gotchas, Node `.ts`-extension imports |
 | `agent-patterns/alchemy-effectful.md`     | Effectful-compute patterns: the `Platform`/Effectful Constructor shape (constructor + provider split), `main` as the low-level↔hosted toggle, RuntimeContext (`run`/`serve`/`exports.program`), bundle→ship→reconcile, phase split (`__ALCHEMY_RUNTIME__` + `ALCHEMY_PHASE`), and applying it to the Nebius Instance (cloud-init + S3 assets + service accounts) |
 
