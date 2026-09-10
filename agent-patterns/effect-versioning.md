@@ -50,6 +50,40 @@ failing loudly.
 After any `@effect/*` bump, **re-audit**: list what actually installed, not
 what you asked for.
 
+### ⚠️ `overrides` do NOT propagate to consumers
+
+This is the part that ships and bites. **`overrides` apply only from the ROOT
+`package.json` of the installing project** — npm, bun, and pnpm all ignore a
+*dependency's* overrides. So a library can fix its own dev tree and still hand
+consumers a broken dependency graph.
+
+Consequence for a published package: if a transitive peer needs pinning, every
+consumer must add the same block themselves. There is no way to ship it.
+
+The failure mode is deceptive and multi-layered:
+
+| Signal | What it actually tells you |
+| --- | --- |
+| `npm warn ERESOLVE overriding peer dependency` | install **proceeded anyway** — not a failure |
+| install exits **0** | ✅ nothing — the tree is still broken |
+| `tsc --noEmit` **passes** | ✅ nothing — `skipLibCheck` never resolves runtime imports |
+| `import('the-package')` | ❌ **fails**: `Cannot find module 'effect/ByteSize'` |
+
+Only the last one catches it. **Verify consumer installs by importing, not just
+by typechecking** — add a runtime import to any consumer smoke test, because a
+typecheck-first pipeline will happily ship an unimportable package.
+
+Also check the fix is genuinely available: if no released version of the
+upstream package pins its range correctly, there is **no override-free
+combination**, and the only honest options are documenting the workaround or not
+releasing. Confirm by listing versions — `dist-tags.latest` may be the newest
+there is.
+
+For a consumer-facing package, document the block in the install section and
+mark it **required**, not optional. A note that says "this package ships an
+`overrides` block" is actively misleading if you are the dependency rather than
+the app.
+
 ```bash
 find node_modules -maxdepth 4 -path "*@effect/*/package.json" \
   | while read f; do node -e "const p=require('./$f'); \

@@ -1,10 +1,18 @@
 {
+  // Must mirror the consumer tsconfig documented in README.md § tsconfig.json.
+  // These are the requirements the package actually imposes on consumers:
+  //   - `allowImportingTsExtensions` + `moduleResolution: bundler` — the package
+  //     ships raw TypeScript and uses `.ts` extensions in its imports
+  //   - `target: ESNext` — shipped source uses ES2023+ APIs (e.g. `toSorted`
+  //     in `modules/resources/compute/v1/hosted.ts`)
+  // A lower target here does NOT model a supported consumer: it makes the smoke
+  // test fail for a config reason and hides whether the package really compiles.
   "compilerOptions": {
-    "target": "es2022",
-    "module": "preserve",
+    "module": "ESNext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "strict": true,
+    "target": "ESNext",
     "skipLibCheck": true,
     "noEmit": true
   },

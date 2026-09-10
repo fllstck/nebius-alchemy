@@ -28,12 +28,46 @@ bun add alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.
 > alchemy beta.77 still calls the lowercase form, so the two are incompatible in
 > both directions.
 >
-> **Watch transitive `@effect/*` packages.** A caret range on a prerelease
-> (`^4.0.0-rc.112`) resolves *upward*, so packages you never wrote —
-> `@effect/platform-node-shared`, `@effect/sql-*`, `@effect/vitest` — can
-> silently land on `rc.113` and break the suite with a misleading
-> `Cannot find module 'effect/ByteSize'`. This package ships an `overrides`
-> block pinning them. See `agent-patterns/effect-versioning.md`.
+> ⚠️ **You MUST add this `overrides` block to your own `package.json`.** This is
+> not optional and not a style preference — without it the package crashes on
+> import.
+>
+> **Why.** `@effect/platform-node@4.0.0-rc.112` declares
+> `"@effect/platform-node-shared": "^4.0.0-rc.112"`. A caret range on a
+> **prerelease** resolves *upward*, so you silently get
+> `@effect/platform-node-shared@4.0.0-rc.113` — which imports `effect/ByteSize`,
+> a subpath that does not exist in `rc.112`. Alchemy loads that module, so the
+> failure is immediate:
+>
+> ```
+> Cannot find module 'effect/ByteSize' from
+>   .../node_modules/@effect/platform-node/node_modules/@effect/platform-node-shared/dist/NodeFileSystem.js
+> ```
+>
+> **`overrides` only apply from the ROOT `package.json` of the installing
+> project** — a dependency's overrides are ignored, so this package cannot ship
+> the fix for you. Add it yourself:
+>
+> ```jsonc
+> "overrides": {
+>   "@effect/platform-node-shared": "4.0.0-rc.112",
+>   "@effect/sql-d1": "4.0.0-rc.112",
+>   "@effect/sql-sqlite-do": "4.0.0-rc.112",
+>   "@effect/vitest": "4.0.0-rc.112"
+> }
+> ```
+>
+> **This affects every consumer of `alchemy@2.0.0-beta.77`**, not just this
+> package: `effect@4.0.0-rc.112` is the only version alchemy beta.77 supports
+> (it uses the lowercase `Config.string`, removed in rc.113), and rc.112 is the
+> only Effect release whose `@effect/platform-node` caret drifts onto an
+> incompatible shared package. There is no override-free combination.
+> See `agent-patterns/effect-versioning.md`.
+>
+> **Note:** the `ERESOLVE overriding peer dependency` warnings npm emits during
+> install are expected, and installing successfully does **not** mean it works —
+> the failure only appears at import time. Typechecking (`tsc`) will not catch it
+> either, because `skipLibCheck` skips resolving those runtime imports.
 >
 > **Avoid `alchemy@next`.** The `next` dist-tag currently points at an *older*
 > beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.77`).

@@ -130,6 +130,21 @@ jobs:
           mkdir -p "$RUNNER_TEMP/consumer"
           cd "$RUNNER_TEMP/consumer"
           npm init -y > /dev/null
+          # Mirror the overrides the README tells consumers they MUST add.
+          # Without them the package cannot be imported at all: a prerelease
+          # caret pulls @effect/platform-node-shared@rc.113, which imports
+          # `effect/ByteSize` — absent from the rc.112 the consumer installed.
+          node -e "
+            const fs=require('fs');
+            const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+            p.overrides={
+              '@effect/platform-node-shared':'4.0.0-rc.112',
+              '@effect/sql-d1':'4.0.0-rc.112',
+              '@effect/sql-sqlite-do':'4.0.0-rc.112',
+              '@effect/vitest':'4.0.0-rc.112',
+            };
+            fs.writeFileSync('package.json', JSON.stringify(p,null,2));
+          "
           npm install "$RUNNER_TEMP/$TARBALL" \
             effect@4.0.0-rc.112 \
             @effect/platform-bun@4.0.0-rc.112 \
@@ -141,3 +156,15 @@ jobs:
           cp "$GITHUB_WORKSPACE/.github/smoke/smoke.ts" .
           cp "$GITHUB_WORKSPACE/.github/smoke/tsconfig.json" .
           ./node_modules/.bin/tsc --noEmit
+      # `tsc` above proves only that the TYPES resolve. With `skipLibCheck` it
+      # never resolves runtime imports, so it structurally CANNOT catch a broken
+      # transitive dependency — exactly the failure that shipped past the first
+      # version of this job (a prerelease caret drifting to a shared package
+      # importing a subpath missing from the pinned `effect`). Actually
+      # importing does, and it fails at load rather than at typecheck.
+      # Bun is used purely as a TS-capable runtime; the install above is npm.
+      - name: Import the package for real (catches broken transitive deps)
+        run: |
+          cd "$RUNNER_TEMP/consumer"
+          bun -e "await import('@fllstck/nebius-alchemy'); console.log('import OK')"
+          bun -e "await import('alchemy'); console.log('alchemy import OK')"
