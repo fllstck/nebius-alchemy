@@ -30,19 +30,35 @@ bun add alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.
 >
 > ⚠️ **You MUST add this `overrides` block to your own `package.json`.** This is
 > not optional and not a style preference — without it the package crashes on
-> import.
+> import, **on both Bun and Node**.
 >
-> **Why.** `@effect/platform-node@4.0.0-rc.112` declares
-> `"@effect/platform-node-shared": "^4.0.0-rc.112"`. A caret range on a
-> **prerelease** resolves *upward*, so you silently get
+> **Why.** Both platform peers declare a caret range on the shared package:
+>
+> ```jsonc
+> // @effect/platform-bun@4.0.0-rc.112
+> "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.112" }
+> // @effect/platform-node@4.0.0-rc.112
+> "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.112" }
+> ```
+>
+> A caret range on a **prerelease resolves *upward***, so you silently get
 > `@effect/platform-node-shared@4.0.0-rc.113` — which imports `effect/ByteSize`,
-> a subpath that does not exist in `rc.112`. Alchemy loads that module, so the
-> failure is immediate:
+> a subpath absent from the `rc.112` you actually installed. The failure is
+> immediate:
 >
 > ```
 > Cannot find module 'effect/ByteSize' from
 >   .../node_modules/@effect/platform-node/node_modules/@effect/platform-node-shared/dist/NodeFileSystem.js
 > ```
+>
+> **You cannot dodge this by choosing a runtime.** `@effect/platform-bun` is
+> built *on top of* `@effect/platform-node-shared` and statically imports it from
+> 13 of its own modules (`BunFileSystem`, `BunCrypto`,
+> `BunChildProcessSpawner`, `BunPath`, `BunStdio`, `BunTerminal`, …), so Bun
+> pulls it in unconditionally. `alchemy` additionally statically imports
+> `@effect/platform-node` proper in ~10 modules (Fly, Cloudflare `WorkerBridge`,
+> Prisma, and every `Runtime/Bootstrap/*` provider). There is no import path or
+> runtime that avoids it.
 >
 > **`overrides` only apply from the ROOT `package.json` of the installing
 > project** — a dependency's overrides are ignored, so this package cannot ship
@@ -57,11 +73,11 @@ bun add alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.
 > }
 > ```
 >
-> **This affects every consumer of `alchemy@2.0.0-beta.77`**, not just this
-> package: `effect@4.0.0-rc.112` is the only version alchemy beta.77 supports
-> (it uses the lowercase `Config.string`, removed in rc.113), and rc.112 is the
-> only Effect release whose `@effect/platform-node` caret drifts onto an
-> incompatible shared package. There is no override-free combination.
+> **This affects every consumer of `alchemy@2.0.0-beta.77` and `effect@4.0.0-rc.112`**,
+> not just this package. That pairing is forced: alchemy beta.77 is the newest
+> release and uses the lowercase `Config.string`, which `rc.113` removed — so
+> `effect` must be exactly `rc.112`, and `rc.112` is the release whose platform
+> peers carry the drifting caret. There is no override-free combination.
 > See `agent-patterns/effect-versioning.md`.
 >
 > **Note:** the `ERESOLVE overriding peer dependency` warnings npm emits during

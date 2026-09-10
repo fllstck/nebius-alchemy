@@ -79,6 +79,34 @@ combination**, and the only honest options are documenting the workaround or not
 releasing. Confirm by listing versions — `dist-tags.latest` may be the newest
 there is.
 
+### Don't assume a runtime/branch lets you dodge it
+
+When a broken dependency loads behind a runtime check, it is tempting to
+conclude it is avoidable — "it only fails on Node, so use Bun". **Verify that
+claim before repeating it.**
+
+Alchemy's `Util/PlatformServices.ts` is exactly this shape:
+
+```ts
+const isBun = typeof Bun !== "undefined";
+// bun  -> import("@effect/platform-bun/BunServices")
+// node -> import("@effect/platform-node/NodeServices")
+```
+
+The `bun` branch still pulls in `@effect/platform-node-shared`, because
+**`@effect/platform-bun` is layered on top of it** and statically imports it from
+13 of its own modules (`BunFileSystem`, `BunCrypto`, `BunChildProcessSpawner`, …).
+The failing consumer test crashed under `bun`, not `node` — the opposite of what
+the branch implies.
+
+Generalised: when you find a conditional load, follow **both** branches to their
+real dependency trees before claiming one is safe. "Use runtime X" is only a
+workaround if X's package genuinely does not depend on the broken thing — check
+its `package.json`, not its name. And beware attributing a failure to the one
+call site you happened to read: `alchemy` also *statically* imports
+`@effect/platform-node` in ~10 unrelated modules, which a barrel import pulls in
+regardless of any branch.
+
 For a consumer-facing package, document the block in the install section and
 mark it **required**, not optional. A note that says "this package ships an
 `overrides` block" is actively misleading if you are the dependency rather than
