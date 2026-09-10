@@ -71,7 +71,18 @@ const stateDetail = (endpoint: NebiusEndpointSchema.Endpoint): string | undefine
  * platform's own stateDetails messages (image pulls, quota failures, …), so
  * a multi-minute provisioning isn't a silent "Creating".
  */
-const waitUntilRunning = Effect.fn('Nebius.ai.v1.Endpoint.waitUntilRunning')(function* (
+/**
+ * D8: the `@__PURE__` annotation (see the declaration below) keeps this
+ * deploy-only helper droppable.
+ *
+ * It is declared at MODULE scope (it needs the gRPC service type in its
+ * signature) and only ever called from inside the guarded provider. Without the
+ * annotation rolldown keeps the `Effect.fn(...)(...)` call as a module-level
+ * side effect even after the provider folds away, and the retained closure drags
+ * the whole gRPC/api-client graph into Worker AND instance bundles (measured:
+ * 88 `grpc-js` sites, the AI worker entry at 884 KB). See TASKS.md §D8.
+ */
+const waitUntilRunning = /* @__PURE__ */ Effect.fn('Nebius.ai.v1.Endpoint.waitUntilRunning')(function* (
   endpointId: string,
   note: (message: string) => Effect.Effect<void>,
 ): Effect.fn.Return<

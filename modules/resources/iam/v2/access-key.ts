@@ -68,7 +68,14 @@ interface CreateInput {
 }
 
 /** Create the key + capture the one-time secret (shared by the create path). */
-const create = Effect.fn('Nebius.iam.v2.AccessKey.create')(function* ({
+/**
+ * D8: the `@__PURE__` annotation keeps this deploy-only helper droppable. It is
+ * declared at MODULE scope (its signature names the gRPC service) but only
+ * called from inside the guarded provider; without the annotation the retained
+ * `Effect.fn(...)(...)` call drags the IAM gRPC/api-client graph into runtime
+ * bundles. See TASKS.md §D8.
+ */
+const create = /* @__PURE__ */ Effect.fn('Nebius.iam.v2.AccessKey.create')(function* ({
   id,
   news,
   session,

@@ -145,7 +145,15 @@ const friendlyState = (state: unknown): string => {
  * Poll the instance until it reaches one of `targetStates` (or fails).
  * Emits `session.note` progress on every state transition.
  */
-const waitForInstanceState = Effect.fn('waitForInstanceState')(function* ({
+/**
+ * D8: the `@__PURE__` annotation keeps this deploy-only helper droppable. It is
+ * declared at MODULE scope (its signature names the gRPC service) but only
+ * called from inside the guarded provider; without the annotation the retained
+ * `Effect.fn(...)(...)` call drags the whole gRPC/api-client graph into runtime
+ * bundles (measured: 100 `grpc-js` sites in the instance bundle). See TASKS.md
+ * §D8.
+ */
+const waitForInstanceState = /* @__PURE__ */ Effect.fn('waitForInstanceState')(function* ({
   instanceId,
   targetStates,
   session,

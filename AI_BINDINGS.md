@@ -223,6 +223,16 @@ Status: M1–M6 **done** (0 errors, full suite green; M6 gated behind SLOW_TESTS
     effect Socket/ws, `node:net`/`http2`/`tls`) — dynamic-import chunks
     that never load in a deployed worker. The binding module's main script
     is only ~112 KB; the markers are dead code, not a deploy blocker.
+  - **Re-verified 2026-09-10 (beta.77, `spikes/ai-bindings-bundle.ts` rebuilt
+    to mirror `Cloudflare/Workers/Sources/Rolldown.ts`):** the AI example entry
+    is back to **139 KB / 171.7 KB (virtual)** with no gRPC markers. It had grown
+    to 884/917 KB because three modules (`ai/v1/endpoint.ts`,
+    `compute/v1/instance.ts`, `iam/v2/access-key.ts`) gained MODULE-SCOPE helpers
+    that reference a gRPC service (`waitUntilRunning`, `waitForInstanceState`,
+    `create`) — the provider guard folds the provider, not those top-level calls,
+    so the gRPC graph came along. Fixed with `@__PURE__` on those declarations.
+    Pitfall for the next resource module: keep gRPC use INSIDE the guarded
+    provider, or annotate the helper. See TASKS.md §D8.
   - The M0 "67 KB" figure isn't reproducible against current alchemy (the
     lazy-chunk set grew), but the **entry** script — what startup actually
     loads — is comparable to storage (115 vs 135 KB).
