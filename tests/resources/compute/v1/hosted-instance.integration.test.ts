@@ -29,6 +29,7 @@ import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 import * as IamGrpc from '../../../../modules/api-client/iam.ts'
 
 const PROJECT = process.env.NEBIUS_PROJECT_ID ?? ''
+const AI_TEST_TOKEN = 'hosted-e2e-ai-token'
 const FIXTURE_MAIN = new URL('../../../fixtures/hosted-instance-program.ts', import.meta.url).href
 const INSTANCE_LOGICAL_ID = 'HostedTestInstance'
 const FETCH_KEY_NAME = `ak-${`${INSTANCE_LOGICAL_ID}HostedRuntimeKey`.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
@@ -98,7 +99,7 @@ integrationTest(
       // NEBIUS_TEST_SUBNET_ID is set, reuse that STABLE subnet (fresh-network
       // public-IP propagation is unreliable — see the note above) and only
       // create the SG + rules on its network.
-      const { networkId, subnet, sa, sg } = yield* stack.deploy(
+      const { networkId, subnet, sa, sg, endpoint } = yield* stack.deploy(
         Effect.gen(function* () {
           const fresh = STABLE_SUBNET_ID === undefined
           const networkId = fresh
@@ -127,13 +128,41 @@ integrationTest(
             access: 'ALLOW',
             egress: { destinationCidrs: ['0.0.0.0/0'] },
           })
-          return { networkId, subnet, sa, sg }
+          // The AI endpoint the ChatCompletions binding targets. Cheap on purpose:
+          // nginx on cpu-d3 (the config `ai/v1/endpoint.integration.test.ts` uses),
+          // NOT the GPU vLLM setup — a real chat completion needs a GPU slot, and
+          // the runtime client already round-trips against a mocked OpenAI server.
+          // What this proves on the VM is the part only a VM can: the injected
+          // NEBIUS_ENDPOINT_URL is the MANAGED https URL (AD1's raw `IP:port` bug)
+          // and the bearer token is usable from the instance.
+          const endpointNetwork = yield* Nebius.vpc.Network('HostedTest-AiNetwork', {})
+          const endpointSubnet = yield* Nebius.vpc.Subnet('HostedTest-AiSubnet', {
+            networkId: endpointNetwork.id,
+          })
+          const endpoint = yield* Nebius.ai.Endpoint('HostedTest-AiEndpoint', {
+            image: 'nginx:alpine',
+            platform: 'cpu-d3',
+            preset: '4vcpu-16gb',
+            subnetId: endpointSubnet.id,
+            publicIp: true,
+            preemptible: false,
+            environmentVariables: [],
+            ports: [{ containerPort: 80, protocol: 'HTTP' }],
+            volumes: [],
+            disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 },
+            authToken: AI_TEST_TOKEN,
+          })
+          return { networkId, subnet, sa, sg, endpoint }
         }),
       )
       expect(networkId).toBeDefined()
       expect(subnet.id).toBeDefined()
       expect(sa.id).toBeDefined()
       expect(sg.id).toBeDefined()
+      expect(endpoint.publicEndpoints.length).toBeGreaterThan(0)
+      const managedEndpointUrl = endpoint.publicEndpoints.find((e: string) => e.startsWith('https://'))
+      expect(managedEndpointUrl).toBeDefined()
+      console.log(`[E2E] endpoint RUNNING, managed URL: ${managedEndpointUrl}`)
 
       // Stage 2: re-declare the stack-owned deps + the hosted instance (main = fixture).
       process.env.HOSTED_TEST_SUBNET_ID = subnet.id
@@ -169,6 +198,25 @@ integrationTest(
             defaultStorageClass: 'STANDARD',
             objectAuditLogging: 'NONE',
             forceStorageClass: false,
+          })
+          // Re-declared (noop) so the re-plan does not delete the endpoint the
+          // binding injects into the instance's env file.
+          const endpointNetwork = yield* Nebius.vpc.Network('HostedTest-AiNetwork', {})
+          const endpointSubnet = yield* Nebius.vpc.Subnet('HostedTest-AiSubnet', {
+            networkId: endpointNetwork.id,
+          })
+          const endpoint = yield* Nebius.ai.Endpoint('HostedTest-AiEndpoint', {
+            image: 'nginx:alpine',
+            platform: 'cpu-d3',
+            preset: '4vcpu-16gb',
+            subnetId: endpointSubnet.id,
+            publicIp: true,
+            preemptible: false,
+            environmentVariables: [],
+            ports: [{ containerPort: 80, protocol: 'HTTP' }],
+            volumes: [],
+            disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 },
+            authToken: AI_TEST_TOKEN,
           })
           const instance = yield* Nebius.compute.Instance(
             INSTANCE_LOGICAL_ID,
@@ -221,6 +269,9 @@ integrationTest(
             // fixture's round-trip needs.
             yield* Nebius.storage.GetObject(bucket).pipe(Effect.provide(Nebius.storage.GetObjectHttp))
             yield* Nebius.storage.PutObject(bucket).pipe(Effect.provide(Nebius.storage.PutObjectHttp))
+            // The AI binding: no identity/permit — it injects the endpoint's
+            // managed URL + bearer token into the same shipped env file.
+            yield* Nebius.ai.ChatCompletions(endpoint).pipe(Effect.provide(Nebius.ai.ChatCompletionsHttp))
             // No handler shape on purpose: the VM runs the fixture's own impl
             // (this one only exists to register the bindings at deploy time).
           }),
@@ -307,6 +358,7 @@ integrationTest(
           secretSha256?: string | null
           region?: string | null
         }
+        ai?: { url?: string | null; hasToken?: boolean; tokenShape?: string; probe?: string }
         roundTrip?: string
         now?: string
       }
@@ -335,7 +387,17 @@ integrationTest(
       // `{"_tag":"Redacted","value":"eu-north1"}` — which broke SigV4 signing
       // ("authorization header … not valid") until `quoteEnvValue` unwrapped it.
       expect(body.s3?.region).toBe(process.env.NEBIUS_REGION ?? 'eu-north1')
+
+      // AI binding on the VM: the MANAGED https URL and a usable token (a real
+      // call to the endpoint, not just the env values).
+      console.log(`[E2E] vm reports AI env: ${JSON.stringify(body.ai)}`)
+      expect(body.ai?.url).toBe(managedEndpointUrl)
+      expect(body.ai?.hasToken).toBe(true)
+      expect(body.ai?.tokenShape).toBe(`${AI_TEST_TOKEN.length}ch`)
+      expect(body.ai?.probe).toBe('ok:200')
       expect(body.roundTrip).toBe('ok:hello-from-binding')
     }).pipe(safeDestroy(stack, verifyAssetsCleanup)),
-  { timeout: 20 * 60 * 1000 },
+  // Budget: two VMs (the nginx AI endpoint + the hosted instance), the instance's
+  // bundle boot and HTTP probe, the endpoint's S3 grants, and the destroy.
+  { timeout: 30 * 60 * 1000 },
 )

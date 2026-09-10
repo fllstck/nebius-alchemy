@@ -249,6 +249,16 @@ Status: M1–M6 **done** (0 errors, full suite green; M6 gated behind SLOW_TESTS
   GPU vLLM config (the example) — verified manually during the real-infra
   session (deploy → RUNNING → Worker → chat completion).
 
+  **UPDATE 2026-09-10 — the CPU half of this is now covered WITHOUT the opt-in
+test.** `tests/resources/compute/v1/hosted-instance.integration.test.ts`
+declares an nginx `cpu-d3` endpoint and registers `ChatCompletions` on a hosted
+INSTANCE, so the managed https URL + a usable bearer token are verified end to
+end on a real VM (`probe: ok:200`, plus the storage binding in the same
+instance). What remains exclusive to this file is a real **chat completion**
+from a VM (GPU endpoint) — i.e. the deployment-time behaviour of a GPU-backed
+endpoint plus the model's first token — so treat it as the last GPU-only check
+rather than as the AI bindings' main e2e.
+
   **Real-infra session findings (all fixed):** region/project mismatch (CLI
   profile vs `.env`); `cpu-e2` is eu-north1-only; plan-phase evaluation needs
   the lenient env derivation (O1); raw `IP:port` in `publicEndpoints[0]` broke

@@ -80,6 +80,9 @@ test('bundle + locally boot the hosted fixture', async () => {
         secretShape: 'absent',
         secretSha256: null,
       },
+      // No AI binding on a local boot either — proves the env comes from the
+      // binding, not from the framework.
+      ai: { url: null, hasToken: false, tokenShape: 'absent', probe: 'skipped' },
       roundTrip: 'skipped',
       // Request-time VM clock (skew diagnostic) — dynamic by nature.
       now: expect.any(String),

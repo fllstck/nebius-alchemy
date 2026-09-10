@@ -27,6 +27,31 @@ import { runDiskName } from '../helpers/run-token.ts'
 const ROUND_TRIP_KEY = 'hosted-binding-roundtrip.txt'
 const ROUND_TRIP_VALUE = 'hello-from-binding'
 
+/**
+ * A real call to the bound AI endpoint — proves the injected URL is the MANAGED
+ * https URL (not the raw `IP:port` that broke `new URL` once, AD1) and that the
+ * bearer token is usable from the VM. Never throws; the outcome is reported.
+ */
+const aiProbe = async (): Promise<string> => {
+  const url = process.env.NEBIUS_ENDPOINT_URL
+  const token = process.env.NEBIUS_ENDPOINT_AUTH_TOKEN
+  if (!url || !token) return 'skipped'
+  try {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    return `ok:${response.status}`
+  } catch (error) {
+    return `error:${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
+/** The AI binding's env — `url: null` when the binding did not reach the VM. */
+const aiReport = (probe: string) => ({
+  url: process.env.NEBIUS_ENDPOINT_URL ?? null,
+  hasToken: Boolean(process.env.NEBIUS_ENDPOINT_AUTH_TOKEN),
+  tokenShape: shape(process.env.NEBIUS_ENDPOINT_AUTH_TOKEN),
+  probe,
+})
+
 /** Shape-only diagnostics — never the secret itself. A JSON-serialized Output (i.e. an UNRESOLVED value) is the failure mode this reports. */
 const shape = (value: string | undefined): string =>
   value === undefined || value === ''
@@ -140,14 +165,16 @@ export default NebiusInstance(
     // Runs at cold start on the VM (nothing executes this at deploy — the
     // deploy-side binding registration lives in the e2e test's init Effect).
     const roundTrip = yield* Effect.promise(s3RoundTrip)
+    const ai = yield* Effect.promise(aiProbe)
     return {
       // Per-request body: `now` is the request-time clock (skew check), while
-      // `roundTrip` is the cold-start result.
+      // `roundTrip`/`ai` are the cold-start results.
       fetch: Effect.sync(() =>
         HttpServerResponse.json({
           ok: true,
           echo: process.env.HOSTED_TEST_ECHO ?? '',
           s3: s3Report(),
+          ai: aiReport(ai),
           roundTrip,
           now: new Date().toISOString(),
         }),
