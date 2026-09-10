@@ -154,6 +154,20 @@ export const isPemFormat = Schema.makeFilter(
   { title: 'PEM data' },
 )
 
+/**
+ * Mount tag for an attached shared filesystem.
+ *
+ * The guest uses it as the device identifier in the mount command, and the API
+ * caps it at 37 characters (`mount_tag` in `AttachedFilesystemSpec`).
+ */
+export const isValidMountTag = Schema.makeFilter(
+  (s: string) =>
+    s.length >= 1 && s.length <= 37
+      ? undefined
+      : `Mount tag must be 1-37 characters, got ${s.length} ("${s.slice(0, 50)}")`,
+  { title: 'mount tag' },
+)
+
 /** Block size must be a power of two between 4096 and 131072. */
 export const isValidBlockSize = Schema.makeFilter(
   (n: number) => {

@@ -132,6 +132,18 @@ export const NebiusImageProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* ImageSchema.validateImageProps(news)
+
+    // The proto marks every `oneof source` arm IMMUTABLE, so a different source
+    // cannot be applied by an update — plan a replace instead of letting the
+    // update call fail on the API.
+    if (
+      news.sourceDiskId !== olds?.sourceDiskId ||
+      news.sourceDiskSnapshotId !== olds?.sourceDiskSnapshotId ||
+      !AlchemyDiff.deepEqual(news.sourceStorage, olds?.sourceStorage)
+    ) {
+      return { action: 'replace' }
+    }
+
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

@@ -14,6 +14,10 @@ integrationTest(
           const key = yield* Nebius.kms.SymmetricKey('KMSTest-Key', {
             description: 'Alchemy integration test KMS key',
             algorithm: 'AES_256',
+            // Task 7b field: the `...Seconds` prop is reshaped into a protobuf
+            // Duration by the provider — this deploy is what proves the API
+            // accepts that payload (30 days, inside the 1 day … 10 year range).
+            rotationPeriodSeconds: 2_592_000,
           })
           return { key }
         }),

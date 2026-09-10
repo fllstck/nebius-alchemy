@@ -319,6 +319,14 @@ export const NebiusInstanceProvider: Layer.Layer<
         !AlchemyDiff.deepEqual(instance.spec.bootDisk, desired.bootDisk) ||
         !AlchemyDiff.deepEqual(instance.spec.networkInterfaces, desired.networkInterfaces) ||
         !AlchemyDiff.deepEqual(instance.spec.secondaryDisks, desired.secondaryDisks) ||
+        !AlchemyDiff.deepEqual(instance.spec.filesystems, desired.filesystems) ||
+        instance.spec.nvlInstanceGroupId !== desired.nvlInstanceGroupId ||
+        // Optional messages the platform may answer with a default: enforce them
+        // only when the prop is set, so a server-filled value cannot loop updates.
+        (news.localDisks !== undefined &&
+          !AlchemyDiff.deepEqual(instance.spec.localDisks, desired.localDisks)) ||
+        (news.reservationPolicy !== undefined &&
+          !AlchemyDiff.deepEqual(instance.spec.reservationPolicy, desired.reservationPolicy)) ||
         !AlchemyDiff.deepEqual(instance.spec.serviceAccountId, desired.serviceAccountId) ||
         instance.spec.cloudInitUserData !== desired.cloudInitUserData ||
         instance.spec.stopped !== desired.stopped
@@ -480,6 +488,19 @@ export const NebiusInstanceProvider: Layer.Layer<
       !AlchemyDiff.deepEqual(olds?.env ?? {}, news.env ?? {}) ||
       !AlchemyDiff.deepEqual(olds?.build ?? {}, news.build ?? {}) ||
       olds?.cloudInitUserData !== news.cloudInitUserData
+    ) {
+      return { action: 'update', stables: stableAttrs }
+    }
+
+    // Spec fields an update can change in place (the same list reconcile checks
+    // for drift). Guarded on the news side so an omitted prop never plans work.
+    if (
+      (news.filesystems !== undefined &&
+        !AlchemyDiff.deepEqual(olds?.filesystems ?? [], news.filesystems)) ||
+      (news.localDisks !== undefined && !AlchemyDiff.deepEqual(olds?.localDisks, news.localDisks)) ||
+      (news.reservationPolicy !== undefined &&
+        !AlchemyDiff.deepEqual(olds?.reservationPolicy, news.reservationPolicy)) ||
+      (news.nvlInstanceGroupId !== undefined && olds?.nvlInstanceGroupId !== news.nvlInstanceGroupId)
     ) {
       return { action: 'update', stables: stableAttrs }
     }

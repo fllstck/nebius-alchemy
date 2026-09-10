@@ -2,6 +2,7 @@ import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Module from '../../../../modules/resources/dns/v1/zone.ts'
 import * as SchemaModule from '../../../../modules/resources/dns/v1/zone.schema.ts'
+import * as NebiusZoneSchema from '../../../../schemas/nebius/dns/v1/zone.ts'
 import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
@@ -50,6 +51,41 @@ describe('Nebius.dns.v1.Zone', () => {
         SchemaModule.validateZoneProps({ name: 'my-zone', domainName: 'example.com.' }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+    })
+
+    // ── custom SOA (Task 7b schema-audit gaps) ────────────────────────────
+    // `soa_spec` was in the generated ZoneSpec but absent from the props schema,
+    // so the zone's negative-caching TTL could not be set at all.
+    test('accepts a custom SOA negative TTL', async () => {
+      const result = await runEffect(
+        SchemaModule.validateZoneProps({ ...validZoneProps, soaSpec: { negativeTtl: 60 } }),
+      )
+      expect(result.soaSpec?.negativeTtl).toBe(60)
+    })
+
+    test('rejects a negative TTL below 5 seconds (the API ignores it silently)', async () => {
+      const result = await runEffect(
+        SchemaModule.validateZoneProps({ ...validZoneProps, soaSpec: { negativeTtl: 3 } }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects a fractional negative TTL', async () => {
+      const result = await runEffect(
+        SchemaModule.validateZoneProps({ ...validZoneProps, soaSpec: { negativeTtl: 30.5 } }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('serialises the SOA spec onto the wire through ZoneSpec.fromJSON', () => {
+      // The provider passes the raw props to `ZoneSpec.fromJSON`, so the nested
+      // message + its Long second count must survive that pass-through.
+      const spec = NebiusZoneSchema.ZoneSpec.fromJSON({
+        domainName: 'example.com.',
+        vpc: { primaryNetworkId: 'network-abc123' },
+        soaSpec: { negativeTtl: 60 },
+      })
+      expect(spec.soaSpec?.negativeTtl.toNumber()).toBe(60)
     })
   })
 })

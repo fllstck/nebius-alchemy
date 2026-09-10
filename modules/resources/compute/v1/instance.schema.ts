@@ -1,5 +1,6 @@
 import * as Schema from 'effect/Schema'
 import * as ProjectSchema from '../../iam/v2/project.schema.ts'
+import * as FilesystemSchema from './filesystem.schema.ts'
 import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
@@ -202,6 +203,67 @@ const PreemptibleSchema = Schema.Struct({
   onPreemption: Schema.Literal('STOP'),
 })
 
+/**
+ * Shared-filesystem attachment. `AttachedFilesystemSpec` in the proto reuses the
+ * disk attach modes (READ_ONLY/READ_WRITE) and requires both the mount tag and
+ * the referenced filesystem (`oneof type` is required).
+ */
+const ExistingFilesystemSchema = Schema.Struct({
+  id: FilesystemSchema.FilesystemId,
+})
+
+const AttachedFilesystemSpecSchema = Schema.Struct({
+  attachMode: AttachModeSchema,
+  /** Device identifier used in the mount command inside the guest (max 37 chars). */
+  mountTag: Schema.String.check(Validation.isValidMountTag),
+  /** Attach an existing shared filesystem by ID. */
+  existingFilesystem: ExistingFilesystemSchema,
+})
+
+/**
+ * Host-passthrough local (NVMe) disks. Availability depends on platform, preset
+ * and region; their content is not preserved across a stop/start.
+ *
+ * The proto's `oneof request` is required and `passthrough_group` is its only
+ * arm, so the request object is mandatory whenever `localDisks` is set.
+ */
+const LocalDisksSpecSchema = Schema.Struct({
+  passthroughGroup: Schema.Struct({
+    /**
+     * Proto: "Enabled only when this field is explicitly set" — `true` requests
+     * the host's passthrough disks; `false` requests the group without disks.
+     */
+    requested: Schema.Boolean,
+  }),
+})
+
+/**
+ * The API rejects reservation IDs alongside the on-demand-only policy
+ * (`It's an error to provide reservation_ids with policy = FORBID`).
+ */
+const reservationPolicyValid = Schema.makeFilter(
+  (policy: Record<string, unknown>) => {
+    if (policy.policy === 'FORBID' && Array.isArray(policy.reservationIds) && policy.reservationIds.length > 0) {
+      return {
+        path: ['reservationIds'],
+        issue: 'reservationIds cannot be combined with policy "FORBID" (on-demand only) — use AUTO or STRICT',
+      }
+    }
+    return undefined
+  },
+  { title: 'reservation policy' },
+)
+
+const ReservationPolicySchema = Schema.Struct({
+  /**
+   * AUTO (default) — try reservations, then any capacity block, then on-demand.
+   * FORBID — on-demand only. STRICT — capacity blocks only, fail otherwise.
+   */
+  policy: Schema.Union([Schema.Literal('AUTO'), Schema.Literal('FORBID'), Schema.Literal('STRICT')]),
+  /** Capacity block IDs, in priority order. */
+  reservationIds: Schema.Array(Schema.String),
+}).check(reservationPolicyValid)
+
 // ---------------------------------------------------------------------------
 // Hosted runtime props (platform-level — not InstanceSpec fields)
 // ---------------------------------------------------------------------------
@@ -231,6 +293,14 @@ export const InstancePropsSchema = Schema.Struct({
   bootDisk: AttachedDiskSpecSchema,
   /** Additional data disks. */
   secondaryDisks: Schema.optional(Schema.Array(AttachedDiskSpecSchema)),
+  /** Shared filesystems to attach. */
+  filesystems: Schema.optional(Schema.Array(AttachedFilesystemSpecSchema)),
+  /** Host-passthrough local disks (platform/preset dependent). */
+  localDisks: Schema.optional(LocalDisksSpecSchema),
+  /** Capacity reservation policy. */
+  reservationPolicy: Schema.optional(ReservationPolicySchema),
+  /** NVLink Instance Group to join (GPU/NVLink platforms). */
+  nvlInstanceGroupId: Schema.optional(Schema.String),
   /** Network interfaces. Must have at least one. */
   networkInterfaces: Schema.Array(NetworkInterfaceSpecSchema),
   /** GPU cluster ID for InfiniBand interconnect. Only settable at creation. */

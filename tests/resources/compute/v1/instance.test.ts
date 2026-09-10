@@ -5,6 +5,7 @@ import { NodeFileSystem } from '@effect/platform-node'
 import * as Module from '../../../../modules/resources/compute/v1/instance.ts'
 import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/instance.schema.ts'
+import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
 import { readInput, resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
@@ -111,6 +112,18 @@ describe('Nebius.compute.v1.Instance', () => {
           { ...validInstanceProps, cloudInitUserData: 'echo old' },
         ),
       ).toEqual({ action: 'update', stables: ['id', 'parentId', 'name'] })
+    })
+
+    test('a new shared filesystem plans an in-place update (Task 7b fields)', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const update = { action: 'update', stables: ['id', 'parentId', 'name'] }
+      const filesystem = {
+        attachMode: 'READ_WRITE' as const,
+        mountTag: 'data',
+        existingFilesystem: { id: 'filesystem-abc123' },
+      }
+      expect(await runDiff(svc, { ...validInstanceProps, filesystems: [filesystem] }, { ...validInstanceProps })).toEqual(update)
+      expect(await runDiff(svc, { ...validInstanceProps, nvlInstanceGroupId: 'nvlgroup-abc123' }, { ...validInstanceProps })).toEqual(update)
     })
 
     test('code-only change plans an update when the bundle hash differs', async () => {
@@ -274,6 +287,72 @@ describe('Nebius.compute.v1.Instance', () => {
         }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+    })
+
+    // ── spec fields reachable only after Task 7b (filesystems / local disks /
+    //    reservations / NVLink group) ─────────────────────────────────────
+    test('accepts shared filesystems, local disks, a reservation policy and an NVLink group', async () => {
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          filesystems: [
+            { attachMode: 'READ_ONLY', mountTag: 'shared', existingFilesystem: { id: 'filesystem-abc123' } },
+          ],
+          localDisks: { passthroughGroup: { requested: true } },
+          reservationPolicy: { policy: 'AUTO', reservationIds: ['reservation-abc123'] },
+          nvlInstanceGroupId: 'nvlgroup-abc123',
+        }),
+      )
+      expect(result.filesystems?.[0]?.mountTag).toBe('shared')
+      expect(result.localDisks?.passthroughGroup.requested).toBe(true)
+      expect(result.nvlInstanceGroupId).toBe('nvlgroup-abc123')
+    })
+
+    test('rejects a mount tag longer than 37 characters', async () => {
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          filesystems: [
+            {
+              attachMode: 'READ_WRITE',
+              mountTag: 'x'.repeat(38),
+              existingFilesystem: { id: 'filesystem-abc123' },
+            },
+          ],
+        }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('rejects reservationIds combined with the FORBID policy', async () => {
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          reservationPolicy: { policy: 'FORBID', reservationIds: ['reservation-abc123'] },
+        }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('serialises the new spec fields onto the wire through InstanceSpec.fromJSON', () => {
+      // Guards the AGENTS.md rule: enum-bearing specs must go through `fromJSON`
+      // (nested-message aware, string → int32), never `fromPartial`.
+      const spec = NebiusInstanceSchema.InstanceSpec.fromJSON({
+        filesystems: [
+          { attachMode: 'READ_WRITE', mountTag: 'shared', existingFilesystem: { id: 'filesystem-abc123' } },
+        ],
+        localDisks: { passthroughGroup: { requested: true } },
+        reservationPolicy: { policy: 'STRICT', reservationIds: ['reservation-abc123'] },
+        nvlInstanceGroupId: 'nvlgroup-abc123',
+      })
+      expect(spec.filesystems[0]?.attachMode).toBe(
+        NebiusInstanceSchema.AttachedFilesystemSpec_AttachMode.READ_WRITE,
+      )
+      expect(spec.filesystems[0]?.existingFilesystem?.id).toBe('filesystem-abc123')
+      expect(spec.localDisks?.passthroughGroup?.requested).toBe(true)
+      expect(spec.reservationPolicy?.policy).toBe(NebiusInstanceSchema.ReservationPolicy_Policy.STRICT)
+      expect(spec.reservationPolicy?.reservationIds).toEqual(['reservation-abc123'])
+      expect(spec.nvlInstanceGroupId).toBe('nvlgroup-abc123')
     })
   })
 

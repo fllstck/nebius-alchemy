@@ -35,6 +35,19 @@ const toFriendlyAttributes = (
     resourceSchema: NebiusSymmetricKeySchema.SymmetricKey,
   })
 
+/**
+ * Rotation period as a protobuf `Duration`, or `{}` when the prop is unset.
+ *
+ * The generated `Duration.fromJSON` accepts only `{ seconds, nanos }` — it does
+ * NOT parse the protobuf JSON string form (`"2592000s"`), so the `...Seconds`
+ * prop has to be reshaped here. Omitted entirely = the platform default
+ * (`NON_EMPTY_DEFAULT`) applies.
+ */
+const rotationPeriodField = (news: { rotationPeriodSeconds?: number }): Record<string, unknown> =>
+  news.rotationPeriodSeconds != null
+    ? { rotationPeriod: { seconds: String(news.rotationPeriodSeconds) } }
+    : {}
+
 // ----- PROVIDER
 
 /** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
@@ -74,19 +87,26 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
         spec: NebiusSymmetricKeySchema.SymmetricKeySpec.fromJSON({
           description: news.description || '',
           algorithm: news.algorithm || 'AES_256',
+          ...rotationPeriodField(news),
         }),
       })
     }
 
-    // 3. Sync — only description can change (algorithm is immutable)
+    // 3. Sync — description and rotation period are mutable (algorithm is immutable)
     const desiredSpec = NebiusSymmetricKeySchema.SymmetricKeySpec.fromJSON({
       description: news.description || '',
       algorithm: output?.algorithm || news.algorithm || 'AES_256',
+      ...rotationPeriodField(news),
     })
-    if (key.spec && !AlchemyDiff.deepEqual(
-      { description: key.spec.description },
-      { description: desiredSpec.description },
-    )) {
+    const specDrifted =
+      !AlchemyDiff.deepEqual(
+        { description: key.spec?.description },
+        { description: desiredSpec.description },
+      ) ||
+      // Rotation is opt-in: an unset prop must not fight the server-applied default.
+      (news.rotationPeriodSeconds != null &&
+        !AlchemyDiff.deepEqual(key.spec?.rotationPeriod, desiredSpec.rotationPeriod))
+    if (key.spec && specDrifted) {
       yield* session.note(`Updating Nebius.kms.v1.SymmetricKey (${key.metadata!.name})`)
       key = yield* grpcService.symmetricKey.update({
         metadata: {

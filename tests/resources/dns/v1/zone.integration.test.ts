@@ -12,6 +12,9 @@ integrationTest(test.provider, 'Nebius.dns.v1.Zone lifecycle', (stack) =>
         const zone = yield* Nebius.dns.Zone('ZoneTest-Zone', {
           domainName: 'alchemy-test.example.com.',
           vpc: { primaryNetworkId: network.id },
+          // Task 7b field: custom SOA. The deploy is the API-acceptance check
+          // (60s negative caching, above the API's 5s floor).
+          soaSpec: { negativeTtl: 60 },
         })
         return { network, zone }
       }),

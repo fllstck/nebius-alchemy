@@ -13,6 +13,34 @@ const CPUArchitectureSchema = Schema.Union([
   Schema.Literal('ARM64'),
 ])
 
+/** Bucket object to create the image from (a third source beside disk/snapshot). */
+const SourceStorageSchema = Schema.Struct({
+  bucketName: Schema.String,
+  objectName: Schema.String,
+})
+
+/**
+ * The proto declares the create source as a `required` `oneof`: exactly one of
+ * `sourceDiskId`, `sourceDiskSnapshotId` or `sourceStorage` must be given.
+ */
+const exactlyOneImageSource = Schema.makeFilter(
+  (props: {
+    sourceDiskId?: unknown
+    sourceDiskSnapshotId?: unknown
+    sourceStorage?: unknown
+  }) => {
+    const given = (['sourceDiskId', 'sourceDiskSnapshotId', 'sourceStorage'] as const).filter(
+      (key) => props[key] !== undefined,
+    )
+    if (given.length === 1) return undefined
+    if (given.length === 0) {
+      return 'Image requires exactly one source: sourceDiskId, sourceDiskSnapshotId, or sourceStorage: { bucketName, objectName }'
+    }
+    return `Image accepts exactly one source, got ${given.length}: ${given.join(', ')}`
+  },
+  { title: 'exactly one image source' },
+)
+
 export const ImagePropsSchema = Schema.Struct({
   parentId: Schema.optional(ProjectSchema.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
@@ -29,17 +57,13 @@ export const ImagePropsSchema = Schema.Struct({
   sourceDiskId: Schema.optional(Ids.DiskId),
   /** ID of the disk snapshot to create the image from. */
   sourceDiskSnapshotId: Schema.optional(Ids.DiskSnapshotId),
+  /** Create the image from an object in a Nebius Object Storage bucket. */
+  sourceStorage: Schema.optional(SourceStorageSchema),
   /** CPU architecture supported by the image. Default: AMD64. */
   cpuArchitecture: Schema.optional(CPUArchitectureSchema),
   /** Platforms where this image is recommended. */
   recommendedPlatforms: Schema.optional(Schema.Array(Schema.String)),
-}).check(
-  Schema.makeFilter((props: Record<string, unknown>) => {
-    if (!props.sourceDiskId && !props.sourceDiskSnapshotId) {
-      return { path: [], issue: 'At least one of sourceDiskId or sourceDiskSnapshotId must be specified' }
-    }
-  }),
-)
+}).check(exactlyOneImageSource)
 
 export type ImageProps = typeof ImagePropsSchema.Type
 

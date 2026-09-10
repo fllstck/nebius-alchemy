@@ -70,9 +70,15 @@ export const NebiusZoneProvider: Layer.Layer<
       })
     }
 
-    // 3. Sync — only VPC scope can change (domainName is immutable)
+    // 3. Sync — VPC scope and SOA settings can change (domainName is immutable)
     const desired = NebiusZoneSchema.ZoneSpec.fromJSON(news)
-    if (zone.spec && !AlchemyDiff.deepEqual(zone.spec.vpc, desired.vpc)) {
+    if (
+      zone.spec &&
+      (!AlchemyDiff.deepEqual(zone.spec.vpc, desired.vpc) ||
+        // SOA is opt-in: the API answers with its own SOA when none was set, so
+        // comparing an absent prop against it would update on every reconcile.
+        (news.soaSpec !== undefined && !AlchemyDiff.deepEqual(zone.spec.soaSpec, desired.soaSpec)))
+    ) {
       yield* session.note(`Updating Nebius.dns.v1.Zone (${zone.metadata!.name})`)
       zone = yield* dnsGrpcService.zone.update({
         metadata: {
