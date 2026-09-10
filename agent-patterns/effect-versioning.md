@@ -79,6 +79,47 @@ combination**, and the only honest options are documenting the workaround or not
 releasing. Confirm by listing versions — `dist-tags.latest` may be the newest
 there is.
 
+### How others in the ecosystem handle this
+
+Researched 2026-09-10. **Nobody has a dependency-declaration-only fix** — the same
+conclusion Prisma reached independently (*"No dependency declaration can prevent
+this"*). There are four working approaches, and their trade-offs matter:
+
+| Approach | Who | Works for consumers? |
+| --- | --- | --- |
+| **Exact pins** (+ compat table) | sibling alchemy providers (`railway-`, `vercel-alchemy-provider`) | ✅ for npm; bun ignores peer ranges |
+| **Resolution check in CI** | Prisma (`check:npm-effect-resolution`) | ✅ catches it pre-release |
+| **Runtime guard** (fail fast) | Prisma | ✅ clear failure, no fix |
+| **Bundle the runtime** | OpenCode | ❌ unavailable to raw-TS source packages |
+| Move to a coherent release | alchemy itself | ✅ but requires upstream |
+
+**Exact pins are the sibling-provider convention.** `railway-alchemy-provider`
+and `vercel-alchemy-provider` both say *"Alchemy v2 and Effect v4 are currently
+beta dependencies, so compatible versions are pinned exactly"* — no carets in
+dependencies *or* peers, plus a README compatibility table. A range looks
+tolerant but cannot be satisfied strictly against prereleases, so consumers
+drift silently.
+
+**Declaring the drifting package as an exact peer fixes npm but not bun.**
+Verified both ways on the same tarball:
+
+```jsonc
+"peerDependencies": { "@effect/platform-node-shared": "4.0.0-rc.112" }
+// npm → resolves 4.0.0-rc.112, imports fine, NO consumer overrides needed
+// bun → ignores it, resolves 4.0.0-rc.113, crashes on import
+```
+
+npm satisfies the exact peer *and* the transitive `^4.0.0-rc.112` from the same
+version, so it dedupes correctly. Bun does not enforce peer ranges at all.
+
+**A direct exact `dependency` is worse than useless** — bun installs a second
+nested copy (`rc.112` beside the hoisted `rc.113`) instead of deduping, so the
+crashing copy survives *and* you ship a duplicate. Verified.
+
+**Practical ordering:** ship an exact peer (free win for npm), document the
+`overrides` block for bun, and add a runtime-import check to CI. Then get onto a
+coherent Effect release as soon as one exists.
+
 ### Don't assume a runtime/branch lets you dodge it
 
 When a broken dependency loads behind a runtime check, it is tempting to
@@ -137,21 +178,33 @@ it as a **direct devDependency** at the version you actually need:
 Generalise: anything you `import` should be a declared dependency, even when it
 arrives transitively via a peer.
 
-## Rule 3 — pin the peer range narrowly, and know why
+## Rule 3 — pin peer versions EXACTLY, and know why
 
-This repo declares a deliberately tight range:
+This repo pins exact versions in `peerDependencies` — no carets, no ranges:
 
 ```jsonc
 "peerDependencies": {
-  "effect": ">=4.0.0-rc.112 <4.0.0-rc.113"
+  "effect": "4.0.0-rc.112",
+  "@effect/platform-bun": "4.0.0-rc.112",
+  "@effect/platform-node": "4.0.0-rc.112",
+  "@effect/platform-node-shared": "4.0.0-rc.112"
 }
 ```
 
-Not conservative-for-its-own-sake: `rc.113` renamed the `Config` accessors to
-`Config.String`, and **`Config.String` does not exist on rc.112** (verified:
-`Config.string` is a function, `Config.String` is `undefined`). Alchemy beta.77
-requires rc.112 and calls the lowercase form ~119 times, so the two versions are
-mutually incompatible in both directions.
+Three reasons, in order of how much they matter:
+
+1. **An exact peer on the *drifting* package is the only declaration that fixes
+   npm consumers.** `@effect/platform-node-shared` is not a peer of ours by
+   nature — it is declared purely so npm resolves it to the version the rest of
+   the constellation needs. See the table above; it does nothing for bun.
+2. **Ranges on prereleases are a lie.** `>=4.0.0-rc.112 <4.0.0-rc.113` reads as
+tolerant but cannot be satisfied strictly, and consumers silently drift out of
+it. An exact pin is a *contract*; the sibling alchemy providers do the same.
+3. **Only one combination actually works.** `rc.113` renamed the `Config`
+   accessors to `Config.String`, and **`Config.String` does not exist on
+   rc.112** (verified: `Config.string` is a function, `Config.String` is
+   `undefined`). Alchemy beta.77 requires rc.112 and calls the lowercase form
+   ~119 times, so the two versions are mutually incompatible in both directions.
 
 **A migration cannot be staged across such a rename.** Alchemy beta.70 itself
 called `Schema.TaggedErrorClass`, which is *removed* in rc.112 — so old-alchemy
