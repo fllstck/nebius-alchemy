@@ -89,8 +89,22 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      # Informational: prints the full report including the known baseline
-      # (40 transitive vulns via pinned alchemy tooling — tracked, not chased).
+      # Informational only — and it always looks like a warning. `bun audit`
+      # exits 1 whenever ANY advisory exists, so with continue-on-error this step
+      # is rendered as a failed-but-allowed step (yellow annotation) on every
+      # run. That is expected, not a regression; the gate below is what decides
+      # the job.
+      #
+      # Baseline 2026-09-10: 47 transitive advisories — 5 high, 39 moderate,
+      # 3 low — and **none of them is in our own dependency list**. They all
+      # arrive through alchemy's dependency graph: `@prisma/dev` pins
+      # `hono@4.11.4` and `@hono/node-server@1.19.9` *exactly* (both vulnerable,
+      # so no range bump can resolve them), plus lodash, nanoid, valibot and
+      # vitest/@vitest/mocker from its dev tooling. Tracked, not chased: none is
+      # reachable from this package's code paths, we cannot ship an `overrides`
+      # fix to consumers (dependency overrides are ignored), and the Phase 6
+      # alchemy bump refreshes this graph. Expect the total to drift upward as
+      # advisories are published against those pinned versions.
       - name: Full audit report
         run: bun audit
         continue-on-error: true
