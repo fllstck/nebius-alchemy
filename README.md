@@ -67,8 +67,13 @@ export default Alchemy.Stack(
 ### Authenticate
 
 ```bash
-bun alchemy login
+bun alchemy profile edit --add Nebius
 ```
+
+> **`alchemy login` no longer exists.** It was replaced by `alchemy profile` in
+> alchemy 2.0.0-beta.77 (the CLI prints a pointer if you still call it). Related
+> commands: `alchemy profile show` (status), `alchemy profile refresh` (renew
+> credentials), `alchemy profile list` (all profiles).
 
 This opens your browser for a Nebius OAuth login, then asks you to pick a
 project — no external CLI, no API key, no environment variables. The chosen
@@ -91,7 +96,7 @@ Alternatively, for automation/CI:
 
 - **`sa-key`** — a service-account key (RSA-4096 authorized key). Renewal is
 automatic via the RFC 8693 token exchange, so it needs no browser after the
-one-time bootstrap (`alchemy login` → *Service Account Key*). In CI, set
+one-time bootstrap (choose *Service Account Key* during `alchemy profile edit`). In CI, set
 `NEBIUS_SA_ID`, `NEBIUS_SA_KEY_ID` and `NEBIUS_SA_PRIVATE_KEY`.
 - **`env`** — a static IAM API key via `NEBIUS_API_KEY`.
 
@@ -161,7 +166,7 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 ## Environment Variables
 
 | Variable | Required | Description |
-| `NEBIUS_PROJECT_ID` | with `env` / env-var `sa-key` | Project ID — not needed after `alchemy login` or the SA bootstrap (picked at login) |
+| `NEBIUS_PROJECT_ID` | with `env` / env-var `sa-key` | Project ID — not needed after `alchemy profile edit` or the SA bootstrap (picked at login) |
 | `NEBIUS_TENANT_ID` | with `env` / env-var `sa-key` | Tenant ID for project/group discovery/creation actions |
 | `NEBIUS_API_KEY` | with `env` | IAM API key for the `env` auth method |
 | `NEBIUS_SA_ID` / `NEBIUS_SA_KEY_ID` / `NEBIUS_SA_PRIVATE_KEY` | with `sa-key` in CI | Service-account key material (RFC 8693 exchange) |

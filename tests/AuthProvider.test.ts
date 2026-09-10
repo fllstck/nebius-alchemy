@@ -236,7 +236,11 @@ describe('NebiusAuth', () => {
         ),
       )
       expect(error).toBeInstanceOf(NeedsReauth)
-      if (error instanceof NeedsReauth) expect(error.message).toContain('expired')
+      if (error instanceof NeedsReauth) {
+        expect(error.message).toContain('expired')
+        // An expired token is a *refresh* case, not a reconfigure one.
+        expect(error.message).toContain('alchemy profile refresh')
+      }
     })
 
     test('fails with guidance when nothing is stored', async () => {
@@ -247,7 +251,7 @@ describe('NebiusAuth', () => {
         ),
       )
       expect(error).toBeInstanceOf(NeedsReauth)
-      if (error instanceof NeedsReauth) expect(error.message).toContain('alchemy login')
+      if (error instanceof NeedsReauth) expect(error.message).toContain('alchemy profile edit')
     })
   })
 
@@ -262,7 +266,7 @@ describe('NebiusAuth', () => {
         expect(error.message).toContain('NEBIUS_SA_ID')
         expect(error.message).toContain('NEBIUS_SA_KEY_ID')
         expect(error.message).toContain('NEBIUS_SA_PRIVATE_KEY')
-        expect(error.message).toContain('alchemy login')
+        expect(error.message).toContain('alchemy profile edit')
       }
     })
 
@@ -439,7 +443,7 @@ describe('NebiusAuth', () => {
       expect(error).toBeInstanceOf(AuthError)
       if (error instanceof AuthError) {
         expect(error.message).toContain('no longer supported')
-        expect(error.message).toContain('alchemy login')
+        expect(error.message).toContain('alchemy profile edit')
       }
     })
   })

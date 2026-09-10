@@ -1,6 +1,6 @@
 /**
  * ConfigProvider override that serves `NEBIUS_PROJECT_ID` from the project
- * chosen during `alchemy login` (OAuth or sa-key bootstrap) when the env var
+ * chosen during `alchemy profile edit` (OAuth or sa-key bootstrap) when the env var
  * is NOT set. An explicit `NEBIUS_PROJECT_ID` in the environment always wins.
  *
  * This is the "choose projects via login flow" plumbing: the login stores the

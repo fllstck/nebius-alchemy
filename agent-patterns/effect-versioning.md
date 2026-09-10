@@ -120,9 +120,13 @@ version is faster and more trustworthy than reading changelogs.
 2. Check the new alchemy's `peerDependencies` for the required `effect` range.
 3. `npm pack` both old and new, and diff **runtime** exports of every module you
    import — not just types.
-4. Grep the new alchemy source for APIs you rely on that were removed in the
+4. **Diff the CLI surface too** — run `<cli> --help` and check each subcommand
+   you reference in docs, error messages, or examples. A renamed command
+   (`alchemy login` → `alchemy profile`) throws no type error and fails no test;
+   it only breaks users. Grep the repo for every command string you emit.
+5. Grep the new alchemy source for APIs you rely on that were removed in the
    target Effect (`Config.string`, `FileSystem.Size`, `TaggedErrorClass`, …).
-5. Install, then **re-audit installed `@effect/*` versions** (Rule 1) and add
+6. Install, then **re-audit installed `@effect/*` versions** (Rule 1) and add
    `overrides` for any that drifted.
-6. Count tests before and after. A *drop* in total tests means load-time
+7. Count tests before and after. A *drop* in total tests means load-time
    failures, not passing code.

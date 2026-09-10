@@ -5,6 +5,8 @@ import * as Effect from 'effect/Effect'
 import {
   AuthError,
   NeedsReauth,
+  reconfigureHint,
+  refreshHint,
   type ConfigureMethod,
   type EnvironmentVariable,
   type ProviderDetails,
@@ -74,7 +76,7 @@ export type NebiusStoredCredentials = typeof NebiusStoredCredentialsSchema.Type
 /**
  * OAuth credentials persisted by the browser login. No refresh token exists
  * for Nebius user accounts — the 12h token is re-issued by re-running
- * `alchemy login`. `projectId` records the project chosen at login.
+ * `alchemy profile edit`. `projectId` records the project chosen at login.
  *
  * **⚠️ Security note:** plaintext JSON — **world-readable unless chmod'd**;
  * the file is chmod'd to 0600 after writing via `writeSecureCredentials`
@@ -258,7 +260,9 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
 
       return yield* new AuthError({
         message:
-          'Nebius service-account key credentials not found. Run `alchemy login` and pick "Service Account Key" to bootstrap one, or set NEBIUS_SA_ID / NEBIUS_SA_KEY_ID / NEBIUS_SA_PRIVATE_KEY.',
+          'Nebius service-account key credentials not found. ' +
+          'Set NEBIUS_SA_ID / NEBIUS_SA_KEY_ID / NEBIUS_SA_PRIVATE_KEY for CI. ' +
+          reconfigureHint(NEBIUS_AUTH_PROVIDER_NAME, profileName),
       })
     })
 
@@ -689,7 +693,9 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       (config as { method: string }).method === 'nebius-cli'
         ? Effect.fail(
             new AuthError({
-              message: 'Nebius CLI authentication is no longer supported. Run: alchemy login',
+              message:
+                'Nebius CLI authentication is no longer supported. ' +
+                reconfigureHint(NEBIUS_AUTH_PROVIDER_NAME, profileName),
             }),
           )
         : Match.value(config).pipe(
@@ -713,14 +719,18 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
                   return yield* new NeedsReauth({
                     provider: NEBIUS_AUTH_PROVIDER_NAME,
                     profile: profileName,
-                    message: 'Nebius OAuth credentials not found. Run: alchemy login',
+                    message:
+                      'Nebius OAuth credentials not found. ' +
+                      reconfigureHint(NEBIUS_AUTH_PROVIDER_NAME, profileName),
                   })
                 }
                 if (stored.expiresAt <= Date.now()) {
                   return yield* new NeedsReauth({
                     provider: NEBIUS_AUTH_PROVIDER_NAME,
                     profile: profileName,
-                    message: 'Nebius OAuth token expired. Run: alchemy login',
+                    message:
+                      'Nebius OAuth token expired. ' +
+                      refreshHint(NEBIUS_AUTH_PROVIDER_NAME, profileName),
                   })
                 }
                 return {
@@ -754,7 +764,9 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
                         new NeedsReauth({
                           provider: NEBIUS_AUTH_PROVIDER_NAME,
                           profile: profileName,
-                          message: 'Nebius stored credentials not found. Run: alchemy login --configure',
+                          message:
+                            'Nebius stored credentials not found. ' +
+                            reconfigureHint(NEBIUS_AUTH_PROVIDER_NAME, profileName),
                         }),
                       )
                     : Effect.succeed({

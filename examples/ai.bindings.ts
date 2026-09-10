@@ -25,7 +25,7 @@
  *   NEBIUS_API_KEY        (required — auto-populated from Nebius CLI)
  *   NEBIUS_PROJECT_ID     (required)
  *   NEBIUS_REGION         (optional)  Default: eu-north1
- *   CLOUDFLARE_API_TOKEN / alchemy login   (required for the Worker deploy)
+ *   CLOUDFLARE_API_TOKEN / alchemy profile edit --add Cloudflare   (required for the Worker deploy)
  *
  * ⚠️ Billable resources: this deploys a real inference endpoint (VM) —
  *   destroy it when you're done. See AI_BINDINGS.md for the design.

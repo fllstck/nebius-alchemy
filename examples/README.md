@@ -55,7 +55,7 @@ The bindings examples ship typed Nebius S3 clients to a Cloudflare Worker at dep
 
 ### [storage.bindings.ts](storage.bindings.ts) — Effect-native Worker (inline form)
 
-The Worker entry ([storage.bindings-worker.ts](storage.bindings-worker.ts)) is a `Cloudflare.Worker` with an inline `Effect.gen` implementation. It declares the bucket, consumes the typed `GetObject`/`PutObject` runtime clients, and exposes a `GET`/`POST` HTTP API. Uses narrow deep-subpath imports so rolldown can tree-shake the handler bundle. Requires a Cloudflare API token or `alchemy login`.
+The Worker entry ([storage.bindings-worker.ts](storage.bindings-worker.ts)) is a `Cloudflare.Worker` with an inline `Effect.gen` implementation. It declares the bucket, consumes the typed `GetObject`/`PutObject` runtime clients, and exposes a `GET`/`POST` HTTP API. Uses narrow deep-subpath imports so rolldown can tree-shake the handler bundle. Requires a Cloudflare API token or `alchemy profile edit --add Cloudflare`.
 
 ### [storage-async.bindings.ts](storage-async.bindings.ts) — Async Worker (tiny bundle)
 

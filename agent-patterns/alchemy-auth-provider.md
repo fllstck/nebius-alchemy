@@ -243,6 +243,49 @@ const details = (profileName, config) =>
 Values must arrive **already redacted** — the display layer renders them
 verbatim. `details` must not require `Interaction`.
 
+## CLI vocabulary (beta.77)
+
+**`alchemy login` no longer exists.** It was replaced by `alchemy profile`, and
+calling the old name prints a pointer rather than working. A command rename
+produces **no type error and no test failure** — only users hitting it — so it
+has to be checked deliberately.
+
+| Command | Purpose |
+| --- | --- |
+| `alchemy profile edit --add <Provider>` | Interactive setup (was `login`) |
+| `alchemy profile edit --profile <p> --reconfigure <Provider>` | Re-do a provider's config |
+| `alchemy profile refresh --profile <p> --provider <Provider>` | Renew credentials without reconfiguring |
+| `alchemy profile show` / `list` / `current` | Status, all profiles, effective selection |
+| `alchemy profile create` / `rename` / `delete` | Profile lifecycle |
+
+**Never hand-roll these strings in provider error messages.** Alchemy exports
+hint builders so every provider speaks one vocabulary:
+
+```ts
+import { reconfigureHint, refreshHint } from 'alchemy/Auth/AuthProvider'
+
+// stale/absent config — needs (re)configuration
+reconfigureHint('Nebius', profileName)
+// → "Run `alchemy profile edit --profile <p> --reconfigure Nebius` to reconfigure."
+
+// expired or rotated credentials — needs renewal only
+refreshHint('Nebius', profileName)
+// → "Run `alchemy profile refresh --profile <p> --provider Nebius`."
+```
+
+Pick by *intent*, not by whichever feels closest: an expired token is a
+**refresh**, a missing/mismatched config is a **reconfigure**. Getting this
+backwards sends users to a heavier flow than they need.
+
+`AuthProviderImpl.configureWith` + `configureMethods` are the machine-readable
+half of this — they are what let `alchemy profile edit --method … --set …`
+validate and document a provider's flags without prompting.
+
+Other CLI moves from the same overhaul (unused in this repo, listed so the next
+audit does not re-derive them): `tail` → merged into `logs`; `aws` /
+`cloudflare` → under `provider`; `sync` → gone; `drift` → new; `nuke` → under
+`unsafe`.
+
 ## Testing
 
 Do **not** wire auth providers with `Effect.provide` + `Layer.mergeAll(...)`.
