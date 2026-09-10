@@ -478,9 +478,49 @@ await Effect.runPromise(program).catch((err) => {
 // Env file
 // ---------------------------------------------------------------------------
 
+/**
+ * Unwrap a Redacted value in the three forms the env pipeline produces:
+ *
+ * - a live `Redacted`;
+ * - a plain `{ _tag: 'Redacted', value }` object (class identity lost), or
+ * - the JSON **string** of that envelope — what survives alchemy's state
+ *   store, which is the form that actually reached the VM.
+ *
+ * `Platform`'s plan-phase config interceptor captures every `Config.*` lookup as
+ * `Output.literal(Redacted.make(value))` and folds it into the resource's `env`,
+ * so a config value (e.g. the region read by `transformInstanceProps`) can
+ * override the binding-supplied plain value. The env file is PLAINTEXT on the
+ * VM, so without this the VM received the envelope instead of the value —
+ * `NEBIUS_REGION={"_tag":"Redacted","value":"eu-north1"}` — which made the
+ * hosted instance sign S3 requests with a garbage region ("The authorization
+ * header that you provided is not valid."; found by the hosted-instance e2e on
+ * real infra, 2026-09-10).
+ */
+export const unwrapRedacted = (value: unknown): unknown => {
+  if (Redacted.isRedacted(value)) return Redacted.value(value)
+  if (typeof value === 'string') return parseRedactedEnvelope(value) ?? value
+  if (typeof value !== 'object' || value === null) return value
+  const serialized = value as { _tag?: unknown; value?: unknown }
+  return serialized._tag === 'Redacted' ? serialized.value : value
+}
+
+/** `{"_tag":"Redacted","value":"…"}` as a string → the value (undefined when it is not that envelope). */
+const parseRedactedEnvelope = (value: string): string | undefined => {
+  if (!value.startsWith('{')) return undefined
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    const envelope = parsed as { _tag?: unknown; value?: unknown }
+    return envelope._tag === 'Redacted' && typeof envelope.value === 'string' ? envelope.value : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Systemd EnvironmentFile escaping (copied from the AWS EC2 hosted runtime). */
 export const quoteEnvValue = (value: unknown): string => {
-  const text = typeof value === 'string' ? value : JSON.stringify(value ?? null)
+  const unwrapped = unwrapRedacted(value)
+  const text = typeof unwrapped === 'string' ? unwrapped : JSON.stringify(unwrapped ?? null)
   return `'${text.replaceAll(/'/g, `'""'`).replaceAll(/\n/g, '\\n')}'`
 }
 
@@ -1047,7 +1087,7 @@ export const resolveHostedRuntime = Effect.fn('resolveHostedRuntime')(function* 
  * by `bindInstanceHostEnv` during construction) becomes the systemd
  * `EnvironmentFile` the instance's program reads via `process.env`.
  */
-const unwrapEnvValue = (value: unknown): unknown => (Redacted.isRedacted(value) ? Redacted.value(value) : value)
+const unwrapEnvValue = unwrapRedacted
 
 export const hostedEnv = ({
   stackName,

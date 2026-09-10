@@ -277,6 +277,54 @@ export const StaticKeyProvider = () =>
 // ❌ Provider.effect — adds unnecessary Effect.gen wrapper
 ```
 
+### Bindings must be yielded in the **impl** argument, never the props Effect
+
+A `Platform` resource provides `Self` around `impl` (`node_modules/alchemy/src/Platform.ts`,
+`Layer.succeed(Self, instance)` before running it). The **props** Effect runs
+outside that context, so `Binding.Host` resolves `undefined` there and the
+binding's deploy-time branch is *silently skipped* — no IAM grant, no env
+injection, and the failure only shows up at runtime as `Missing Nebius S3 env
+bindings: …`. `tests/resources/compute/v1/hosted-bindings.test.ts` pins both
+behaviours (impl → the instance; props → `undefined`) so this cannot regress.
+
+```ts
+// ✅ the instance is its own binding host
+yield* Nebius.compute.Instance('Api', props, Effect.gen(function* () {
+  yield* Nebius.storage.GetObject(bucket).pipe(Effect.provide(Nebius.storage.GetObjectHttp))
+  return { fetch }
+}))
+// ❌ silently skips all binding wiring
+yield* Nebius.compute.Instance('Api', Effect.gen(function* () {
+  yield* Nebius.storage.GetObject(bucket)   // host === undefined
+  return props
+}))
+```
+
+A `main`-only instance (no inline impl) is *also* wrong for a hosted program:
+`isExternal` is set, `bundleProgram` skips the bootstrap virtual entry, and
+nothing ever runs the bundle. Pass the init Effect.
+
+### Plan-time `Config` captures reach the shipped env as **Redacted**
+
+`Platform`'s config interceptor stores every `Config.*` lookup as
+`Output.literal(Redacted.make(value))` and folds it into the resource `env` —
+where it *overrides* a binding's plain value. Since the env file is plaintext on
+the VM, `quoteEnvValue` unwraps all three forms a Redacted arrives in (live,
+`{ _tag: 'Redacted', value }`, and the JSON **string** the state store yields).
+Never `JSON.stringify` a Redacted into shipped env — the VM then receives
+`NEBIUS_REGION={"_tag":"Redacted","value":"eu-north1"}`, which broke SigV4
+signing in the hosted e2e.
+
+### `hostIdentity` pins itself to the host's namespace
+
+`modules/resources/shared/host-identity.ts` declares `<host>BindingSA/Group/
+Membership/Key` under `Namespace.set(hostLogicalId)`, **absolutely**. It is
+called from two places — `transformInstanceProps` (already inside
+`Namespace.push(id)`) and the binding impl (root namespace) — and with an
+*ambient* namespace those produced two different FQNs, i.e. two identities with
+the same physical AccessKey name and an `ALREADY_EXISTS` at deploy. Keep it
+absolute; do not "simplify" it to `push`.
+
 ### Ownership tagging
 
 When implementing ownership tagging manually, import from `alchemy/Tags` and `alchemy/AdoptPolicy`:

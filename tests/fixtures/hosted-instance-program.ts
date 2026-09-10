@@ -1,24 +1,106 @@
 /**
- * Hosted-instance integration fixture: the bundled program for
- * `Nebius.compute.v1.Instance` host mode.
+ * The hosted-instance e2e program (the `main` the VM bundles and runs).
  *
- * The virtual entry imports this module's DEFAULT export — which must be the
- * INSTANCE RESOURCE (its `RuntimeContext.exports` is what the bootstrap runs).
- * The instance declared here is the bundle-side program entry; the test
- * declares its own `HostedTestInstance` with `main` pointing at this file.
+ * DEEP IMPORTS ONLY (house style: the package index pulls the whole provider
+ * surface). Note the measured reality — this bundle is 27 files / ~5.2 MB
+ * including `grpc-js`, `rolldown` and `postcss`: deep imports alone do NOT
+ * remove the deploy graph, because `instance.ts` statically reaches
+ * `hosted.ts → alchemy/Bundle` (rolldown/vite/postcss) and the gRPC
+ * api-client, and those modules survive tree-shaking. This is the same
+ * open question the D8 bundle harness tracks in TASKS.md — an instance bundle
+ * is a fourth data point for it, not a new bug.
  *
- * The `main` prop is `import.meta.url` — the module itself. Props read
- * `HOSTED_TEST_SUBNET_ID` / `HOSTED_TEST_SA_ID` with empty fallbacks: at the
- * VM the shipped env file doesn't carry them, but the runtime construction
- * never sends API calls (empty values are harmless there).
+ * Phase split: this file is bundled but NOT executed by the CLI — its props
+ * Effect runs at deploy (Config captures → shipped env) and again at cold start
+ * on the VM. The bindings this program consumes are registered by the
+ * DEPLOY-side instance declaration (the e2e test's init Effect), which is what
+ * puts `NEBIUS_S3_*` into the shipped env file via `hostedEnv`.
  */
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
-import * as Nebius from '@fllstck/nebius-alchemy'
+import { createHash } from 'node:crypto'
+import { S3Client } from '@bradenmacdonald/s3-lite-client'
+import { NebiusInstance } from '@fllstck/nebius-alchemy/resources/compute/v1/instance.ts'
 import { runDiskName } from '../helpers/run-token.ts'
 
-export default Nebius.compute.Instance(
+const ROUND_TRIP_KEY = 'hosted-binding-roundtrip.txt'
+const ROUND_TRIP_VALUE = 'hello-from-binding'
+
+/** Shape-only diagnostics — never the secret itself. A JSON-serialized Output (i.e. an UNRESOLVED value) is the failure mode this reports. */
+const shape = (value: string | undefined): string =>
+  value === undefined || value === ''
+    ? 'absent'
+    : `${value.length}ch${value.startsWith('{') ? ':JSON-LOOKING' : ''}`
+
+/** Short digest of the secret — lets the test prove the VALUE matched without shipping it. */
+const sha = (value: string | undefined): string | null =>
+  value ? createHash('sha256').update(value).digest('hex').slice(0, 16) : null
+
+/** The S3 env the BINDING injected — `null` when the binding did not reach the VM. */
+const s3Report = () => ({
+  endpoint: process.env.NEBIUS_S3_ENDPOINT ?? null,
+  bucket: process.env.NEBIUS_BUCKET_NAME ?? null,
+  hasAccessKey: Boolean(process.env.NEBIUS_ACCESS_KEY_ID && process.env.NEBIUS_SECRET_ACCESS_KEY),
+  keyIdPrefix: process.env.NEBIUS_ACCESS_KEY_ID?.slice(0, 10) ?? null,
+  region: process.env.NEBIUS_REGION ?? null,
+  secretShape: shape(process.env.NEBIUS_SECRET_ACCESS_KEY),
+  secretSha256: sha(process.env.NEBIUS_SECRET_ACCESS_KEY),
+})
+
+/**
+ * A real S3 round-trip through exactly those env values — proves both halves of
+ * the binding: the identity's key was injected AND `grantBucketAccess` gave it
+ * write access. Never throws: the outcome is reported in the response body.
+ *
+ * RETRIES: newly minted Nebius access keys/permissions take time to propagate to
+ * the S3 front end, and a cold-start probe right after boot can land inside that
+ * window (observed: "The authorization header that you provided is not valid."
+ * on the first attempt). A persistent failure across all attempts is a real
+ * credential/grant bug; a later success means we only raced propagation — the
+ * report says which.
+ */
+const ATTEMPTS = 8
+const RETRY_DELAY_MS = 15_000
+
+const s3RoundTrip = async (): Promise<string> => {
+  const env = process.env
+  if (
+    !env.NEBIUS_S3_ENDPOINT ||
+    !env.NEBIUS_BUCKET_NAME ||
+    !env.NEBIUS_ACCESS_KEY_ID ||
+    !env.NEBIUS_SECRET_ACCESS_KEY
+  ) {
+    return 'skipped'
+  }
+  const client = new S3Client({
+    endPoint: env.NEBIUS_S3_ENDPOINT,
+    region: env.NEBIUS_REGION ?? 'eu-north1',
+    accessKey: env.NEBIUS_ACCESS_KEY_ID,
+    secretKey: env.NEBIUS_SECRET_ACCESS_KEY,
+    bucket: env.NEBIUS_BUCKET_NAME,
+    pathStyle: true,
+  })
+
+  let lastError = ''
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    try {
+      await client.putObject(ROUND_TRIP_KEY, ROUND_TRIP_VALUE, { metadata: { 'Content-Type': 'text/plain' } })
+      const response = await client.getObject(ROUND_TRIP_KEY)
+      const text = await response.text()
+      // Delete it again: a non-empty bucket is undeletable, which would turn the
+      // test's bucket into a leak at destroy time.
+      await client.deleteObject(ROUND_TRIP_KEY)
+      return attempt === 1 ? `ok:${text}` : `ok:${text} (attempt ${attempt})`
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+    }
+  }
+  return `error:${lastError} (${ATTEMPTS} attempts)`
+}
+
+export default NebiusInstance(
   'HostedTestInstance',
   Effect.gen(function* () {
     const subnetId = yield* Effect.orDie(
@@ -54,10 +136,22 @@ export default Nebius.compute.Instance(
       env: { HOSTED_TEST_ECHO: 'hello-from-env' },
     }
   }),
-  Effect.succeed({
-    fetch: HttpServerResponse.json({
-      ok: true,
-      echo: process.env.HOSTED_TEST_ECHO ?? '',
-    }),
+  Effect.gen(function* () {
+    // Runs at cold start on the VM (nothing executes this at deploy — the
+    // deploy-side binding registration lives in the e2e test's init Effect).
+    const roundTrip = yield* Effect.promise(s3RoundTrip)
+    return {
+      // Per-request body: `now` is the request-time clock (skew check), while
+      // `roundTrip` is the cold-start result.
+      fetch: Effect.sync(() =>
+        HttpServerResponse.json({
+          ok: true,
+          echo: process.env.HOSTED_TEST_ECHO ?? '',
+          s3: s3Report(),
+          roundTrip,
+          now: new Date().toISOString(),
+        }),
+      ),
+    }
   }),
 )

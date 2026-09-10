@@ -16,6 +16,7 @@
  */
 import * as Effect from 'effect/Effect'
 import * as Output from 'alchemy/Output'
+import * as AlchemyNamespace from 'alchemy/Namespace'
 import * as Iam from '../iam/index.ts'
 import type * as GroupSchema from '../iam/v1/group.schema.ts'
 import type * as ServiceAccountSchema from '../iam/v1/service-account.schema.ts'/**
@@ -58,35 +59,53 @@ export interface HostIdentity {
  * Lazily declare (or adopt) the per-host identity: a ServiceAccount holding an
  * S3-compatible AccessKey, placed in a Group so capability-specific grants
  * (e.g. an AccessPermit on a bucket) can attach later.
+ *
+ * The identity is pinned ABSOLUTELY to the host's own namespace
+ * (`<host>/<host>BindingSA`) rather than the caller's ambient one, because the
+ * same host is a binding target from more than one call site:
+ * `transformInstanceProps` (already inside `Namespace.push(id)`) and the binding
+ * impl itself (at the root, or inside whatever namespace the user called from).
+ * Leaving it ambient produced two DIFFERENT FQNs for one host, so the identity
+ * was declared twice — two SAs, two groups and two AccessKeys with the same
+ * physical name, the second dying with ALREADY_EXISTS (`AccessKeyCollisionError`
+ * on real infra, 2026-09-10). With the namespace pinned, both call sites
+ * resolve to the same FQN and the framework's duplicate-FQN registration makes
+ * it a single identity.
  */
 export const hostIdentity = Effect.fn('hostIdentity')(function* (
   hostLogicalId: string,
 ): Effect.fn.Return<HostIdentity> {
-  const sa = yield* unrequiring(
-    Iam.ServiceAccount(`${hostLogicalId}BindingSA`, {
-      description: 'Alchemy binding host identity',
-    }),
-  )
-  const group = yield* unrequiring(Iam.Group(`${hostLogicalId}BindingGroup`))
-  yield* unrequiring(
-    Iam.GroupMembership(`${hostLogicalId}BindingMembership`, {
-      parentId: group.id,
-      memberId: sa.id,
-    }),
-  )
-  const key = yield* unrequiring(
-    Iam.AccessKey(`${hostLogicalId}BindingKey`, {
-      serviceAccountId: sa.id,
-      secretDeliveryMode: 'INLINE',
-    }),
-  )
+  return yield* Effect.gen(function* () {
+    const sa = yield* unrequiring(
+      Iam.ServiceAccount(`${hostLogicalId}BindingSA`, {
+        description: 'Alchemy binding host identity',
+      }),
+    )
+    const group = yield* unrequiring(Iam.Group(`${hostLogicalId}BindingGroup`))
+    yield* unrequiring(
+      Iam.GroupMembership(`${hostLogicalId}BindingMembership`, {
+        parentId: group.id,
+        memberId: sa.id,
+      }),
+    )
+    const key = yield* unrequiring(
+      Iam.AccessKey(`${hostLogicalId}BindingKey`, {
+        serviceAccountId: sa.id,
+        secretDeliveryMode: 'INLINE',
+      }),
+    )
 
-  return {
-    serviceAccountId: sa.id,
-    groupId: group.id,
-    awsAccessKeyId: key.awsAccessKeyId,
-    secretAccessKey: key.secretAccessKey,
-  }
+    return {
+      serviceAccountId: sa.id,
+      groupId: group.id,
+      awsAccessKeyId: key.awsAccessKeyId,
+      secretAccessKey: key.secretAccessKey,
+    }
+  }).pipe(
+    // `set` replaces the ambient namespace ABSOLUTELY (no parent), so both call
+    // sites land on the same FQNs.
+    AlchemyNamespace.set(hostLogicalId),
+  )
 })
 
 /**

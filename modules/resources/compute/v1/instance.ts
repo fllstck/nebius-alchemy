@@ -120,7 +120,7 @@ const toFriendlyAttributes = (
 // ----- HOSTED-RUNTIME HELPERS
 
 /** Platform-level hosted props — stripped before `InstanceSpec.fromJSON`. */
-const HOSTED_SPEC_KEYS = new Set(['main', 'handler', 'port', 'env', 'build', 'isExternal', 'bucket', 'hosted'])
+const HOSTED_SPEC_KEYS = new Set(['main', 'handler', 'port', 'env', 'build', 'isExternal', 'bucket', 'hosted', 'exports'])
 
 /**
  * The spec INPUT: the user's props minus the hosted props, with the merged
@@ -463,6 +463,18 @@ export const NebiusInstanceProvider: Layer.Layer<
   // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.compute.v1.Instance.diff')(function* ({ id, news, olds, output }) {
     news = news || {}
+    // `exports` is the runtime program and it is an Effect — a host runtime
+    // context always exposes one (`Server/Process.ts`), and `Platform` folds it
+    // onto props for EVERY inline init Effect (the Effectful Constructor form,
+    // which is also how bindings get registered). `isResolved` treats any Effect
+    // as unresolved, so gating on the whole bag made every diff a silent no-op
+    // for inline-impl instances — the same trap the AWS EC2 diff documents for
+    // `contentInputs`. It is runtime-only state: never a spec field
+    // (`hostedSpecInput` strips it) and never compared below.
+    const { exports: _runtimeExports, ...resolvableNews } = news as Record<string, unknown>
+    // Keep the narrowed type (the comparisons below are typed against it) while
+    // dropping the runtime-only key from everything downstream.
+    news = resolvableNews as typeof news
     if (!AlchemyDiff.isResolved(news)) return undefined
 
     // Plan-time props validation — fails `alchemy plan` fast, BEFORE any API

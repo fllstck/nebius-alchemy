@@ -29,6 +29,25 @@ describe('hosted renderEnvFile', () => {
     expect(quoteEnvValue('line1\nline2')).toBe("'line1\\nline2'")
   })
 
+  test('unwraps a live Redacted config value (Platform captures Config as Redacted)', () => {
+    expect(quoteEnvValue(Redacted.make('eu-north1'))).toBe("'eu-north1'")
+  })
+
+  test('unwraps a Redacted that lost its class identity through the state store', () => {
+    // The shape a serialized Redacted arrives in — the bug that shipped
+    // `NEBIUS_REGION={"_tag":"Redacted","value":"eu-north1"}` to the VM.
+    expect(quoteEnvValue({ _tag: 'Redacted', value: 'eu-north1' })).toBe("'eu-north1'")
+  })
+
+  test('unwraps the JSON-STRING Redacted envelope (what the state store yields)', () => {
+    expect(quoteEnvValue('{"_tag":"Redacted","value":"eu-north1"}')).toBe("'eu-north1'")
+  })
+
+  test('leaves ordinary strings alone (no over-eager JSON parsing)', () => {
+    expect(quoteEnvValue('{"a":1}')).toBe(`'{"a":1}'`)
+    expect(quoteEnvValue('eu-north1')).toBe("'eu-north1'")
+  })
+
   test('JSON-stringifies non-string values', () => {
     expect(renderEnvFile({ PORT: 3000, FLAG: true })).toBe("FLAG='true'\nPORT='3000'")
   })

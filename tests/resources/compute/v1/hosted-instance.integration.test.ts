@@ -14,10 +14,13 @@
  * them (process.env) before the hosted instance deploys.
  */
 import * as Effect from 'effect/Effect'
+import { createHash } from 'node:crypto'
 import { expect } from 'bun:test'
 import { Nebius, test } from '../../../helpers/stack.ts'
 import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
+import { S3Client } from '@bradenmacdonald/s3-lite-client'
+import { hostIdentity } from '../../../../modules/resources/shared/host-identity.ts'
 import * as ComputeGrpc from '../../../../modules/api-client/compute.ts'
 import * as VpcGrpc from '../../../../modules/api-client/vpc.ts'
 import { runDiskName } from '../../../helpers/run-token.ts'
@@ -135,7 +138,7 @@ integrationTest(
       // Stage 2: re-declare the stack-owned deps + the hosted instance (main = fixture).
       process.env.HOSTED_TEST_SUBNET_ID = subnet.id
       process.env.HOSTED_TEST_SA_ID = sa.id
-      const { instance } = yield* stack.deploy(
+      const { instance, bucketName, expectedKeyId, expectedSecret } = yield* stack.deploy(
         Effect.gen(function* () {
           if (STABLE_SUBNET_ID === undefined) {
             yield* Nebius.vpc.Network('HostedTest-Network', {})
@@ -161,9 +164,17 @@ integrationTest(
             access: 'ALLOW',
             egress: { destinationCidrs: ['0.0.0.0/0'] },
           })
-          const instance = yield* Nebius.compute.Instance(INSTANCE_LOGICAL_ID, {
-            serviceAccountId: sa.id,
-            resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+          const bucket = yield* Nebius.storage.Bucket('HostedTest-Bucket', {
+            versioningPolicy: 'DISABLED',
+            defaultStorageClass: 'STANDARD',
+            objectAuditLogging: 'NONE',
+            forceStorageClass: false,
+          })
+          const instance = yield* Nebius.compute.Instance(
+            INSTANCE_LOGICAL_ID,
+            {
+              serviceAccountId: sa.id,
+              resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
             bootDisk: {
               attachMode: 'READ_WRITE',
               managedDisk: {
@@ -193,12 +204,75 @@ integrationTest(
             main: FIXTURE_MAIN,
             port: 3000,
             env: { HOSTED_TEST_ECHO: 'hello-from-env' },
-          })
-          return { instance }
+          },
+          // The binding lives on the DEPLOY side: a bundle is never executed by
+          // the CLI, so `main` (the fixture) cannot register it. This init
+          // Effect is the only place the instance is its own `Self` host — the
+          // real (unmocked) resolution is proven in `hosted-bindings.test.ts`.
+          //
+          // Passing an impl also clears `isExternal`, which is what makes the
+          // provider wrap the bundle in the Nebius bootstrap virtual entry.
+          // Without it the VM bundle is the raw fixture and NOTHING runs it
+          // (verified: no wrapper → no HTTP listener), so `main`-only
+          // declarations can never serve.
+          Effect.gen(function* () {
+            // GetObject is enough to trigger `hostIdentity` + `grantBucketAccess`
+            // + the env registration; PutObject adds the editor grant the
+            // fixture's round-trip needs.
+            yield* Nebius.storage.GetObject(bucket).pipe(Effect.provide(Nebius.storage.GetObjectHttp))
+            yield* Nebius.storage.PutObject(bucket).pipe(Effect.provide(Nebius.storage.PutObjectHttp))
+            // No handler shape on purpose: the VM runs the fixture's own impl
+            // (this one only exists to register the bindings at deploy time).
+          }),
+        )
+          // The identity the binding registered: same host logical id → same FQN
+          // (the namespace pin) → the SAME resource, so these are the exact
+          // values the binding injected into the env file. Captured for a
+          // side-by-side comparison with what the VM reports receiving.
+          const identity = yield* hostIdentity(INSTANCE_LOGICAL_ID)
+          return {
+            instance,
+            bucketName: bucket.name,
+            expectedKeyId: identity.awsAccessKeyId,
+            expectedSecret: identity.secretAccessKey,
+          }
         }),
       )
 
-      expect(instance.id).toBeDefined()
+      const { instance: _sanity, bucketName: _sanityBucket } = { instance, bucketName }
+      void _sanity
+      void _sanityBucket
+      console.log(
+        `[E2E] expected keyId=${String(expectedKeyId).slice(0, 10)}… secretLen=${String(expectedSecret).length}`,
+      )
+      // CONTROL — the SAME credentials from this CLI process. If these work while
+      // the VM's fail, the credential is fine and something about the VM's
+      // environment (region/scope/network) is wrong; if they fail too, the
+      // credential captured at create time is genuinely bad.
+      const laptopOutcome = yield* Effect.promise(async () => {
+        const client = new S3Client({
+          endPoint: `https://storage.${process.env.NEBIUS_REGION ?? 'eu-north1'}.nebius.cloud`,
+          region: process.env.NEBIUS_REGION ?? 'eu-north1',
+          accessKey: String(expectedKeyId),
+          secretKey: String(expectedSecret),
+          bucket: bucketName,
+          pathStyle: true,
+        })
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            await client.putObject('laptop-control.txt', 'control', { metadata: { 'Content-Type': 'text/plain' } })
+            const res = await client.getObject('laptop-control.txt')
+            const text = await res.text()
+            await client.deleteObject('laptop-control.txt')
+            return `ok:${text}`
+          } catch (error) {
+            if (attempt === 3) return `error:${error instanceof Error ? error.message : String(error)}`
+            await new Promise((resolve) => setTimeout(resolve, 10_000))
+          }
+        }
+        return 'unreachable'
+      })
+      console.log(`[E2E] laptop control with the SAME creds: ${laptopOutcome}`)
       expect(instance.state).toBe('RUNNING')
       // Hosted attrs are provider state — assert they persisted.
       expect(instance.runtimeUnitName).toBeDefined()
@@ -216,8 +290,52 @@ integrationTest(
       // The program serves HTTP on :3000 with the shipped env echoed back —
       // this is the end-to-end proof: bundle shipped, fetched, booted, env
       // file loaded (the deploy's health read-back already probed once).
-      const body = (yield* Effect.promise(() => probeJson(`http://${publicIp}:3000/`))) as Record<string, unknown>
-      expect(body).toEqual({ ok: true, echo: 'hello-from-env' })
+      //
+      // `s3` + `roundTrip` are the BINDING proof: the deploy-side init Effect
+      // registered a real storage binding on this instance, the reconcile
+      // merged its env into the shipped env file, and the VM's program used
+      // that identity against real S3 (which also proves `grantBucketAccess`).
+      const body = (yield* Effect.promise(() => probeJson(`http://${publicIp}:3000/`))) as {
+        ok?: boolean
+        echo?: string
+        s3?: {
+          endpoint?: string | null
+          bucket?: string | null
+          hasAccessKey?: boolean
+          keyIdPrefix?: string | null
+          secretShape?: string
+          secretSha256?: string | null
+          region?: string | null
+        }
+        roundTrip?: string
+        now?: string
+      }
+      console.log(`[E2E] vm reports: ${JSON.stringify(body.s3)} roundTrip=${String(body.roundTrip).slice(0, 60)}`)
+      if (body.now) {
+        const vmNow = Date.parse(body.now)
+        console.log(`[E2E] vm clock skew: ${Date.now() - vmNow}ms`)
+      }
+      expect(body.ok).toBe(true)
+      expect(body.echo).toBe('hello-from-env')
+      expect(body.s3?.bucket).toBe(bucketName)
+      expect(body.s3?.endpoint).toContain('storage.')
+      expect(body.s3?.hasAccessKey).toBe(true)
+      // The injected credential must be EXACTLY the identity's: same key id, a
+      // secret of the right shape, and the SAME secret VALUE (digest comparison —
+      // a JSON-serialized Output, i.e. an unresolved value, shows up as a longer
+      // `{`-prefixed string; a mixed-up sibling secret shows up as a digest
+      // mismatch).
+      expect(body.s3?.keyIdPrefix).toBe(String(expectedKeyId).slice(0, 10))
+      expect(body.s3?.secretShape).toBe(`${String(expectedSecret).length}ch`)
+      expect(body.s3?.secretSha256).toBe(
+        createHash('sha256').update(String(expectedSecret)).digest('hex').slice(0, 16),
+      )
+      // REGRESSION: a config value captured by `Platform` must reach the VM as the
+      // value, not as a serialized Redacted envelope. It arrived as
+      // `{"_tag":"Redacted","value":"eu-north1"}` — which broke SigV4 signing
+      // ("authorization header … not valid") until `quoteEnvValue` unwrapped it.
+      expect(body.s3?.region).toBe(process.env.NEBIUS_REGION ?? 'eu-north1')
+      expect(body.roundTrip).toBe('ok:hello-from-binding')
     }).pipe(safeDestroy(stack, verifyAssetsCleanup)),
   { timeout: 20 * 60 * 1000 },
 )

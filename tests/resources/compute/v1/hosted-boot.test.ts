@@ -38,7 +38,20 @@ test('bundle + locally boot the hosted fixture', async () => {
   process.env.ALCHEMY_STAGE = 'dev'
   process.env.ALCHEMY_PHASE = 'runtime'
   process.env.HOSTED_TEST_ECHO = 'hello-from-env'
-  const proc = Bun.spawn(['bun', entryPath], { env: process.env })
+  // The S3 env comes from the binding at deploy time; a developer shell that
+  // happens to export NEBIUS_* would change the response shape, so the boot
+  // process gets an explicitly S3-free env.
+  const bootEnv = { ...process.env }
+  for (const name of [
+    'NEBIUS_S3_ENDPOINT',
+    'NEBIUS_REGION',
+    'NEBIUS_ACCESS_KEY_ID',
+    'NEBIUS_SECRET_ACCESS_KEY',
+    'NEBIUS_BUCKET_NAME',
+  ]) {
+    delete bootEnv[name]
+  }
+  const proc = Bun.spawn(['bun', entryPath], { env: bootEnv })
   try {
     const deadline = Date.now() + 30_000
     let body = ''
@@ -50,7 +63,27 @@ test('bundle + locally boot the hosted fixture', async () => {
       await Bun.sleep(500)
     }
     console.log('PROBE BODY:', body)
-    expect(JSON.parse(body || '{}')).toEqual({ ok: true, echo: 'hello-from-env' })
+    // No binding env on a local boot: the S3 half reports absent and the
+    // round-trip is skipped. (On the VM the binding supplies these and the
+    // round-trip runs — see hosted-instance.integration.test.ts.) The `s3`
+    // report is what pins the binding → shipped-env-file seam in this
+    // cloud-free test.
+    expect(JSON.parse(body || '{}')).toEqual({
+      ok: true,
+      echo: 'hello-from-env',
+      s3: {
+        endpoint: null,
+        bucket: null,
+        hasAccessKey: false,
+        keyIdPrefix: null,
+        region: null,
+        secretShape: 'absent',
+        secretSha256: null,
+      },
+      roundTrip: 'skipped',
+      // Request-time VM clock (skew diagnostic) — dynamic by nature.
+      now: expect.any(String),
+    })
   } finally {
     proc.kill()
   }

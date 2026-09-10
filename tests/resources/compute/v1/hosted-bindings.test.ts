@@ -34,6 +34,8 @@
  */
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Path from 'effect/Path'
+import { NodeFileSystem } from '@effect/platform-node'
 import { expect } from 'bun:test'
 import * as Test from 'alchemy/Test/Bun'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -120,6 +122,9 @@ const endpointProps = {
   authToken: 'plan-time-token',
 } as const
 
+/** The fixture the instance bundles — a real path, so the diff's content re-bundle succeeds. */
+const FIXTURE_MAIN = new URL('../../../fixtures/hosted-instance-program.ts', import.meta.url).href
+
 /** The S3 env names the instance must receive for the binding to work at runtime. */
 const S3_ENV_NAMES = [
   'NEBIUS_S3_ENDPOINT',
@@ -179,6 +184,15 @@ test.provider('a real hosted Instance resolves Binding.Host to itself (no mock)'
     expect(data.env?.NEBIUS_S3_ENDPOINT).toBe('https://storage.eu-north1.nebius.cloud')
     expect(data.env?.NEBIUS_REGION).toBe('eu-north1')
 
+    // 3b. The host identity must be declared EXACTLY ONCE. `transformProps`
+    //     declares it (inside `Namespace.push(id)`) and the binding impl declares
+    //     it again — if those two land on different FQNs the host gets two SAs,
+    //     two groups and two AccessKeys with the SAME physical name, and the
+    //     second create dies with ALREADY_EXISTS on real infra (observed
+    //     2026-09-10). Hence `hostIdentity` pins the namespace.
+    const identityFqns = Object.keys(plan.resources).filter((fqn) => fqn.endsWith('BindingSA'))
+    expect(identityFqns).toEqual(['Api/ApiBindingSA'])
+
     // 4. The second capability (AI) dispatches to the SAME instance payload shape.
     const aiRow = apiNode!.bindings.find((row) => row.sid === 'Nebius.ai.v1.Endpoint.ChatCompletions')
     expect(aiRow).toBeDefined()
@@ -189,6 +203,44 @@ test.provider('a real hosted Instance resolves Binding.Host to itself (no mock)'
       'NEBIUS_ENDPOINT_AUTH_TOKEN',
       'NEBIUS_ENDPOINT_URL',
     ])
+  }),
+)
+
+/**
+ * REGRESSION — the diff gate must ignore `exports`, which is an Effect.
+ *
+ * A host runtime context always exposes `exports` as an Effect
+ * (`Server/Process.ts`), `Platform` folds it onto props for every inline init
+ * Effect, and `AlchemyDiff.isResolved` reports any Effect as unresolved. Gating
+ * the whole prop bag on `isResolved` therefore made every diff return
+ * `undefined` (noop) for inline-impl instances — the form bindings require —
+ * silently disabling code-change detection.
+ *
+ * Called directly on the provider so the only thing under test is the gate:
+ * identical props except a STALE `code.hash`, so the content re-bundle must
+ * plan an `update`.
+ */
+test.provider('the diff gate ignores `exports` — an inline init Effect still plans updates', () =>
+  Effect.gen(function* () {
+    const provider = yield* InstanceResource.NebiusInstance.Provider
+    const result = yield* provider
+      .diff!({
+        id: 'Api',
+        fqn: 'Api',
+        instanceId: 'test-instance',
+        olds: { ...hostedInstanceProps, main: FIXTURE_MAIN },
+        // `exports` is not part of the props type (Platform folds it on at
+        // runtime), and the attribute ids are branded — cast both.
+        news: { ...hostedInstanceProps, main: FIXTURE_MAIN, exports: { program: Effect.void } } as never,
+        oldBindings: [],
+        newBindings: [],
+        output: { id: 'instance-seeded', code: { hash: 'stale-hash' } } as never,
+      })
+      .pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
+
+    // Without the `exports`-excluding gate this is `undefined` (noop): the
+    // stale `code.hash` would never be compared against a fresh bundle hash.
+    expect(result === undefined ? undefined : result.action).toBe('update')
   }),
 )
 
