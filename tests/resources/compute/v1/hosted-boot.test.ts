@@ -5,6 +5,12 @@ import { NodeFileSystem } from '@effect/platform-node'
 import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as InstanceSchema from '../../../../modules/resources/compute/v1/instance.schema.ts'
 
+// Slow by nature: bundling the fixture through rolldown AND booting a real
+// `bun` process, then polling until it serves. ~2.7s locally, but >5s on a
+// GitHub runner, where bun's 5s default killed it at 5054ms. The readiness loop
+// below already allows 30s for the boot, so the harness bound must exceed that
+// or the loop's deadline is unreachable (with a 5s harness timeout it was dead
+// code). Same reasoning as INTEGRATION_TIMEOUT_MS in tests/helpers/gate.ts.
 test('bundle + locally boot the hosted fixture', async () => {
   const props = {
     serviceAccountId: 'sa-x',
@@ -48,4 +54,4 @@ test('bundle + locally boot the hosted fixture', async () => {
   } finally {
     proc.kill()
   }
-})
+}, { timeout: 60_000 })
