@@ -38,6 +38,8 @@ import * as Path from 'effect/Path'
 import { NodeFileSystem } from '@effect/platform-node'
 import { expect } from 'bun:test'
 import * as Test from 'alchemy/Test/Bun'
+import * as Alchemy from 'alchemy'
+import * as State from 'alchemy/State'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as Binding from 'alchemy/Binding'
 import * as Nebius from '@fllstck/nebius-alchemy'
@@ -241,6 +243,102 @@ test.provider('the diff gate ignores `exports` — an inline init Effect still p
     // Without the `exports`-excluding gate this is `undefined` (noop): the
     // stale `code.hash` would never be compared against a fresh bundle hash.
     expect(result === undefined ? undefined : result.action).toBe('update')
+  }),
+)
+
+/**
+ * The hosted-entry guard: `main` without an inline init Effect would ship an
+ * UNWRAPPED bundle (nothing registers `fetch`/`serve`), so it must fail at plan
+ * time — unless the user opted into a self-serving entry with `isExternal: true`.
+ */
+test.provider('hosted `main` without an init Effect fails on a re-plan (diff)', (stack) =>
+  Effect.gen(function* () {
+    // `diff` runs only for resources that already have state — seed the row the
+    // way a previous deploy would have left it.
+    const stackSvc = yield* Alchemy.Stack
+    const state = yield* yield* State.State
+    const fqn = 'Api'
+    yield* state.set({
+      stack: stackSvc.name,
+      stage: stackSvc.stage,
+      fqn,
+      value: {
+        status: 'created',
+        resourceType: 'Nebius.compute.v1.Instance',
+        namespace: undefined,
+        fqn,
+        logicalId: fqn,
+        instanceId: 'seeded-instance',
+        providerVersion: 0,
+        downstream: [],
+        bindings: [],
+        props: { ...hostedInstanceProps, main: '/tmp/entry.ts', isExternal: true },
+        attr: {},
+      } satisfies State.CreatedResourceState,
+    })
+
+    const error = yield* Effect.flip(
+      stack.plan(
+        Effect.gen(function* () {
+          yield* Nebius.compute.Instance('Api', { ...hostedInstanceProps, main: '/tmp/entry.ts' })
+        }),
+      ),
+    )
+    expect(String(error)).toContain('HostedEntryNotWrapped')
+  }),
+)
+
+/**
+ * The hosted-entry guard: `main` without an inline init Effect would ship an
+ * UNWRAPPED bundle (nothing registers `fetch`/`serve`).
+ *
+ * Two layers, because the framework limits what can be checked when: the helper
+ * is called from `reconcile` (every deploy, before the first API call) and from
+ * `diff` (a re-plan, asserted above) — `diff` only runs for resources that
+ * already have state, so a greenfield `alchemy plan` cannot fail here.
+ */
+test.provider('the hosted-entry guard rejects `main` + implicit isExternal', () =>
+  Effect.gen(function* () {
+    const error = yield* Effect.flip(
+      InstanceResource.assertHostedEntryIsRunnable(
+        'Api',
+        { main: '/tmp/entry.ts', isExternal: true, hosted: { externalOptIn: false } },
+        false,
+      ),
+    )
+    expect(String(error)).toContain('HostedEntryNotWrapped')
+    expect(String(error)).toContain('without an inline init Effect')
+  }),
+)
+
+test.provider('the hosted-entry guard allows the legitimate shapes', () =>
+  Effect.gen(function* () {
+    // An inline init Effect ran (Platform folded `exports` onto the props).
+    yield* InstanceResource.assertHostedEntryIsRunnable('Api', { main: '/tmp/entry.ts', isExternal: true, exports: {} }, true)
+    // The user opted into a self-serving entry explicitly.
+    yield* InstanceResource.assertHostedEntryIsRunnable(
+      'Api',
+      { main: '/tmp/entry.ts', isExternal: true, hosted: { externalOptIn: true } },
+      false,
+    )
+    // Low-level mode: no `main`, so nothing is bundled at all.
+    yield* InstanceResource.assertHostedEntryIsRunnable('Api', { serviceAccountId: 'sa-x' }, false)
+  }),
+)
+
+test.provider('hosted `main` with an explicit isExternal opt-in still plans', (stack) =>
+  Effect.gen(function* () {
+    const plan = yield* stack.plan(
+      Effect.gen(function* () {
+        yield* Nebius.compute.Instance('Api', {
+          ...hostedInstanceProps,
+          main: '/tmp/entry.ts',
+          // The user's entry is the runnable program (it starts its own server).
+          isExternal: true,
+        })
+      }),
+    )
+    expect(Object.keys(plan.resources)).toContain('Api')
   }),
 )
 

@@ -302,7 +302,13 @@ yield* Nebius.compute.Instance('Api', Effect.gen(function* () {
 
 A `main`-only instance (no inline impl) is *also* wrong for a hosted program:
 `isExternal` is set, `bundleProgram` skips the bootstrap virtual entry, and
-nothing ever runs the bundle. Pass the init Effect.
+nothing ever runs the bundle — a VM that boots and serves nothing, silently. The
+provider now **rejects it** with `HostedEntryNotWrapped` (in `reconcile`, i.e. at
+the start of any `alchemy deploy` before the first API call, and in `diff`, so a
+re-plan fails during planning). Pass the init Effect; if your `main` IS the
+runnable entry (it starts its own HTTP server), opt in with `isExternal: true`
+explicitly. Note: a greenfield `alchemy plan` cannot catch this — alchemy only
+calls `diff` for resources that already have state.
 
 ### Plan-time `Config` captures reach the shipped env as **Redacted**
 

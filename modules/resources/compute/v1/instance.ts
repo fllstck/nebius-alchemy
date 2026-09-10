@@ -3,6 +3,7 @@ import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
 import * as Clock from 'effect/Clock'
 import * as Schedule from 'effect/Schedule'
+import * as Schema from 'effect/Schema'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
@@ -18,6 +19,66 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as InstanceSchema from './instance.schema.ts'
 import * as Factory from '../../factory.ts'
+
+/**
+ * Raised when a hosted instance would ship an UNWRAPPED bundle — `main` set
+ * without an inline init Effect.
+ *
+ * `Platform` marks any resource declared without an impl as `isExternal`, and
+ * `bundleProgram` skips the Nebius bootstrap virtual entry for external entries,
+ * so nothing ever runs `RuntimeContext.exports.program` (no `fetch`, no `serve`,
+ * no `host.run` loops): the VM boots and serves nothing, with no error anywhere in
+ * the deploy output. Verified by hand (TASKS.md §D8).
+ *
+ * A self-serving entry is legitimate — pass `isExternal: true` yourself to opt in.
+ */
+export class HostedEntryNotWrapped extends Schema.TaggedError<HostedEntryNotWrapped>()(
+  'HostedEntryNotWrapped',
+  {
+    id: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+/**
+ * Plan/deploy guard for the footgun above: reject `main` + implicit `isExternal`.
+ *
+ * `exports` is the discriminator for "an inline init Effect ran": `Platform`
+ * folds it onto props only inside the SelfLayer (the impl-carrying path), and the
+ * props schema does NOT include it — so callers must read it before
+ * `validateInstanceProps` strips it. The `hosted.externalOptIn` flag comes from
+ * `transformInstanceProps`, which is the only place that sees the user's props
+ * BEFORE `Platform` adds `isExternal` itself.
+ *
+ * WHERE IT CAN FIRE: `reconcile` (any deploy — before the first API call, so a
+ * greenfield `alchemy deploy` fails immediately and creates nothing) and `diff`
+ * (so a re-plan fails during planning). It CANNOT fail a greenfield
+ * `alchemy plan`: alchemy only calls `diff` for resources that already have state
+ * (`Plan.ts`), and `precreate`/`onCreate` run too early to know whether an inline
+ * impl exists. Exported for tests.
+ */
+export const assertHostedEntryIsRunnable = Effect.fn('Nebius.compute.v1.Instance.assertHostedEntryIsRunnable')( 
+  function* (
+    id: string,
+    // `unknown`: reconcile has resolved props, diff has `Input<Props>` (Outputs).
+    news: unknown,
+    hasInlineImpl: boolean,
+  ): Effect.fn.Return<void, HostedEntryNotWrapped> {
+    const raw = (news ?? {}) as Record<string, unknown>
+    if (raw.main === undefined || raw.isExternal !== true || hasInlineImpl) return
+    const hosted = raw.hosted as { externalOptIn?: boolean } | undefined
+    if (hosted?.externalOptIn === true) return
+    return yield* new HostedEntryNotWrapped({
+      id,
+      message:
+        `Nebius.compute.v1.Instance '${id}' sets 'main' without an inline init Effect, so the ` +
+        `bundle would ship UNWRAPPED and the VM would boot serving nothing (no 'fetch'/'serve' ` +
+        `is ever registered). Declare it as Nebius.compute.Instance(id, props, Effect.gen(function* () { ...; ` +
+        `return { fetch } })) — or, if 'main' IS your runnable entry (it starts its own HTTP server), ` +
+        `pass 'isExternal: true' explicitly to opt in.`,
+    })
+  },
+)
 
 /**
  * D8: `hosted.ts` is the deploy-side half of the hosted runtime (rolldown
@@ -274,6 +335,9 @@ export const NebiusInstanceProvider: Layer.Layer<
   reconcile: Effect.fn('Nebius.compute.v1.Instance.reconcile')(function* ({ id, news, output, bindings, session }) {
     news = news || {}
 
+    // `exports` is stripped by validation below (it is not a schema field).
+    yield* assertHostedEntryIsRunnable(id, news, (news as Record<string, unknown>).exports !== undefined)
+
     // Validate user input at runtime
     news = yield* InstanceSchema.validateInstanceProps(news)
 
@@ -497,7 +561,11 @@ export const NebiusInstanceProvider: Layer.Layer<
     // for inline-impl instances — the same trap the AWS EC2 diff documents for
     // `contentInputs`. It is runtime-only state: never a spec field
     // (`hostedSpecInput` strips it) and never compared below.
-    const { exports: _runtimeExports, ...resolvableNews } = news as Record<string, unknown>
+    const rawNews = news as Record<string, unknown>
+    // Hosted-entry guard (plan-time): does an inline init Effect exist? `exports`
+    // is the signal, and it must be read before the destructure/validation drop it.
+    yield* assertHostedEntryIsRunnable(id, news, rawNews.exports !== undefined)
+    const { exports: _runtimeExports, ...resolvableNews } = rawNews
     // Keep the narrowed type (the comparisons below are typed against it) while
     // dropping the runtime-only key from everything downstream.
     news = resolvableNews as typeof news

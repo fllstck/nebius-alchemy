@@ -93,6 +93,17 @@ export interface NebiusHostedCompositionInput {
   fetchSecretAccessKey: Output.Output<string>
   /** The dedicated fetch identity's group id (subject of the read grant). */
   fetchGroupId: Output.Output<string>
+  /**
+   * Whether the USER passed `isExternal: true` explicitly (a self-serving entry:
+   * the bundle IS the runnable program and must not be wrapped).
+   *
+   * Recorded here because this hook sees the props BEFORE `Platform` adds the
+   * flag on its own (it marks any resource declared without an inline impl as
+   * external). The instance provider needs that distinction to reject the
+   * implicit form at plan time — see `assertHostedEntryIsRunnable` in
+   * `instance.ts`.
+   */
+  externalOptIn?: boolean
 }
 
 /** The resolved shape of {@link NebiusHostedCompositionInput} at reconcile time. */
@@ -321,6 +332,9 @@ export const transformInstanceProps = Effect.fn('transformInstanceProps')(functi
           fetchAccessKeyId: fetchKey.awsAccessKeyId,
           fetchSecretAccessKey: fetchKey.secretAccessKey,
           fetchGroupId: fetchGroup.id,
+          // `isExternal` is undefined here when `Platform` is about to add it
+          // itself (no inline impl) — see the interface doc.
+          externalOptIn: news.isExternal === true,
         } satisfies NebiusHostedCompositionInput,
       }
     }),
