@@ -19,10 +19,24 @@ mkdir my-app && cd my-app && bun init -y
 ### Install Dependencies
 
 ```bash
-bun add alchemy@next effect@4.0.0-beta.103 @effect/platform-bun@4.0.0-beta.103 @effect/platform-node@4.0.0-beta.103 @fllstck/nebius-alchemy
+bun add alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112 @fllstck/nebius-alchemy
 ```
 
-> **Effect version is pinned to `4.0.0-beta.103`** — `effect@beta` (104+) renames `Schema.TaggedErrorClass`, which alchemy 2.0.0-beta.70 still uses internally. Bump this pin when a new alchemy release supports the newer betas.
+> **Versions are pinned tightly, and that is deliberate.** `alchemy@2.0.0-beta.77`
+> requires `effect@4.0.0-rc.112`. Do **not** let `effect` drift to `rc.113`+:
+> `rc.113` renamed the `Config` accessors (`Config.string` → `Config.String`) and
+> alchemy beta.77 still calls the lowercase form, so the two are incompatible in
+> both directions.
+>
+> **Watch transitive `@effect/*` packages.** A caret range on a prerelease
+> (`^4.0.0-rc.112`) resolves *upward*, so packages you never wrote —
+> `@effect/platform-node-shared`, `@effect/sql-*`, `@effect/vitest` — can
+> silently land on `rc.113` and break the suite with a misleading
+> `Cannot find module 'effect/ByteSize'`. This package ships an `overrides`
+> block pinning them. See `agent-patterns/effect-versioning.md`.
+>
+> **Avoid `alchemy@next`.** The `next` dist-tag currently points at an *older*
+> beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.77`).
 >
 > **Type checking with `tsc`?** This package ships raw TypeScript (bun-first, no build step). If you typecheck with `tsc`, enable `allowImportingTsExtensions` (requires `noEmit`), e.g. `"moduleResolution": "bundler", "allowImportingTsExtensions": true, "noEmit": true`.
 
@@ -92,6 +106,25 @@ Delete the bucket.
 ```bash
 bun alchemy destroy --yes
 ```
+
+### Stages
+
+Every stack is namespaced by a **stage**, which selects the state directory
+(`.alchemy/state/<Stack>/<stage>/`) and is baked into generated resource names:
+
+| Command | Default stage |
+| --- | --- |
+| `alchemy deploy` / `destroy` / `plan` | `live_$USER` |
+| `alchemy dev` | `dev_$USER` |
+
+Override with `--stage <name>`, or set **`ALCHEMY_STAGE`** in the environment.
+The older `$STAGE` variable is **no longer consulted**.
+
+> ⚠️ **Migrating from an older alchemy?** Deploy used to default to
+> `dev_$USER`. Since the default is now `live_$USER`, an unflagged deploy after
+> upgrading looks up a *different* state namespace and will **recreate** your
+> resources rather than adopt them. Set `ALCHEMY_STAGE=<your-old-stage>` (e.g.
+> `ALCHEMY_STAGE=dev_kay`) to keep managing what you already have.
 
 ### Peer Dependencies
 
@@ -355,7 +388,7 @@ SLOW_TESTS=1 bun test tests/   # full suite incl. real resource lifecycles
 bun run test:integration       # shorthand for the above
 ```
 
-> The flag lives in a single place — `tests/helpers/gate.ts` (`runIntegration()` / `integrationTest()`). Integration tests additionally require real Nebius credentials (env/stored/CLI); api-client tests skip when credentials aren't resolvable. Destroy cleanup uses `safeDestroy()` from `tests/helpers/cleanup.ts` — a failed destroy fails the test when the body succeeded, and logs (redacted) without masking the body's own failure otherwise.
+> The flag lives in a single place — `tests/helpers/gate.ts` (`runIntegration()` / `integrationTest()`). Integration tests additionally require real Nebius credentials (resolved from the environment — `NEBIUS_API_KEY` or the `NEBIUS_SA_*` key triple — or from a stored profile); api-client tests skip when credentials aren't resolvable. Destroy cleanup uses `safeDestroy()` from `tests/helpers/cleanup.ts` — a failed destroy fails the test when the body succeeded, and logs (redacted) without masking the body's own failure otherwise.
 
 ## Architecture
 

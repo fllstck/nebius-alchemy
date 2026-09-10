@@ -58,9 +58,7 @@ The Effect V4 monorepo is vendored at `repos/effect-smol/` for reference.
 
 **Before writing any Effect code**, read `repos/effect-smol/LLMS.md` — it contains authoritative best practices for Effect patterns, services, errors, streams, and more. Prefer patterns from the vendored source over web search or `node_modules` (which may be outdated).
 
-The Alchemy V2 monorepo is vendored at `repos/alchemy` for reference.
-
-**Before writing any Alchemy code**, browse the code in `repos/alchemy` — it contains authoritative best practices for Effect patterns, services, errors, streams, and more. Prefer patterns from the vendored source over web search or `node_modules` (which may be outdated).
+The Alchemy V2 monorepo is **not** vendored. Read it from `node_modules/alchemy/src/` — that is the installed version this project actually compiles and runs against, so it is authoritative for `AuthProvider`, `Interaction`, `Provider`, `Bundle`, `Tags`, and everything else. Prefer it over web search and over the published docs (which track `latest`, not the version pinned here). `agent-patterns/alchemy-*.md` are the curated summaries of it.
 
 ### Pattern reference files
 
