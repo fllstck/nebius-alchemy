@@ -173,7 +173,7 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
  * Error raised when a protobuf service name is not found in the endpoint
  * catalog. Callers should handle this gracefully rather than crashing.
  */
-export class UnknownServiceError extends Schema.TaggedErrorClass<UnknownServiceError>()(
+export class UnknownServiceError extends Schema.TaggedError<UnknownServiceError>()(
   'UnknownServiceError',
   {
     service: Schema.String,

@@ -43,7 +43,7 @@ import * as NebiusTenantServiceSchema from '../../schemas/nebius/iam/v1/tenant_s
 import type { SaKey } from './sa-token.ts'
 
 /** Raised when bootstrap provisioning fails (bad token, missing grant role, …). */
-export class SaBootstrapError extends Schema.TaggedErrorClass<SaBootstrapError>()('SaBootstrapError', {
+export class SaBootstrapError extends Schema.TaggedError<SaBootstrapError>()('SaBootstrapError', {
   message: Schema.String,
 }) {}
 

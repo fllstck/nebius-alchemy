@@ -44,12 +44,12 @@ import * as InstanceSchema from './instance.schema.ts'
 // ---------------------------------------------------------------------------
 
 /** Raised when host mode is requested but the composed identity is missing. */
-export class HostedRuntimeError extends Schema.TaggedErrorClass<HostedRuntimeError>()('HostedRuntimeError', {
+export class HostedRuntimeError extends Schema.TaggedError<HostedRuntimeError>()('HostedRuntimeError', {
   message: Schema.String,
 }) {}
 
 /** Raised when a user-supplied assets bucket lives in a different region than the stack. */
-export class BucketRegionMismatch extends Schema.TaggedErrorClass<BucketRegionMismatch>()(
+export class BucketRegionMismatch extends Schema.TaggedError<BucketRegionMismatch>()(
   'BucketRegionMismatch',
   {
     bucketName: Schema.String,

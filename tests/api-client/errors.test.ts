@@ -12,7 +12,7 @@ const { UnknownServiceError } = EndpointsModule
 
 describe('GrpcError', () => {
   // eslint-disable-next-line no-underscore-dangle
-  test('is a TaggedErrorClass with _tag', () => {
+  test('is a TaggedError with _tag', () => {
     const err = new GrpcError({
       code: 5,
       message: 'Not found',
@@ -67,7 +67,7 @@ describe('GrpcError', () => {
 
 describe('GrpcDeadlineExceededError', () => {
   // eslint-disable-next-line no-underscore-dangle
-  test('is a TaggedErrorClass with _tag', () => {
+  test('is a TaggedError with _tag', () => {
     const err = new GrpcDeadlineExceededError({
       message: 'Deadline exceeded',
     })
@@ -95,7 +95,7 @@ describe('GrpcDeadlineExceededError', () => {
 
 describe('UnknownServiceError', () => {
   // eslint-disable-next-line no-underscore-dangle
-  test('is a TaggedErrorClass with _tag', () => {
+  test('is a TaggedError with _tag', () => {
     const err = new UnknownServiceError({
       service: 'nebius.unknown.v1.FakeService',
     })

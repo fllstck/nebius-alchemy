@@ -67,13 +67,13 @@ export const isValidBootDiskSizeGibibytes = Schema.makeFilter(
 // ---------------------------------------------------------------------------
 
 /** Raised when resource props fail runtime validation. */
-export class PropsValidationError extends Schema.TaggedErrorClass<PropsValidationError>()('PropsValidationError', {
+export class PropsValidationError extends Schema.TaggedError<PropsValidationError>()('PropsValidationError', {
   /** Formatted validation error message from Schema.decode. */
   message: Schema.String,
 }) {}
 
 /** Raised when a resource lookup by name returns NOT_FOUND from the API. */
-export class ResourceNotFoundError extends Schema.TaggedErrorClass<ResourceNotFoundError>()('ResourceNotFoundError', {
+export class ResourceNotFoundError extends Schema.TaggedError<ResourceNotFoundError>()('ResourceNotFoundError', {
   /** Type of resource (e.g. "project", "network", "subnet"). */
   resourceType: Schema.String,
   /** The name that was looked up. */

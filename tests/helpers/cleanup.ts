@@ -68,7 +68,7 @@ export const redact = (input: string): string => {
  * error is logged (redacted) only — the body's own failure must never be
  * masked by a cleanup error.
  */
-export class DestroyFailedError extends Schema.TaggedErrorClass<DestroyFailedError>()('DestroyFailedError', {
+export class DestroyFailedError extends Schema.TaggedError<DestroyFailedError>()('DestroyFailedError', {
   message: Schema.String,
 }) {}
 

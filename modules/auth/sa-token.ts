@@ -47,7 +47,7 @@ export interface SaKey {
 }
 
 /** Raised when the token exchange fails (bad key, unknown SA, network, …). */
-export class SaTokenError extends Schema.TaggedErrorClass<SaTokenError>()('SaTokenError', {
+export class SaTokenError extends Schema.TaggedError<SaTokenError>()('SaTokenError', {
   message: Schema.String,
 }) {}
 

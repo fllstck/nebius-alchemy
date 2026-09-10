@@ -32,7 +32,7 @@ import type { HostIdentity } from '../../shared/host-identity.ts'
 import type { Region } from '../../regions.schema.ts'
 import type { NebiusBucket } from './bucket.ts'
 // ---------------------------------------------------------------------------
-// Errors (D6) — Schema.TaggedErrorClass, catchable by tag
+// Errors (D6) — Schema.TaggedError, catchable by tag
 // ---------------------------------------------------------------------------
 
 /** Local shape of s3-lite-client's `putObject` options (the d.ts type is inline). */
@@ -44,29 +44,29 @@ type S3ClientPutOptions = {
 }
 
 /** The object key does not exist in the bucket (S3 `NoSuchKey`). */
-export class ObjectNotFound extends Schema.TaggedErrorClass<ObjectNotFound>()('ObjectNotFound', {
+export class ObjectNotFound extends Schema.TaggedError<ObjectNotFound>()('ObjectNotFound', {
   key: Schema.String,
   message: Schema.String,
 }) {}
 
 /** The bucket does not exist (S3 `NoSuchBucket`). */
-export class BucketNotFound extends Schema.TaggedErrorClass<BucketNotFound>()('BucketNotFound', {
+export class BucketNotFound extends Schema.TaggedError<BucketNotFound>()('BucketNotFound', {
   message: Schema.String,
 }) {}
 
 /** The host identity lacks permission for the operation (S3 `AccessDenied`). */
-export class AccessDenied extends Schema.TaggedErrorClass<AccessDenied>()('AccessDenied', {
+export class AccessDenied extends Schema.TaggedError<AccessDenied>()('AccessDenied', {
   message: Schema.String,
 }) {}
 
 /** Required env bindings are missing at runtime (deploy-time wiring failure). */
-export class InvalidCredentials extends Schema.TaggedErrorClass<InvalidCredentials>()('InvalidCredentials', {
+export class InvalidCredentials extends Schema.TaggedError<InvalidCredentials>()('InvalidCredentials', {
   missing: Schema.Array(Schema.String),
   message: Schema.String,
 }) {}
 
 /** Any other S3 server or client failure, with the upstream code preserved. */
-export class S3Error extends Schema.TaggedErrorClass<S3Error>()('S3Error', {
+export class S3Error extends Schema.TaggedError<S3Error>()('S3Error', {
   code: Schema.String,
   statusCode: Schema.optional(Schema.Finite),
   message: Schema.String,

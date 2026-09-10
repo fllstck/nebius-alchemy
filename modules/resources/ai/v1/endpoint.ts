@@ -48,7 +48,7 @@ const READY_POLL_INTERVAL_MS = 10_000
 const READY_DEADLINE_MS = 20 * 60 * 1000
 
 /** A freshly-created endpoint's VM failed to reach RUNNING (or entered ERROR) in time. */
-export class EndpointNotReady extends Schema.TaggedErrorClass<EndpointNotReady>()('EndpointNotReady', {
+export class EndpointNotReady extends Schema.TaggedError<EndpointNotReady>()('EndpointNotReady', {
   id: Schema.String,
   state: Schema.String,
   message: Schema.String,

@@ -15,7 +15,7 @@ import { Warnings as WarningsProto, warning_CodeToJSON } from '../../schemas/neb
  * Represents a gRPC-level error from a Nebius API call.
  * Wraps the @grpc/grpc-js ServiceError with typed fields.
  */
-export class GrpcError extends Schema.TaggedErrorClass<GrpcError>()('GrpcError', {
+export class GrpcError extends Schema.TaggedError<GrpcError>()('GrpcError', {
   /** gRPC status code (e.g. 5 = NOT_FOUND, 6 = ALREADY_EXISTS, etc.) */
   code: Schema.Finite,
   /** Human-readable error details from the server */
@@ -30,7 +30,7 @@ export class GrpcError extends Schema.TaggedErrorClass<GrpcError>()('GrpcError',
  * Separated from {@link GrpcError} so callers can distinguish timeout-related
  * failures from other gRPC errors (e.g. for retry decisions).
  */
-export class GrpcDeadlineExceededError extends Schema.TaggedErrorClass<GrpcDeadlineExceededError>()(
+export class GrpcDeadlineExceededError extends Schema.TaggedError<GrpcDeadlineExceededError>()(
   'GrpcDeadlineExceededError',
   {
     message: Schema.String,
@@ -289,7 +289,7 @@ export const wrapGrpcClient = <S extends ServiceDescriptor>(
  * Error raised when a Nebius long-running operation completes
  * with a non-OK status.
  */
-export class OperationFailedError extends Schema.TaggedErrorClass<OperationFailedError>()('OperationFailedError', {
+export class OperationFailedError extends Schema.TaggedError<OperationFailedError>()('OperationFailedError', {
   operationId: Schema.String,
   code: Schema.Finite,
   message: Schema.String,

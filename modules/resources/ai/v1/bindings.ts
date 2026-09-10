@@ -43,38 +43,38 @@ const decodeChunk = Schema.fromJsonString(ChatCompletionChunk)
 // ---------------------------------------------------------------------------
 
 /** Mid-stream failure: bad SSE framing or a non-JSON event payload. */
-export class MalformedStream extends Schema.TaggedErrorClass<MalformedStream>()('MalformedStream', {
+export class MalformedStream extends Schema.TaggedError<MalformedStream>()('MalformedStream', {
   message: Schema.String,
 }) {}
 
 /** The endpoint has no public endpoint — it must be RUNNING at deploy time (AD7). */
-export class EndpointNotRunning extends Schema.TaggedErrorClass<EndpointNotRunning>()('EndpointNotRunning', {
+export class EndpointNotRunning extends Schema.TaggedError<EndpointNotRunning>()('EndpointNotRunning', {
   message: Schema.String,
 }) {}
 
 /** Required env bindings are missing at runtime (deploy-time wiring failure). */
-export class InvalidCredentials extends Schema.TaggedErrorClass<InvalidCredentials>()('InvalidCredentials', {
+export class InvalidCredentials extends Schema.TaggedError<InvalidCredentials>()('InvalidCredentials', {
   missing: Schema.Array(Schema.String),
   message: Schema.String,
 }) {}
 
 /** The endpoint rejected the auth token (HTTP 401). */
-export class EndpointUnauthorized extends Schema.TaggedErrorClass<EndpointUnauthorized>()('EndpointUnauthorized', {
+export class EndpointUnauthorized extends Schema.TaggedError<EndpointUnauthorized>()('EndpointUnauthorized', {
   message: Schema.String,
 }) {}
 
 /** The requested resource or model does not exist (HTTP 404). */
-export class EndpointNotFound extends Schema.TaggedErrorClass<EndpointNotFound>()('EndpointNotFound', {
+export class EndpointNotFound extends Schema.TaggedError<EndpointNotFound>()('EndpointNotFound', {
   message: Schema.String,
 }) {}
 
 /** The endpoint is rate-limiting requests (HTTP 429). */
-export class EndpointRateLimited extends Schema.TaggedErrorClass<EndpointRateLimited>()('EndpointRateLimited', {
+export class EndpointRateLimited extends Schema.TaggedError<EndpointRateLimited>()('EndpointRateLimited', {
   message: Schema.String,
 }) {}
 
 /** Any other endpoint failure, with the upstream error body preserved. */
-export class EndpointError extends Schema.TaggedErrorClass<EndpointError>()('EndpointError', {
+export class EndpointError extends Schema.TaggedError<EndpointError>()('EndpointError', {
   statusCode: Schema.optional(Schema.Finite),
   type: Schema.optional(Schema.String),
   code: Schema.optional(Schema.String),
@@ -82,7 +82,7 @@ export class EndpointError extends Schema.TaggedErrorClass<EndpointError>()('End
 }) {}
 
 /** The endpoint could not be reached (network failure). */
-export class EndpointUnreachable extends Schema.TaggedErrorClass<EndpointUnreachable>()('EndpointUnreachable', {
+export class EndpointUnreachable extends Schema.TaggedError<EndpointUnreachable>()('EndpointUnreachable', {
   message: Schema.String,
 }) {}
 

@@ -16,7 +16,7 @@ import * as AccessKeySchema from './access-key.schema.ts'
 import * as Factory from '../../factory.ts'
 
 /** A deterministic-name access key already exists (orphan from an interrupted destroy). */
-export class AccessKeyCollisionError extends Schema.TaggedErrorClass<AccessKeyCollisionError>()(
+export class AccessKeyCollisionError extends Schema.TaggedError<AccessKeyCollisionError>()(
   'AccessKeyCollisionError',
   {
     keyName: Schema.String,

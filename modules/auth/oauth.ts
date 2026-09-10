@@ -44,7 +44,7 @@ export const OAUTH_CALLBACK_TIMEOUT = 5 * 60 * 1000
  */
 export const resolveClientId = (): string => process.env[OAUTH_CLIENT_ID_ENV]?.trim() || OAUTH_CLIENT_ID
 
-export class OAuthError extends Schema.TaggedErrorClass<OAuthError>()('OAuthError', {
+export class OAuthError extends Schema.TaggedError<OAuthError>()('OAuthError', {
   message: Schema.String,
 }) {}
 
