@@ -22,10 +22,10 @@ import { expect } from 'bun:test'
 import { S3Client } from '@bradenmacdonald/s3-lite-client'
 import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Self } from 'alchemy/Self'
-import * as StorageGrpc from '../../../../modules/api-client/storage.ts'
 import { Nebius, test } from '../../../helpers/stack.ts'
 import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
+import { verifyNoBucketLeaks } from '../../../helpers/leaks.ts'
 
 const EDITORS_GROUP_ID = 'group-e00ee03sdm7ht85b9m'
 const REGION = process.env.NEBIUS_REGION ?? 'eu-north1'
@@ -33,22 +33,6 @@ const REGION = process.env.NEBIUS_REGION ?? 'eu-north1'
 // where these tests deploy). NEBIUS_PROJECT_ID, if set, MUST be that same
 // project — pointing it elsewhere silently blinds the leak check below.
 const PROJECT = process.env.NEBIUS_PROJECT_ID ?? ''
-
-/**
- * Post-destroy leak verification for buckets: any `nebius-storage-*` bucket
- * surviving the destroy is a leak (the bucket delete has no force option — a
- * non-empty bucket is undeletable, so leftovers accumulate silently).
- */
-const verifyNoBucketLeaks = Effect.gen(function* () {
-  const storage = yield* StorageGrpc.StorageGrpcService
-  const buckets = yield* storage.bucket.list(PROJECT)
-  const leaked = buckets.filter((b) => b.metadata?.name?.startsWith('nebius-storage-'))
-  if (leaked.length > 0) {
-    return yield* Effect.fail(
-      new Error(`LEAKED buckets after destroy: ${leaked.map((b) => b.metadata?.name).join(', ')}`),
-    )
-  }
-})
 
 // ---------------------------------------------------------------------------
 // Test 1 — identity lifecycle
@@ -96,7 +80,7 @@ integrationTest(
       expect(key.secretAccessKey.length).toBeGreaterThan(0)
       expect(key.secretDeliveryMode).toBe('INLINE')
       console.log(`[BIND] SA: ${sa.id} key: ${key.awsAccessKeyId}`)
-    }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
+    }).pipe(safeDestroy(stack, verifyNoBucketLeaks(PROJECT))),
   { timeout: 120_000 },
 )
 
@@ -204,7 +188,7 @@ integrationTest(
         ),
       )
       console.log('[RT] cleanup ok')
-    }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
+    }).pipe(safeDestroy(stack, verifyNoBucketLeaks(PROJECT))),
   { timeout: 180_000 },
 )
 
@@ -277,7 +261,14 @@ integrationTest(
       // The runtime branch reads the provided WorkerEnvironment (real key
       // values, as a deployed worker would receive them) and round-trips.
       const hostCalls: Array<{ sid: string; data: unknown }> = []
+      // `Type` is load-bearing: `BindHost.isCloudflareWorkerHost` discriminates
+      // on it, and `BindHost.runtimeEnv` falls back to `process.env` for any
+      // host it does not recognise as a Worker. Without it the binding reads
+      // the wrong env source and fails with "Missing Nebius S3 env bindings" —
+      // which looks like a wiring bug but is a malformed mock. Mirrors
+      // `tests/resources/ai/v1/bindings.integration.test.ts`.
       const mockHost = {
+        Type: 'Cloudflare.Worker',
         LogicalId: 'ImplMockHost',
         bind: (sid: string, data: unknown) => {
           hostCalls.push({ sid, data })
@@ -386,6 +377,6 @@ integrationTest(
         expect(names).toContain(expected)
       }
       console.log(`[IMPL] wiring recorded ${hostCalls.length} bind calls`)
-    }).pipe(safeDestroy(stack, verifyNoBucketLeaks)),
+    }).pipe(safeDestroy(stack, verifyNoBucketLeaks(PROJECT))),
   { timeout: 240_000 },
 )

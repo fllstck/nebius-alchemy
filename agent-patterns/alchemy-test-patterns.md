@@ -237,6 +237,66 @@ in the total as a hard failure signal, and check for module-resolution errors
 before reading individual failures. See `effect-versioning.md` for the
 version-drift cause this most often has.
 
+## Post-destroy leak checks must tolerate ASYNC deletion
+
+Nebius deletes are **asynchronous and soft**. The delete RPC returns as soon as
+the request is accepted, but the resource stays visible in `list` — in a
+deletion-pending state — for minutes afterwards, until the platform reaps it.
+
+Observed live (2026-09-10, `eu-north1`):
+
+| | |
+| --- | --- |
+| `Nebius.storage.v1.Bucket` delete returns | **149 ms** |
+| bucket then sits in `state: SCHEDULED_FOR_DELETION` | **~6 minutes** |
+| then | gone |
+
+So a leak check written as "is it still listed?" **races the reap** and fails
+spuriously — reporting a leak that never existed and leaving nothing behind.
+Three storage tests failed on exactly this before it was understood.
+
+```ts
+// ❌ races the platform's async reap
+const leaked = buckets.filter((b) => b.metadata?.name?.startsWith(prefix))
+
+// ✅ only a LIVE resource is a leak
+const leaked = buckets.filter(
+  (b) =>
+    b.metadata?.name?.startsWith(prefix) === true &&
+    b.status?.state !== BucketStatus_State.SCHEDULED_FOR_DELETION &&
+    b.status?.deletedAt == null,
+)
+```
+
+Count both signals: `state` moves to `SCHEDULED_FOR_DELETION`, and `deletedAt`
+carries the soft-delete timestamp (it resets to null if the resource is
+undeleted). Prefer a shared helper (`tests/helpers/leaks.ts`) over copy-pasted
+predicates, and include the observed `state` in the failure message so the next
+reader can tell a real leak from a pending one.
+
+**Rule of thumb:** "the destroy call returned" means *accepted*, not *gone*.
+Verify against a state field, not against list membership alone.
+
+## Mock hosts need their discriminator fields
+
+When mocking a binding host, the `Type` field is load-bearing — **not**
+decoration:
+
+```ts
+// ❌ BindHost.isCloudflareWorkerHost returns false
+//    → BindHost.runtimeEnv silently falls back to process.env
+//    → confusing "Missing … env bindings. Did the deploy-time wiring run?"
+const mockHost = { LogicalId: 'MockHost', bind } as unknown as Worker
+
+// ✅ matches how the real resource is recognised
+const mockHost = { Type: 'Cloudflare.Worker', LogicalId: 'MockHost', bind } as unknown as Worker
+```
+
+A missing discriminator produces an error that points at production wiring, so
+it sends you hunting through the implementation for a bug that is in the test.
+Check the discriminating predicate (`isCloudflareWorkerHost`, etc.) before
+trusting an "env not wired" failure.
+
 ## Related
 
 - `effect-fn.md`, `effect-schema.md`, `effect-services.md` — Effect patterns
