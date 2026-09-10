@@ -390,6 +390,13 @@ Injected into the Worker at deploy time (names are stable):
 
 See [`examples/storage.bindings.ts`](examples/storage.bindings.ts) for the full pattern.
 
+> **Bindings on a Nebius Instance** (the native host — no Cloudflare account
+> needed): [`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts) deploys
+> a GPU endpoint plus a hosted instance whose program consumes the same typed
+> `ChatCompletions` client. The binding is registered by the stack's inline init
+> Effect, its env lands in the VM's systemd `EnvironmentFile`, and the program
+> (which the VM fetches and runs) reads it. Billable + slow: see the file header.
+
 > **Small-bundle variant**: the Effect-native worker bundles alchemy's runtime. If bundle size matters more than the typed contracts, use [`examples/storage-async.bindings.ts`](examples/storage-async.bindings.ts).
 
 ## Examples
@@ -406,6 +413,7 @@ See [`examples/storage.bindings.ts`](examples/storage.bindings.ts) for the full 
 | [`examples/actions.ts`](examples/actions.ts)       | Read-only discovery actions for IAM, VPC, and quotas                  |
 | [`examples/storage.bindings.ts`](examples/storage.bindings.ts) | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)          |
 | [`examples/ai.bindings.ts`](examples/ai.bindings.ts)         | Nebius AI endpoint bindings for a Cloudflare Worker (ChatCompletions) |
+| [`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts) | **Hosted Nebius instance** running an Effect program: GPU vLLM endpoint + `ChatCompletions` binding → `curl 'http://<ip>:3000/?prompt=…'` returns a real completion. The instance-host counterpart of `ai.bindings.ts` (`…-program.ts` is what the VM executes) |
 
 ## Usage
 

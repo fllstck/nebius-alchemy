@@ -283,6 +283,11 @@ restore the Node path.
 
 ## Related
 
+- `examples/ai-chat-instance.ts` + `examples/ai-chat-instance-program.ts` — the
+  INSTANCE-host binding example end to end (GPU endpoint, deploy-side binding
+  registration, VM reading the shipped env). Billable until destroyed;
+  destroying 19 resources took ~200 s.
+
 - `alchemy-test-patterns.md` — scratch-stack deploy semantics, staged deploys,
   idempotent deletes (the test-side counterpart)
 - `tests/resources/storage/v1/bindings.integration.test.ts` — mocked-host impl
