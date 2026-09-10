@@ -95,6 +95,7 @@ export const NebiusPoolProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.Pool',
+    validate: PoolSchema.validatePoolProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.pool.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

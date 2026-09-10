@@ -132,6 +132,7 @@ export const NebiusBucketProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.storage.v1.Bucket',
+    validate: BucketSchema.validateBucketProps,
     service: StorageGrpc.StorageGrpcService,
     getById: (svc, id) => svc.bucket.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

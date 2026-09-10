@@ -103,6 +103,7 @@ export const NebiusRouteProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.Route',
+    validate: RouteSchema.validateRouteProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.route.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

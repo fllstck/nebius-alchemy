@@ -136,8 +136,13 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     deleteById: (svc, id) => svc.staticKey.delete(id),
   }),
 
-  read: Effect.fn('Nebius.iam.v1.StaticKey.read')(function* ({ id, output }) {
-    if (!output?.id) return undefined
+  read: Effect.fn('Nebius.iam.v1.StaticKey.read')(function* ({ id, olds: props, output }) {
+    if (!output?.id) {
+      // Plan-time props validation for greenfield — `read` is the only provider
+      // hook alchemy calls when there is no persisted state (see makeCrudRead).
+      if (props != null) yield* StaticKeySchema.validateStaticKeyProps(props)
+      return undefined
+    }
     const iamGrpcService = yield* IamGrpc.IamGrpcService
 
     const key = yield* iamGrpcService.staticKey

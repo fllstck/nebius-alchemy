@@ -85,6 +85,7 @@ export const NebiusGroupProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v1.Group',
+    validate: GroupSchema.validateGroupProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.group.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

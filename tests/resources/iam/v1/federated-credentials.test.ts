@@ -26,12 +26,12 @@ describe('Nebius.iam.v1.FederatedCredentials', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusFederatedCredentials.Provider, Module.NebiusFederatedCredentialsProvider)
-      expect(await runDiff(svc, { name: 'new-creds' }, { name: 'old-creds' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validFedCredsProps, name: 'new-creds' }, { ...validFedCredsProps, name: 'old-creds' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusFederatedCredentials.Provider, Module.NebiusFederatedCredentialsProvider)
-      expect(await runDiff(svc, { name: 'my-creds' }, { name: 'my-creds' })).toBeUndefined()
+      expect(await runDiff(svc, { ...validFedCredsProps }, { ...validFedCredsProps })).toBeUndefined()
     })
   })
 

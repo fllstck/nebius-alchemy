@@ -109,6 +109,7 @@ export const NebiusImageProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.compute.v1.Image',
+    validate: ImageSchema.validateImageProps,
     service: ComputeGrpc.ComputeGrpcService,
     getById: (svc, id) => svc.image.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

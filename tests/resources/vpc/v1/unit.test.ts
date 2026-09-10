@@ -108,15 +108,15 @@ describe('Nebius.vpc.v1.SecurityRule', () => {
   describe('diff', () => {
     test('access change requires replace (immutable)', async () => {
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
-      expect(await runDiff(svc, { access: 'DENY' }, { access: 'ALLOW' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'DENY' }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW' })).toEqual({ action: 'replace' })
     })
     test('ingress sourceCidrs change requires replace', async () => {
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
-      expect(await runDiff(svc, { ingress: { sourceCidrs: ['10.0.0.0/8'] } }, { ingress: { sourceCidrs: ['192.168.0.0/16'] } })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['192.168.0.0/16'] } })).toEqual({ action: 'replace' })
     })
     test('no change is a noop', async () => {
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
-      expect(await runDiff(svc, { access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } }, { access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } })).toBeUndefined()
+      expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } })).toBeUndefined()
     })
   })
 
@@ -196,15 +196,15 @@ describe('Nebius.vpc.v1.Route', () => {
   describe('diff', () => {
     test('parentId change requires replace', async () => {
       const svc = await resolveProvider(RouteModule.NebiusRoute.Provider, RouteModule.NebiusRouteProvider)
-      expect(await runDiff(svc, { parentId: 'routetable-2' }, { parentId: 'routetable-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'routetable-2', destination: { cidr: '10.0.0.0/24' } }, { parentId: 'routetable-1', destination: { cidr: '10.0.0.0/24' } })).toEqual({ action: 'replace' })
     })
     test('disabling an enabled defaultEgressGateway requires replace (sticky-true)', async () => {
       const svc = await resolveProvider(RouteModule.NebiusRoute.Provider, RouteModule.NebiusRouteProvider)
-      expect(await runDiff(svc, { nextHop: { defaultEgressGateway: false } }, { nextHop: { defaultEgressGateway: true } })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'routetable-abc', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: false } }, { parentId: 'routetable-abc', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: true } })).toEqual({ action: 'replace' })
     })
     test('no change is a noop', async () => {
       const svc = await resolveProvider(RouteModule.NebiusRoute.Provider, RouteModule.NebiusRouteProvider)
-      expect(await runDiff(svc, { parentId: 'routetable-1', nextHop: { defaultEgressGateway: true } }, { parentId: 'routetable-1', nextHop: { defaultEgressGateway: true } })).toBeUndefined()
+      expect(await runDiff(svc, { parentId: 'routetable-1', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: true } }, { parentId: 'routetable-1', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: true } })).toBeUndefined()
     })
   })
 
@@ -231,11 +231,11 @@ describe('Nebius.vpc.v1.Pool', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(PoolModule.NebiusPool.Provider, PoolModule.NebiusPoolProvider)
-      expect(await runDiff(svc, { name: 'new-pool' }, { name: 'old-pool' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { name: 'new-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] }, { name: 'old-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] })).toEqual({ action: 'replace' })
     })
     test('no change is a noop', async () => {
       const svc = await resolveProvider(PoolModule.NebiusPool.Provider, PoolModule.NebiusPoolProvider)
-      expect(await runDiff(svc, { name: 'my-pool' }, { name: 'my-pool' })).toBeUndefined()
+      expect(await runDiff(svc, { name: 'my-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] }, { name: 'my-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] })).toBeUndefined()
     })
   })
 
@@ -262,11 +262,11 @@ describe('Nebius.vpc.v1.Allocation', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(AllocationModule.NebiusAllocation.Provider, AllocationModule.NebiusAllocationProvider)
-      expect(await runDiff(svc, { name: 'new-alloc' }, { name: 'old-alloc' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { name: 'new-alloc', ipv4Public: { cidr: '10.0.0.0/24' } }, { name: 'old-alloc', ipv4Public: { cidr: '10.0.0.0/24' } })).toEqual({ action: 'replace' })
     })
     test('no change is a noop', async () => {
       const svc = await resolveProvider(AllocationModule.NebiusAllocation.Provider, AllocationModule.NebiusAllocationProvider)
-      expect(await runDiff(svc, { name: 'my-alloc' }, { name: 'my-alloc' })).toBeUndefined()
+      expect(await runDiff(svc, { name: 'my-alloc', ipv4Public: { cidr: '10.0.0.0/24' } }, { name: 'my-alloc', ipv4Public: { cidr: '10.0.0.0/24' } })).toBeUndefined()
     })
   })
 

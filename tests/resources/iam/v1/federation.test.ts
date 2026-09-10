@@ -27,12 +27,12 @@ describe('Nebius.iam.v1.Federation', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusFederation.Provider, Module.NebiusFederationProvider)
-      expect(await runDiff(svc, { name: 'new-federation' }, { name: 'old-federation' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validFederationProps, name: 'new-federation' }, { ...validFederationProps, name: 'old-federation' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusFederation.Provider, Module.NebiusFederationProvider)
-      expect(await runDiff(svc, { name: 'my-federation' }, { name: 'my-federation' })).toBeUndefined()
+      expect(await runDiff(svc, { ...validFederationProps }, { ...validFederationProps })).toBeUndefined()
     })
   })
 

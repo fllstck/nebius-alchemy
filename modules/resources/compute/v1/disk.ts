@@ -111,6 +111,7 @@ export const NebiusDiskProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.compute.v1.Disk',
+    validate: DiskSchema.validateDiskProps,
     service: ComputeGrpc.ComputeGrpcService,
     getById: (svc, id) => svc.disk.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

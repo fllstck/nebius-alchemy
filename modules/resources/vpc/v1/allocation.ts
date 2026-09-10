@@ -95,6 +95,7 @@ export const NebiusAllocationProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.Allocation',
+    validate: AllocationSchema.validateAllocationProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.allocation.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

@@ -104,6 +104,7 @@ export const NebiusDiskSnapshotProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.compute.v1.DiskSnapshot',
+    validate: DiskSnapshotSchema.validateDiskSnapshotProps,
     service: ComputeGrpc.ComputeGrpcService,
     getById: (svc, id) => svc.diskSnapshot.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

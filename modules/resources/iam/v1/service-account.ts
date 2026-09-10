@@ -101,6 +101,7 @@ export const NebiusServiceAccountProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v1.ServiceAccount',
+    validate: ServiceAccountSchema.validateServiceAccountProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.serviceAccount.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

@@ -95,6 +95,7 @@ export const NebiusZoneProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.dns.v1.Zone',
+    validate: ZoneSchema.validateZoneProps,
     service: DnsGrpc.DnsGrpcService,
     getById: (svc, id) => svc.zone.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

@@ -19,17 +19,17 @@ describe('Nebius.compute.v1.Filesystem', () => {
   describe('diff', () => {
     test('type change requires replace (immutable)', async () => {
       const svc = await resolveProvider(Module.NebiusFilesystem.Provider, Module.NebiusFilesystemProvider)
-      expect(await runDiff(svc, { type: 'WEKA' }, { type: 'NETWORK_SSD' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { type: 'WEKA', sizeGibibytes: 1024 }, { type: 'NETWORK_SSD', sizeGibibytes: 1024 })).toEqual({ action: 'replace' })
     })
 
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusFilesystem.Provider, Module.NebiusFilesystemProvider)
-      expect(await runDiff(svc, { name: 'new-fs' }, { name: 'old-fs' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { type: 'WEKA', name: 'new-fs', sizeGibibytes: 1024 }, { type: 'WEKA', name: 'old-fs', sizeGibibytes: 1024 })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusFilesystem.Provider, Module.NebiusFilesystemProvider)
-      expect(await runDiff(svc, { type: 'WEKA' }, { type: 'WEKA' })).toBeUndefined()
+      expect(await runDiff(svc, { type: 'WEKA', sizeGibibytes: 1024 }, { type: 'WEKA', sizeGibibytes: 1024 })).toBeUndefined()
     })
   })
 

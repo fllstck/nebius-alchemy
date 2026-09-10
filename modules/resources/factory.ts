@@ -5,6 +5,7 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyTags from 'alchemy/Tags'
 import type { GrpcError, GrpcDeadlineExceededError } from '../api-client/grpc-utils.ts'
 import { GrpcError as GrpcErrorCtor } from '../api-client/grpc-utils.ts'
+import type { PropsValidationError } from './validation.ts'
 import { resolveTenantId } from './shared/tenant.ts'
 
 // ---------------------------------------------------------------------------
@@ -78,15 +79,44 @@ export const makeCrudRead = <STag extends Context.Service<any, any>, Raw extends
   getById: (svc: ServiceOf<STag>, id: string) => Effect.Effect<Raw, GrpcError | GrpcDeadlineExceededError>
   /** Convert raw proto resource to friendly attributes. */
   toAttrs: (raw: Raw) => Attrs
+  /**
+   * Plan-time props validator (e.g. `SubnetSchema.validateSubnetProps`).
+   *
+   * Runs on the greenfield/adoption-probe path only — see the note in the
+   * `read` body — so `alchemy plan` fails fast on props the API would reject
+   * or hang on, instead of deferring the error to reconcile (deploy).
+   */
+  validate?: (news: unknown) => Effect.Effect<unknown, PropsValidationError, unknown>
 }) =>
   Effect.fn(`${config.resourceName}.read`)(function* ({
     id,
+    olds: props,
     output,
   }: {
     id: string
+    /** Desired props. Alchemy names this field `olds` on the `read` input. */
+    olds?: unknown
     output?: { id: string }
   }) {
-    if (!output?.id) return undefined
+    if (!output?.id) {
+      // Greenfield path: no persisted state, so the resource may not exist yet.
+      //
+      // alchemy calls `read` here as an adoption probe, and it is the ONLY
+      // provider hook invoked for a resource with no persisted row — `Plan.ts`
+      // short-circuits with `if (!oldState || oldState.status === "creating")
+      // return resourceExpr` *before* reaching `provider.diff`. Validating the
+      // desired props here is therefore what makes `alchemy plan` fail fast on
+      // greenfield resources; validating only in `diff()` covers updates alone.
+      //
+      // NB: the interrupted-create recovery path in `Apply.ts`
+      // (`collectGarbage`) also calls `read` with no `output`, so this can fire
+      // during teardown. It is deliberately narrow — it triggers only for rows
+      // whose `attr` is undefined, i.e. a create that died before returning
+      // attributes — which is why validation is confined to this branch rather
+      // than widened to every `read`.
+      if (config.validate && props != null) yield* config.validate(props)
+      return undefined
+    }
     const svc = yield* config.service
     const resource = yield* config.getById(svc, output.id).pipe(
       Effect.catchTag('GrpcError', (e) =>

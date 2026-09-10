@@ -98,8 +98,13 @@ export const NebiusSecretVersionProvider: Layer.Layer<
     )
   }),
 
-  read: Effect.fn('Nebius.mysterybox.v1.SecretVersion.read')(function* ({ id, output }) {
-    if (!output?.id) return undefined
+  read: Effect.fn('Nebius.mysterybox.v1.SecretVersion.read')(function* ({ id, olds: props, output }) {
+    if (!output?.id) {
+      // Plan-time props validation for greenfield — `read` is the only provider
+      // hook alchemy calls when there is no persisted state (see makeCrudRead).
+      if (props != null) yield* SecretVersionSchema.validateSecretVersionProps(props)
+      return undefined
+    }
     const svc = yield* MysteryBoxGrpc.MysteryBoxGrpcService
     const version = yield* svc.secretVersion
       .get(output.id)

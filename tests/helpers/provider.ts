@@ -46,6 +46,35 @@ export const runEffect = (effect: Effect.Effect<any, any, any>): Promise<any> =>
   Effect.runPromise(effect as Effect.Effect<unknown, unknown, never>)
 
 /**
+ * Input for a provider's `read` lifecycle **as the planner calls it for a
+ * resource with no persisted state** — the greenfield adoption probe.
+ *
+ * The desired props ride on `olds` (alchemy's naming on the `read` input) and
+ * `output` is undefined. This is the only provider hook the planner invokes
+ * for a brand-new resource, so it is where plan-time props validation fires.
+ */
+export const readInput = (props: unknown) => ({
+  id: 'test-id',
+  fqn: 'test',
+  instanceId: 'inst',
+  olds: props,
+  output: undefined,
+})
+
+/**
+ * Run a provider's `read` lifecycle with greenfield inputs and return the
+ * result. Fails the test if the provider defines no `read`.
+ */
+export const runRead = async (
+  // oxlint-disable-next-line no-explicit-any
+  provider: { read?: (input: any) => Effect.Effect<any, any, any> },
+  props: unknown,
+): Promise<unknown> => {
+  if (!provider.read) throw new Error('provider has no read lifecycle')
+  return runEffect(provider.read(readInput(props)))
+}
+
+/**
  * The standard `diff` lifecycle input. Every provider's `diff` reads only
  * `news` / `olds` (plus this fixed bookkeeping) — the other fields are
  * engine bookkeeping that no Nebius diff inspects.

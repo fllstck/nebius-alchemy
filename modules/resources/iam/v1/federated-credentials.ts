@@ -116,6 +116,7 @@ export const NebiusFederatedCredentialsProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v1.FederatedCredentials',
+    validate: FedCredsSchema.validateFederatedCredentialsProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.federatedCredentials.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

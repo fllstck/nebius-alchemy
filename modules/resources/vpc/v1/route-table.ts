@@ -95,6 +95,7 @@ export const NebiusRouteTableProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.RouteTable',
+    validate: RouteTableSchema.validateRouteTableProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.routeTable.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

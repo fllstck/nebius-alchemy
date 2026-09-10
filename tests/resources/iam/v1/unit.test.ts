@@ -62,17 +62,17 @@ describe('Nebius.iam.v1.StaticKey', () => {
   describe('diff', () => {
     test('serviceAccountId change requires replace', async () => {
       const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'sa-2' }, { serviceAccountId: 'sa-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa2', service: 'OBSERVABILITY' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toEqual({ action: 'replace' })
     })
 
     test('service change requires replace', async () => {
       const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
-      expect(await runDiff(svc, { service: 'AI' }, { service: 'OBSERVABILITY' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', service: 'AI_STUDIO' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'sa-1', service: 'OBSERVABILITY' }, { serviceAccountId: 'sa-1', service: 'OBSERVABILITY' })).toBeUndefined()
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toBeUndefined()
     })
   })
 
@@ -109,17 +109,17 @@ describe('Nebius.iam.v2.AccessKey', () => {
   describe('diff', () => {
     test('serviceAccountId change requires replace', async () => {
       const svc = await resolveProvider(AccessKeyModule.NebiusAccessKey.Provider, AccessKeyModule.NebiusAccessKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'sa-2' }, { serviceAccountId: 'sa-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa2' }, { serviceAccountId: 'serviceaccount-sa1' })).toEqual({ action: 'replace' })
     })
 
     test('secretDeliveryMode change requires replace (immutable)', async () => {
       const svc = await resolveProvider(AccessKeyModule.NebiusAccessKey.Provider, AccessKeyModule.NebiusAccessKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'sa-1', secretDeliveryMode: 'INLINE' }, { serviceAccountId: 'sa-1', secretDeliveryMode: 'ON_DEMAND' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', secretDeliveryMode: 'INLINE' }, { serviceAccountId: 'serviceaccount-sa1', secretDeliveryMode: 'ON_DEMAND' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(AccessKeyModule.NebiusAccessKey.Provider, AccessKeyModule.NebiusAccessKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'sa-1' }, { serviceAccountId: 'sa-1' })).toBeUndefined()
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1' }, { serviceAccountId: 'serviceaccount-sa1' })).toBeUndefined()
     })
   })
 

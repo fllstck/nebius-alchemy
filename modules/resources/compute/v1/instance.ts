@@ -436,6 +436,7 @@ export const NebiusInstanceProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.compute.v1.Instance',
+    validate: InstanceSchema.validateInstanceProps,
     service: ComputeGrpc.ComputeGrpcService,
     getById: (svc, id) => svc.instance.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

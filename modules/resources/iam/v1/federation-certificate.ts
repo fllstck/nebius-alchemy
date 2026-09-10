@@ -107,6 +107,7 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v1.FederationCertificate',
+    validate: FedCertSchema.validateFederationCertificateProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.federationCertificate.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

@@ -110,6 +110,7 @@ export const NebiusNetworkProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.Network',
+    validate: NetworkSchema.validateNetworkProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.network.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

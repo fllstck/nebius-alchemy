@@ -19,12 +19,12 @@ describe('Nebius.mysterybox.v1.SecretVersion', () => {
   describe('diff', () => {
     test('parentId change requires replace (version can\'t move secrets)', async () => {
       const svc = await resolveProvider(Module.NebiusSecretVersion.Provider, Module.NebiusSecretVersionProvider)
-      expect(await runDiff(svc, { parentId: 'secret-2' }, { parentId: 'secret-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'secret-abc222', payload: [{ key: 'k', value: 'v' }] }, { parentId: 'secret-abc111', payload: [{ key: 'k', value: 'v' }] })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusSecretVersion.Provider, Module.NebiusSecretVersionProvider)
-      expect(await runDiff(svc, { parentId: 'secret-1' }, { parentId: 'secret-1' })).toBeUndefined()
+      expect(await runDiff(svc, { parentId: 'secret-abc111', payload: [{ key: 'k', value: 'v' }] }, { parentId: 'secret-abc111', payload: [{ key: 'k', value: 'v' }] })).toBeUndefined()
     })
   })
 

@@ -5,7 +5,7 @@ import { NodeFileSystem } from '@effect/platform-node'
 import * as Module from '../../../../modules/resources/compute/v1/instance.ts'
 import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/instance.schema.ts'
-import { resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
+import { readInput, resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -234,6 +234,27 @@ describe('Nebius.compute.v1.Instance', () => {
         // oxlint-disable-next-line no-explicit-any — loose cast mirrors runDiff helper
         (svc as { diff: (input: any) => Effect.Effect<any, any, any> }).diff(
           diffInput({
+            ...validInstanceProps,
+            bootDisk: {
+              attachMode: 'READ_WRITE',
+              managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 } },
+            },
+          }),
+        ).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+    })
+
+    test('read fails fast at plan time for a GREENFIELD resource with a bad boot disk', async () => {
+      // alchemy never calls `diff` for a resource with no persisted state
+      // (Plan.ts returns early before reaching it), so `read` — invoked as the
+      // greenfield adoption probe — is the ONLY plan-time hook that can catch
+      // this before a first deploy. Regression guard for that path.
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const result = await runEffect(
+        // oxlint-disable-next-line no-explicit-any — loose cast mirrors runDiff helper
+        (svc as { read: (input: any) => Effect.Effect<any, any, any> }).read(
+          readInput({
             ...validInstanceProps,
             bootDisk: {
               attachMode: 'READ_WRITE',

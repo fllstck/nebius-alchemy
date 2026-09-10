@@ -26,17 +26,17 @@ describe('Nebius.dns.v1.Record', () => {
   describe('diff', () => {
     test('zone change requires replace (records can\'t move zones)', async () => {
       const svc = await resolveProvider(Module.NebiusRecord.Provider, Module.NebiusRecordProvider)
-      expect(await runDiff(svc, { parentId: 'zone-2' }, { parentId: 'zone-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validRecordProps, parentId: 'zone-2' }, { ...validRecordProps, parentId: 'zone-1' })).toEqual({ action: 'replace' })
     })
 
     test('type change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusRecord.Provider, Module.NebiusRecordProvider)
-      expect(await runDiff(svc, { type: 'AAAA' }, { type: 'A' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validRecordProps, type: 'AAAA' }, { ...validRecordProps, type: 'A' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusRecord.Provider, Module.NebiusRecordProvider)
-      expect(await runDiff(svc, { parentId: 'zone-1', type: 'A' }, { parentId: 'zone-1', type: 'A' })).toBeUndefined()
+      expect(await runDiff(svc, { ...validRecordProps, parentId: 'zone-1' }, { ...validRecordProps, parentId: 'zone-1' })).toBeUndefined()
     })
   })
 

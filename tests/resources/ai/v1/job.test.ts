@@ -34,25 +34,25 @@ describe('Nebius.ai.v1.Job', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusJob.Provider, Module.NebiusJobProvider)
-      expect(await runDiff(svc, { name: 'new-job' }, { name: 'old-job' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validJobProps, name: 'new-job' }, { ...validJobProps, name: 'old-job' })).toEqual({ action: 'replace' })
     })
 
     test('spec change (image) requires replace — no update RPC', async () => {
       const svc = await resolveProvider(Module.NebiusJob.Provider, Module.NebiusJobProvider)
-      expect(await runDiff(svc, { image: 'ubuntu:24.04' }, { image: 'ubuntu:22.04' })).toEqual({
+      expect(await runDiff(svc, { ...validJobProps, image: 'ubuntu:24.04' }, { ...validJobProps, image: 'ubuntu:22.04' })).toEqual({
         action: 'replace',
       })
     })
 
     test('identical props is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusJob.Provider, Module.NebiusJobProvider)
-      expect(await runDiff(svc, { image: 'ubuntu:22.04', name: 'my-job' }, { image: 'ubuntu:22.04', name: 'my-job' })).toBeUndefined()
+      expect(await runDiff(svc, { ...validJobProps }, { ...validJobProps })).toBeUndefined()
     })
 
     test('labels-only change is a noop (documented drift)', async () => {
       const svc = await resolveProvider(Module.NebiusJob.Provider, Module.NebiusJobProvider)
       expect(
-        await runDiff(svc, { image: 'ubuntu:22.04', labels: { team: 'b' } }, { image: 'ubuntu:22.04', labels: { team: 'a' } }),
+        await runDiff(svc, { ...validJobProps, labels: { team: 'b' } }, { ...validJobProps, labels: { team: 'a' } }),
       ).toBeUndefined()
     })
   })

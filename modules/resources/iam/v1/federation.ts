@@ -118,6 +118,7 @@ export const NebiusFederationProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v1.Federation',
+    validate: FederationSchema.validateFederationProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.federation.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

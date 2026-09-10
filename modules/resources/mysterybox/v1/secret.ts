@@ -114,6 +114,7 @@ export const NebiusSecretProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.mysterybox.v1.Secret',
+    validate: SecretSchema.validateSecretProps,
     service: MysteryBoxGrpc.MysteryBoxGrpcService,
     getById: (svc, id) => svc.secret.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

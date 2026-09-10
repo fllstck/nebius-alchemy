@@ -113,6 +113,7 @@ export const NebiusSubnetProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.Subnet',
+    validate: SubnetSchema.validateSubnetProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.subnet.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

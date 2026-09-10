@@ -21,12 +21,12 @@ describe('Nebius.iam.v1.FederationCertificate', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusFederationCertificate.Provider, Module.NebiusFederationCertificateProvider)
-      expect(await runDiff(svc, { name: 'new-cert' }, { name: 'old-cert' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'federation-abc123', name: 'new-cert', data: PEM_DATA }, { parentId: 'federation-abc123', name: 'old-cert', data: PEM_DATA })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusFederationCertificate.Provider, Module.NebiusFederationCertificateProvider)
-      expect(await runDiff(svc, { name: 'my-cert' }, { name: 'my-cert' })).toBeUndefined()
+      expect(await runDiff(svc, { parentId: 'federation-abc123', name: 'my-cert', data: PEM_DATA }, { parentId: 'federation-abc123', name: 'my-cert', data: PEM_DATA })).toBeUndefined()
     })
   })
 

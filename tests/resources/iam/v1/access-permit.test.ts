@@ -32,11 +32,11 @@ describe('Nebius.iam.v1.AccessPermit', () => {
   describe('diff', () => {
     test('resourceId change requires replace (immutable)', async () => {
       const svc = await resolveProvider(Module.NebiusAccessPermit.Provider, Module.NebiusAccessPermitProvider)
-      expect(await runDiff(svc, { resourceId: 'res-2' }, { resourceId: 'res-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'group-abc123', resourceId: 'res-2', role: 'editor' }, { parentId: 'group-abc123', resourceId: 'res-1', role: 'editor' })).toEqual({ action: 'replace' })
     })
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusAccessPermit.Provider, Module.NebiusAccessPermitProvider)
-      expect(await runDiff(svc, { resourceId: 'res-1', role: 'editor' }, { resourceId: 'res-1', role: 'editor' })).toBeUndefined()
+      expect(await runDiff(svc, { parentId: 'group-abc123', resourceId: 'res-1', role: 'editor' }, { parentId: 'group-abc123', resourceId: 'res-1', role: 'editor' })).toBeUndefined()
     })
   })
 

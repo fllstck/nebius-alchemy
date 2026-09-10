@@ -119,6 +119,7 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v1.AuthPublicKey',
+    validate: AuthPublicKeySchema.validateAuthPublicKeyProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.authPublicKey.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

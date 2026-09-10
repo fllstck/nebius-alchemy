@@ -103,6 +103,7 @@ export const NebiusRecordProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.dns.v1.Record',
+    validate: RecordSchema.validateRecordProps,
     service: DnsGrpc.DnsGrpcService,
     getById: (svc, id) => svc.record.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

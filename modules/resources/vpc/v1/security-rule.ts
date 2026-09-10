@@ -130,6 +130,7 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.SecurityRule',
+    validate: SecurityRuleSchema.validateSecurityRuleProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.securityRule.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

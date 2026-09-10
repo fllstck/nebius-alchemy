@@ -207,6 +207,7 @@ export const NebiusAccessKeyProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v2.AccessKey',
+    validate: AccessKeySchema.validateAccessKeyProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.accessKeyV2.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

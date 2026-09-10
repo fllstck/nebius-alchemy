@@ -7,6 +7,8 @@ import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.t
 const { describe, expect, test } = BunTest
 
 const PEM_KEY = '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----'
+/** A second, distinct PEM — still well-formed, for the immutability diff test. */
+const PEM_KEY_ALT = '-----BEGIN PUBLIC KEY-----\nMIIC\n-----END PUBLIC KEY-----'
 
 describe('Nebius.iam.v1.AuthPublicKey', () => {
   test('constructor is defined', () => {
@@ -21,17 +23,17 @@ describe('Nebius.iam.v1.AuthPublicKey', () => {
   describe('diff', () => {
     test('accountId change requires replace (immutable)', async () => {
       const svc = await resolveProvider(Module.NebiusAuthPublicKey.Provider, Module.NebiusAuthPublicKeyProvider)
-      expect(await runDiff(svc, { accountId: 'sa-2' }, { accountId: 'sa-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { accountId: 'serviceaccount-sa2', data: PEM_KEY }, { accountId: 'serviceaccount-sa1', data: PEM_KEY })).toEqual({ action: 'replace' })
     })
 
     test('data change requires replace (immutable)', async () => {
       const svc = await resolveProvider(Module.NebiusAuthPublicKey.Provider, Module.NebiusAuthPublicKeyProvider)
-      expect(await runDiff(svc, { data: 'key-b' }, { data: 'key-a' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { accountId: 'serviceaccount-sa1', data: PEM_KEY_ALT }, { accountId: 'serviceaccount-sa1', data: PEM_KEY })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusAuthPublicKey.Provider, Module.NebiusAuthPublicKeyProvider)
-      expect(await runDiff(svc, { accountId: 'sa-1', data: 'key-a' }, { accountId: 'sa-1', data: 'key-a' })).toBeUndefined()
+      expect(await runDiff(svc, { accountId: 'serviceaccount-sa1', data: PEM_KEY }, { accountId: 'serviceaccount-sa1', data: PEM_KEY })).toBeUndefined()
     })
   })
 

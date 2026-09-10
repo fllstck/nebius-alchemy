@@ -264,6 +264,7 @@ export const NebiusEndpointProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.ai.v1.Endpoint',
+    validate: EndpointSchema.validateEndpointProps,
     service: AiGrpc.AiGrpcService,
     getById: (svc, id) => svc.endpoint.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

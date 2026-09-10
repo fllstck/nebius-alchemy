@@ -34,22 +34,22 @@ describe('Nebius.storage.v1.Transfer', () => {
   describe('diff', () => {
     test('source change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusTransfer.Provider, Module.NebiusTransferProvider)
-      expect(await runDiff(svc, { source: { nebius: { region: 'eu-west1', bucketName: 'src-b' } } }, { source: { nebius: { region: 'eu-west1', bucketName: 'src-a' } } })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validTransferProps, source: { nebius: { region: 'eu-west1', bucketName: 'src-b' } } }, { ...validTransferProps, source: { nebius: { region: 'eu-west1', bucketName: 'src-a' } } })).toEqual({ action: 'replace' })
     })
 
     test('overwriteStrategy change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusTransfer.Provider, Module.NebiusTransferProvider)
-      expect(await runDiff(svc, { overwriteStrategy: 'IF_NEWER' }, { overwriteStrategy: 'NEVER' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validTransferProps, overwriteStrategy: 'IF_NEWER' }, { ...validTransferProps, overwriteStrategy: 'NEVER' })).toEqual({ action: 'replace' })
     })
 
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusTransfer.Provider, Module.NebiusTransferProvider)
-      expect(await runDiff(svc, { name: 'new-transfer' }, { name: 'old-transfer' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validTransferProps, name: 'new-transfer' }, { ...validTransferProps, name: 'old-transfer' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusTransfer.Provider, Module.NebiusTransferProvider)
-      expect(await runDiff(svc, { name: 'my-transfer' }, { name: 'my-transfer' })).toBeUndefined()
+      expect(await runDiff(svc, { ...validTransferProps }, { ...validTransferProps })).toBeUndefined()
     })
   })
 

@@ -32,11 +32,11 @@ describe('Nebius.iam.v1.GroupMembership', () => {
   describe('diff', () => {
     test('memberId change requires replace (immutable)', async () => {
       const svc = await resolveProvider(Module.NebiusGroupMembership.Provider, Module.NebiusGroupMembershipProvider)
-      expect(await runDiff(svc, { memberId: 'member-2' }, { memberId: 'member-1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'group-1', memberId: 'member-2' }, { parentId: 'group-1', memberId: 'member-1' })).toEqual({ action: 'replace' })
     })
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusGroupMembership.Provider, Module.NebiusGroupMembershipProvider)
-      expect(await runDiff(svc, { memberId: 'member-1' }, { memberId: 'member-1' })).toBeUndefined()
+      expect(await runDiff(svc, { parentId: 'group-1', memberId: 'member-1' }, { parentId: 'group-1', memberId: 'member-1' })).toBeUndefined()
     })
   })
 

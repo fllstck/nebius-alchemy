@@ -109,6 +109,7 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.kms.v1.SymmetricKey',
+    validate: SymmetricKeySchema.validateSymmetricKeyProps,
     service: KmsGrpc.KmsGrpcService,
     getById: (svc, id) => svc.symmetricKey.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

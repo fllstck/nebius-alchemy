@@ -19,12 +19,12 @@ describe('Nebius.compute.v1.Image', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
-      expect(await runDiff(svc, { name: 'new-image' }, { name: 'old-image' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { name: 'new-image', sourceDiskId: 'disk-abc123' }, { name: 'old-image', sourceDiskId: 'disk-abc123' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
-      expect(await runDiff(svc, { name: 'my-image', description: 'x' }, { name: 'my-image', description: 'x' })).toBeUndefined()
+      expect(await runDiff(svc, { name: 'my-image', description: 'x', sourceDiskId: 'disk-abc123' }, { name: 'my-image', description: 'x', sourceDiskId: 'disk-abc123' })).toBeUndefined()
     })
   })
 

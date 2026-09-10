@@ -112,6 +112,7 @@ export const NebiusFilesystemProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.compute.v1.Filesystem',
+    validate: FilesystemSchema.validateFilesystemProps,
     service: ComputeGrpc.ComputeGrpcService,
     getById: (svc, id) => svc.filesystem.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

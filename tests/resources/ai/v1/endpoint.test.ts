@@ -34,12 +34,12 @@ describe('Nebius.ai.v1.Endpoint', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusEndpoint.Provider, Module.NebiusEndpointProvider)
-      expect(await runDiff(svc, { name: 'new-endpoint' }, { name: 'old-endpoint' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validEndpointProps, name: 'new-endpoint' }, { ...validEndpointProps, name: 'old-endpoint' })).toEqual({ action: 'replace' })
     })
 
     test('spec change (image) requires replace — no update RPC', async () => {
       const svc = await resolveProvider(Module.NebiusEndpoint.Provider, Module.NebiusEndpointProvider)
-      expect(await runDiff(svc, { image: 'nginx:1.27' }, { image: 'nginx:1.26' })).toEqual({
+      expect(await runDiff(svc, { ...validEndpointProps, image: 'nginx:1.27' }, { ...validEndpointProps, image: 'nginx:1.26' })).toEqual({
         action: 'replace',
       })
     })
@@ -47,7 +47,7 @@ describe('Nebius.ai.v1.Endpoint', () => {
     test('identical props is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusEndpoint.Provider, Module.NebiusEndpointProvider)
       expect(
-        await runDiff(svc, { image: 'nginx:latest', name: 'my-endpoint' }, { image: 'nginx:latest', name: 'my-endpoint' }),
+        await runDiff(svc, { ...validEndpointProps }, { ...validEndpointProps }),
       ).toBeUndefined()
     })
   })

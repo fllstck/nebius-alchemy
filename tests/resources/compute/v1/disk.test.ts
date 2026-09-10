@@ -19,17 +19,17 @@ describe('Nebius.compute.v1.Disk', () => {
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
-      expect(await runDiff(svc, { name: 'new-disk' }, { name: 'old-disk' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { name: 'new-disk', sizeGibibytes: 10, type: 'NETWORK_SSD' }, { name: 'old-disk', sizeGibibytes: 10, type: 'NETWORK_SSD' })).toEqual({ action: 'replace' })
     })
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
-      expect(await runDiff(svc, { name: 'my-disk', sizeGibibytes: 10 }, { name: 'my-disk', sizeGibibytes: 10 })).toBeUndefined()
+      expect(await runDiff(svc, { name: 'my-disk', sizeGibibytes: 10, type: 'NETWORK_SSD' }, { name: 'my-disk', sizeGibibytes: 10, type: 'NETWORK_SSD' })).toBeUndefined()
     })
 
     test('size-only change is NOT a replace (in-place update)', async () => {
       const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
-      expect(await runDiff(svc, { name: 'my-disk', sizeGibibytes: 20 }, { name: 'my-disk', sizeGibibytes: 10 })).toBeUndefined()
+      expect(await runDiff(svc, { name: 'my-disk', sizeGibibytes: 20, type: 'NETWORK_SSD' }, { name: 'my-disk', sizeGibibytes: 10, type: 'NETWORK_SSD' })).toBeUndefined()
     })
   })
 

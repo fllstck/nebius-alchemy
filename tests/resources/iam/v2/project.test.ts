@@ -19,7 +19,7 @@ describe('Nebius.iam.v2.Project', () => {
   describe('diff', () => {
     test('name change requires replace (immutable per proto)', async () => {
       const svc = await resolveProvider(Module.NebiusProject.Provider, Module.NebiusProjectProvider)
-      expect(await runDiff(svc, { name: 'new-project' }, { name: 'old-project' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { name: 'new-project', region: 'eu-west1' }, { name: 'old-project', region: 'eu-west1' })).toEqual({ action: 'replace' })
     })
 
     test('region change is NOT a replace (in-place update)', async () => {
@@ -29,7 +29,7 @@ describe('Nebius.iam.v2.Project', () => {
 
     test('no change is a noop', async () => {
       const svc = await resolveProvider(Module.NebiusProject.Provider, Module.NebiusProjectProvider)
-      expect(await runDiff(svc, { name: 'my-project' }, { name: 'my-project' })).toBeUndefined()
+      expect(await runDiff(svc, { name: 'my-project', region: 'eu-west1' }, { name: 'my-project', region: 'eu-west1' })).toBeUndefined()
     })
   })
 

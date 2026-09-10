@@ -100,6 +100,7 @@ export const NebiusSecurityGroupProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.vpc.v1.SecurityGroup',
+    validate: SecurityGroupSchema.validateSecurityGroupProps,
     service: VpcGrpc.VpcGrpcService,
     getById: (svc, id) => svc.securityGroup.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

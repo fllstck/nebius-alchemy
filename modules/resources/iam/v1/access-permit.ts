@@ -103,8 +103,13 @@ export const NebiusAccessPermitProvider: Layer.Layer<
     deleteById: (svc, id) => svc.accessPermit.delete(id),
   }),
 
-  read: Effect.fn('Nebius.iam.v1.AccessPermit.read')(function* ({ id, output }) {
-    if (!output?.id) return undefined
+  read: Effect.fn('Nebius.iam.v1.AccessPermit.read')(function* ({ id, olds: props, output }) {
+    if (!output?.id) {
+      // Plan-time props validation for greenfield — `read` is the only provider
+      // hook alchemy calls when there is no persisted state (see makeCrudRead).
+      if (props != null) yield* AccessPermitSchema.validateAccessPermitProps(props)
+      return undefined
+    }
     const iam = yield* IamGrpc.IamGrpcService
     const permit = yield* iam.accessPermit
       .get(output.id)

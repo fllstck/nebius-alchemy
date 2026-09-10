@@ -116,8 +116,13 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     deleteById: (svc, id) => svc.groupMembership.delete(id),
   }),
 
-  read: Effect.fn('Nebius.iam.v1.GroupMembership.read')(function* ({ id, output }) {
-    if (!output?.id) return undefined
+  read: Effect.fn('Nebius.iam.v1.GroupMembership.read')(function* ({ id, olds: props, output }) {
+    if (!output?.id) {
+      // Plan-time props validation for greenfield — `read` is the only provider
+      // hook alchemy calls when there is no persisted state (see makeCrudRead).
+      if (props != null) yield* GroupMembershipSchema.validateGroupMembershipProps(props)
+      return undefined
+    }
     const iam = yield* IamGrpc.IamGrpcService
     const membership = yield* iam.groupMembership
       .get(output.id)

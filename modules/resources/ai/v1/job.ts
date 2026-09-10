@@ -111,6 +111,7 @@ export const NebiusJobProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.ai.v1.Job',
+    validate: JobSchema.validateJobProps,
     service: AiGrpc.AiGrpcService,
     getById: (svc, id) => svc.job.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

@@ -104,6 +104,7 @@ export const NebiusQuotaAllowanceProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.quotas.v1.QuotaAllowance',
+    validate: QuotaAllowanceSchema.validateQuotaAllowanceProps,
     service: QuotasGrpc.QuotasGrpcService,
     getById: (svc, id) => svc.quotaAllowance.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

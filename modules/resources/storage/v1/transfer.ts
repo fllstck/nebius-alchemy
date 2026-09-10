@@ -134,6 +134,7 @@ export const NebiusTransferProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.storage.v1.Transfer',
+    validate: TransferSchema.validateTransferProps,
     service: StorageGrpc.StorageGrpcService,
     getById: (svc, id) => svc.transfer.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

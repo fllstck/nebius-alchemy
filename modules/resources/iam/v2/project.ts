@@ -114,6 +114,7 @@ export const NebiusProjectProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.iam.v2.Project',
+    validate: ProjectSchema.validateProjectProps,
     service: IamGrpc.IamGrpcService,
     getById: (svc, id) => svc.project.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),

@@ -109,6 +109,7 @@ export const NebiusAsymmetricKeyProvider: Layer.Layer<
 
   read: Factory.makeCrudRead({
     resourceName: 'Nebius.kms.v1.AsymmetricKey',
+    validate: AsymmetricKeySchema.validateAsymmetricKeyProps,
     service: KmsGrpc.KmsGrpcService,
     getById: (svc, id) => svc.asymmetricKey.get(id),
     toAttrs: (raw) => toFriendlyAttributes(raw),
