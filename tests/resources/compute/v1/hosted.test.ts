@@ -1,10 +1,12 @@
 import * as BunTest from 'bun:test'
+import * as Redacted from 'effect/Redacted'
 import {
   renderEnvFile,
   quoteEnvValue,
   renderHostedUserData,
   mergeUserData,
   planHostedUploads,
+  hostedEnv,
 } from '../../../../modules/resources/compute/v1/hosted.ts'
 
 const { describe, expect, test } = BunTest
@@ -175,5 +177,76 @@ describe('hosted mergeUserData', () => {
     const merged = mergeUserData(bootstrap, '#cloud-config\npackages: []\n')
     expect(merged).toContain('text/cloud-config; charset="us-ascii"')
     expect(merged).not.toContain('text/x-shellscript')
+  })
+})
+
+/**
+ * The binding → shipped-env-file seam: what `bindInstanceHostEnv` registered on
+ * the instance during construction (`data.env`) must reach the systemd
+ * `EnvironmentFile` the hosted program reads via `process.env`.
+ *
+ * The real-host half of this seam (does the binding register AT ALL on an
+ * uncompiled Instance) is covered by `hosted-bindings.test.ts`.
+ */
+describe('hosted hostedEnv — the binding → shipped env file seam', () => {
+  const binding = (env: Record<string, unknown>, action?: string) => ({
+    sid: 'Nebius.storage.v1.Bucket.GetObject',
+    data: { env },
+    action,
+  })
+
+  test('merges every binding record\u2019s env into the shipped env file', () => {
+    const env = hostedEnv({
+      stackName: 'Stack',
+      stage: 'live_test',
+      port: 3000,
+      userEnv: undefined,
+      bindings: [binding({ NEBIUS_BUCKET_NAME: 'assets' }), binding({ NEBIUS_REGION: 'eu-north1' })],
+    })
+    expect(env.NEBIUS_BUCKET_NAME).toBe('assets')
+    expect(env.NEBIUS_REGION).toBe('eu-north1')
+  })
+
+  test('unwraps Redacted values (the instance env file is plaintext on the VM)', () => {
+    const env = hostedEnv({
+      stackName: 'Stack',
+      stage: 'live_test',
+      port: 3000,
+      userEnv: undefined,
+      bindings: [binding({ NEBIUS_SECRET_ACCESS_KEY: Redacted.make('s3cret') })],
+    })
+    expect(env.NEBIUS_SECRET_ACCESS_KEY).toBe('s3cret')
+    expect(Redacted.isRedacted(env.NEBIUS_SECRET_ACCESS_KEY)).toBe(false)
+  })
+
+  test('a binding removed from code (action: delete) does not resurrect its vars', () => {
+    const env = hostedEnv({
+      stackName: 'Stack',
+      stage: 'live_test',
+      port: 3000,
+      userEnv: undefined,
+      bindings: [binding({ NEBIUS_BUCKET_NAME: 'gone' }, 'delete')],
+    })
+    expect('NEBIUS_BUCKET_NAME' in env).toBe(false)
+  })
+
+  test('precedence — bindings, then alchemy runtime env + PORT, then user env wins', () => {
+    const env = hostedEnv({
+      stackName: 'Stack',
+      stage: 'live_test',
+      port: 8080,
+      userEnv: { PORT: '9999', NEBIUS_REGION: 'user-wins' },
+      bindings: [binding({ NEBIUS_REGION: 'binding-loses', PORT: '1' })],
+    })
+    expect(env.ALCHEMY_STACK_NAME).toBe('Stack')
+    expect(env.ALCHEMY_STAGE).toBe('live_test')
+    expect(env.ALCHEMY_PHASE).toBe('runtime')
+    expect(env.PORT).toBe('9999')
+    expect(env.NEBIUS_REGION).toBe('user-wins')
+  })
+
+  test('defaults PORT to 3000 when the instance declares none', () => {
+    const env = hostedEnv({ stackName: 'S', stage: 'live_t', port: undefined, userEnv: undefined, bindings: [] })
+    expect(env.PORT).toBe(3000)
   })
 })

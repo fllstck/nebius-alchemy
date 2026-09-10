@@ -20,7 +20,6 @@
  */
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { Self } from 'alchemy/Self'
 import { Nebius, test } from '../../../helpers/stack.ts'
 import { expect, test as bunTest } from 'bun:test'
@@ -33,6 +32,14 @@ import * as BindingsSchema from '../../../../modules/resources/ai/v1/bindings.sc
 import type { EndpointProps } from '../../../../modules/resources/ai/v1/endpoint.schema.ts'
 
 const PROJECT = process.env.NEBIUS_PROJECT_ID!
+
+/**
+ * The instance host's `Self` tags. `Binding.Host` resolves the GENERIC tag, so
+ * providing only the per-type tag leaves the host undefined.
+ */
+// oxlint-disable-next-line no-explicit-any — mock host satisfies the resource shape
+const mockSelfInstance = (host: any) =>
+  Layer.mergeAll(Layer.succeed(Self, host), Layer.succeed(Self('Nebius.compute.v1.Instance'), host))
 
 /** The proven config: vLLM Qwen3-0.6B on an L40S GPU (cookbook template, --enforce-eager). */
 const ENDPOINT_PROPS: Omit<EndpointProps, 'subnetId'> = {
@@ -106,18 +113,31 @@ if (process.env.M6_E2E !== '1') {
       console.log(`[M6] endpoint RUNNING, managed URL: ${managedUrl}`)
 
       // Stage 2 — re-declare everything (noops) and run the REAL binding layer
-      // with a mocked Worker host. The deploy-time branch executes (guard unset
-      // in the test process): endpointToEnv resolves the real attrs →
-      // registerEnvOnce → host.bind records the env on the mock.
+      // with a mocked INSTANCE host (the default binding host; the Worker is the
+      // compat wrapper). The deploy-time branch executes (guard unset in the test
+      // process): endpointToEnv resolves the real attrs → bindInstanceHostEnv →
+      // host.bind records the `{ env, policyStatements: [] }` payload on the mock.
+      //
+      // `Binding.Host` reads the GENERIC `Self` tag, so providing only the
+      // per-type `Self('…')` tag leaves the host undefined and the wiring is
+      // skipped silently — this file did exactly that while it was
+      // Worker-hosted, which made its assertions dead. Both tags are provided
+      // here; `hosted-bindings.test.ts` proves the real (unmocked) resolution.
       const hostCalls: Array<{ sid: string; data: unknown }> = []
       const mockHost = {
-        Type: 'Cloudflare.Worker',
-        LogicalId: 'M6MockHost',
+        Type: 'Nebius.compute.v1.Instance',
+        LogicalId: 'M6InstanceHost',
         bind: (sid: string, data: unknown) => {
           hostCalls.push({ sid, data })
           return Effect.void
         },
       } as never
+
+      // The instance runtime shape: the binding reads `process.env`, which the
+      // shipped env file populates via systemd EnvironmentFile. (A
+      // WorkerEnvironment layer would be ignored on an instance host.)
+      process.env.NEBIUS_ENDPOINT_URL = managedUrl ?? ''
+      process.env.NEBIUS_ENDPOINT_AUTH_TOKEN = 'm6-integration-token'
 
       const outcome = yield* stack.deploy(
         Effect.gen(function* () {
@@ -127,13 +147,7 @@ if (process.env.M6_E2E !== '1') {
 
           const chat = yield* Bindings.ChatCompletions(endpoint).pipe(
             Effect.provide(Bindings.ChatCompletionsHttp),
-            Effect.provide(Layer.succeed(Self('Cloudflare.Worker'), mockHost)),
-            Effect.provide(
-              Layer.succeed(WorkerEnvironment, {
-                NEBIUS_ENDPOINT_URL: managedUrl,
-                NEBIUS_ENDPOINT_AUTH_TOKEN: 'm6-integration-token',
-              }),
-            ),
+            Effect.provide(mockSelfInstance(mockHost)),
           )
 
           // Runtime against the REAL endpoint: a real chat completion through
@@ -154,28 +168,31 @@ if (process.env.M6_E2E !== '1') {
         }),
       )
 
-      // The deploy-time wiring recorded the managed URL + secret token.
+      // The deploy-time wiring recorded the two env values in the INSTANCE
+      // payload shape. The values are Outputs at wiring time (resolved by the
+      // engine at apply), so presence + shape are asserted here and the VALUE
+      // is proven by the real chat round-trip below.
       const sids = hostCalls.map((c) => c.sid)
       expect(sids).toContain('Nebius.ai.v1.Endpoint.ChatCompletions')
-      const bindings = hostCalls.flatMap((c) => (c.data as { bindings?: unknown[] }).bindings ?? [])
-      const urlBinding = bindings.find((b) => (b as { name?: string }).name === 'NEBIUS_ENDPOINT_URL') as
-        | { type: string; text: string }
-        | undefined
-      expect(urlBinding?.type).toBe('plain_text')
-      // REGRESSION (the raw IP:port bug): the URL must be the managed https URL.
-      expect(urlBinding?.text.startsWith('https://')).toBe(true)
-      expect(urlBinding?.text).toBe(managedUrl)
-      const tokenBinding = bindings.find((b) => (b as { name?: string }).name === 'NEBIUS_ENDPOINT_AUTH_TOKEN') as
-        | { type: string; text: string }
-        | undefined
-      expect(tokenBinding?.type).toBe('secret_text')
-      expect(tokenBinding?.text).toBe('m6-integration-token')
+      const data = hostCalls[0]?.data as { env?: Record<string, unknown>; policyStatements?: unknown; bindings?: unknown }
+      expect(data?.policyStatements).toEqual([])
+      expect('bindings' in (data ?? {})).toBe(false)
+      expect(Object.keys(data?.env ?? {}).toSorted()).toEqual([
+        'NEBIUS_ENDPOINT_AUTH_TOKEN',
+        'NEBIUS_ENDPOINT_URL',
+      ])
 
       // Runtime: a real chat completion through the binding.
       expect(outcome).not.toMatch(/^chat call failed/)
       expect(outcome.length).toBeGreaterThan(0)
       console.log(`[M6] real chat round-trip through the binding OK: ${outcome.slice(0, 80)}`)
     }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          delete process.env.NEBIUS_ENDPOINT_URL
+          delete process.env.NEBIUS_ENDPOINT_AUTH_TOKEN
+        }),
+      ),
       // Budget = deploy (op poll + readiness, up to ~25 min) + teardown (slow
       // on this platform — subnet deletes wait on the endpoint VM).
       safeDestroy(stack, verifyNoLeaks),

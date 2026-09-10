@@ -6,9 +6,16 @@
  * 2. S3 round-trip: the full binding chain — bucket + SA → editors grant →
  *    access key → s3-lite-client (the same client the Worker binding uses) →
  *    PutObject/GetObject round-trip against real Nebius S3.
- * 3. Binding impl end-to-end: the REAL GetObjectHttp/PutObjectHttp
- *    layers with a mocked Worker host — deploy-time wiring (hostIdentity →
- *    grant → env bindings) + the runtime client (readS3Env → s3-lite-client).
+ * 3. Binding impl end-to-end: the REAL GetObjectHttp/PutObjectHttp layers
+ *    against real Nebius S3 — the INSTANCE runtime shape first (no ambient
+ *    host: the binding reads `process.env`, which the shipped env file
+ *    populates via systemd EnvironmentFile), then the Cloudflare COMPAT arm on
+ *    a mock Worker host (the `{ bindings: [...] }` payload).
+ *
+ *    The deploy-time INSTANCE wiring (does the binding register at all on a
+ *    real, unmocked `Nebius.compute.v1.Instance`, and with which payload) is
+ *    covered plan-only — no cloud, no mocks — by
+ *    `tests/resources/compute/v1/hosted-bindings.test.ts`.
  *
  * PATTERN (see agent-patterns/alchemy-test-patterns.md): the scratch stack
  * re-plans on every deploy and DELETES resources absent from the new effect.
@@ -20,7 +27,7 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { expect } from 'bun:test'
 import { S3Client } from '@bradenmacdonald/s3-lite-client'
-import { Worker, WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
+import { Worker } from 'alchemy/Cloudflare/Workers'
 import { Self } from 'alchemy/Self'
 import { Nebius, test } from '../../../helpers/stack.ts'
 import { integrationTest } from '../../../helpers/gate.ts'
@@ -206,7 +213,7 @@ const mockSelf = (host: any) =>
 
 integrationTest(
   test.provider,
-  'Nebius.storage bindings — GetObjectHttp impl end-to-end (mocked host)',
+  'Nebius.storage bindings — instance runtime round-trip + Cloudflare compat payload',
   (stack) =>
     Effect.gen(function* () {
       // Stage 1: bucket + a test SA (the SA gives us key material for the
@@ -254,18 +261,21 @@ integrationTest(
       )
       console.log(`[IMPL] test key: ${keyOut.key.awsAccessKeyId}`)
 
-      // Stage 3: run the REAL binding layers with a mocked Worker host.
-      // The impl's deploy-time branch executes: hostIdentity (declares the
-      // mock host's SA+group+membership+key in the same effect),
-      // grantBucketAccess, bindWorkerEnv → recorded on the mock host.
-      // The runtime branch reads the provided WorkerEnvironment (real key
-      // values, as a deployed worker would receive them) and round-trips.
+      // Stage 3: run the REAL binding layers. Two arms:
+      //
+      //   A. INSTANCE (the default host) — NO ambient host is provided, so
+      //      `BindHost.runtimeEnv` falls back to `process.env`: exactly how the
+      //      program runs on the VM, where the shipped env file populates it
+      //      via systemd EnvironmentFile. The runtime client is exercised with
+      //      no WorkerEnvironment and no host.
+      //   B. CLOUDFLARE (compat wrapper) — a mock Worker host, which is the only
+      //      arm that exercises the CF payload (`{ bindings: [...] }`) and
+      //      `registerEnvOnce`. Kept because the Worker host is still a
+      //      supported (regression-gated) path.
       const hostCalls: Array<{ sid: string; data: unknown }> = []
       // `Type` is load-bearing: `BindHost.isCloudflareWorkerHost` discriminates
       // on it, and `BindHost.runtimeEnv` falls back to `process.env` for any
-      // host it does not recognise as a Worker. Without it the binding reads
-      // the wrong env source and fails with "Missing Nebius S3 env bindings" —
-      // which looks like a wiring bug but is a malformed mock. Mirrors
+      // host it does not recognise as a Worker. Mirrors
       // `tests/resources/ai/v1/bindings.integration.test.ts`.
       const mockHost = {
         Type: 'Cloudflare.Worker',
@@ -283,6 +293,9 @@ integrationTest(
         NEBIUS_SECRET_ACCESS_KEY: keyOut.key.secretAccessKey,
         NEBIUS_BUCKET_NAME: bucket.name,
       }
+      // Arm A's env source — the instance's `process.env`. Restored in a finally
+      // so a failure cannot leak these into the rest of the process.
+      for (const [name, value] of Object.entries(runtimeEnv)) process.env[name] = value
 
       const { readBack } = yield* stack.deploy(
         Effect.gen(function* () {
@@ -312,15 +325,24 @@ integrationTest(
             objectAuditLogging: 'NONE',
             forceStorageClass: false,
           })
-          const getObject = yield* Nebius.storage.GetObject(bucket).pipe(
+          // Arm B — Cloudflare compat wrapper: deploy-time wiring only (the CF
+          // payload is asserted below). Not called at runtime — arm A covers the
+          // client, and this arm exists solely to keep the `registerEnvOnce` /
+          // `{ bindings: [...] }` path regression-gated.
+          yield* Nebius.storage.GetObject(bucket).pipe(
             Effect.provide(Nebius.storage.GetObjectHttp),
             Effect.provide(mockSelf(mockHost)),
-            Effect.provide(Layer.succeed(WorkerEnvironment, runtimeEnv)),
+          )
+
+          // Arm A — the INSTANCE runtime shape: no ambient host and no
+          // WorkerEnvironment, so `runtimeEnv` reads `process.env` (populated
+          // from the real key above) — byte-for-byte how the program runs on
+          // the VM once the shipped env file has been sourced.
+          const getObject = yield* Nebius.storage.GetObject(bucket).pipe(
+            Effect.provide(Nebius.storage.GetObjectHttp),
           )
           const putObject = yield* Nebius.storage.PutObject(bucket).pipe(
             Effect.provide(Nebius.storage.PutObjectHttp),
-            Effect.provide(mockSelf(mockHost)),
-            Effect.provide(Layer.succeed(WorkerEnvironment, runtimeEnv)),
           )
 
           // PUT + GET through the binding's own runtime client. The object
@@ -348,21 +370,33 @@ integrationTest(
               // the backstop, and a cleanup failure must not mask the result.
             }).pipe(Effect.catchCause(() => Effect.void)),
           ),
+          // Arm A's env mutation must not outlive the test.
+          Effect.ensuring(
+            Effect.sync(() => {
+              for (const name of Object.keys(runtimeEnv)) delete process.env[name]
+            }),
+          ),
         ),
       )
 
       expect(readBack).toBe(BIND_PAYLOAD)
-      console.log('[IMPL] runtime round-trip through the binding impl OK')
+      console.log('[IMPL] runtime round-trip through the binding impl OK (instance shape: no host, process.env)')
 
-      // The deploy-time wiring must have registered the shared host-identity
-      // env on the mock host. registerEnvOnce dedupes by (host, name): the
-      // first capability (GetObject) registers all 5 NEBIUS_S3_* names and
-      // PutObject's attempt is a no-op (Cloudflare rejects duplicate binding
-      // names on a single upload). PutObject's grant is still declared — as
-      // an AccessPermit resource in the deploy effect, not a host.bind call.
+      // Arm B's deploy-time wiring must register the shared host-identity env on
+      // the mock host in the CLOUDFLARE shape. `registerEnvOnce` dedupes by
+      // (host, name): the first capability (GetObject) registers all 5
+      // NEBIUS_S3_* names and PutObject's attempt is a no-op (Cloudflare rejects
+      // duplicate binding names on a single upload). PutObject's grant is
+      // declared as an AccessPermit resource in the deploy effect, not here.
+      // The INSTANCE arm (the default host) is covered plan-only by
+      // `tests/resources/compute/v1/hosted-bindings.test.ts`.
       expect(hostCalls.length).toBeGreaterThanOrEqual(1)
       const sids = hostCalls.map((c) => c.sid)
       expect(sids).toContain('Nebius.storage.v1.Bucket.GetObject')
+      // oxlint-disable-next-line no-explicit-any — mock host data shape
+      const data = hostCalls[0]?.data as any
+      expect(Array.isArray(data?.bindings)).toBe(true)
+      expect(data?.env).toBeUndefined()
       const names = hostCalls.flatMap((c) =>
         // oxlint-disable-next-line no-explicit-any — mock host data shape
         ((c.data as any)?.bindings ?? []).map((b: { name: string }) => b.name),

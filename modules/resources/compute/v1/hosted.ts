@@ -1040,10 +1040,16 @@ export const resolveHostedRuntime = Effect.fn('resolveHostedRuntime')(function* 
   }
 })
 
-/** The shipped env file: bindings → alchemy runtime env → PORT → user env (user wins). */
+/**
+ * The shipped env file: bindings → alchemy runtime env → PORT → user env (user wins).
+ *
+ * Exported for the seam test: this is where a binding's `data.env` (registered
+ * by `bindInstanceHostEnv` during construction) becomes the systemd
+ * `EnvironmentFile` the instance's program reads via `process.env`.
+ */
 const unwrapEnvValue = (value: unknown): unknown => (Redacted.isRedacted(value) ? Redacted.value(value) : value)
 
-const hostedEnv = ({
+export const hostedEnv = ({
   stackName,
   stage,
   port,
