@@ -44,8 +44,12 @@ import {
 } from '@fllstck/nebius-alchemy/resources/ai/v1/bindings.schema.ts'
 import { NebiusInstance } from '@fllstck/nebius-alchemy/resources/compute/v1/instance.ts'
 
-/** Must match the endpoint's `args` in the stack — vLLM rejects other models. */
-const MODEL = 'Qwen/Qwen3-0.6B'
+/**
+ * The served model's name. vLLM rejects a request whose `model` differs from the
+ * container's `--model`; llama.cpp ignores the field. The stack ships the right
+ * value as `AI_CHAT_MODEL` per endpoint variant.
+ */
+const DEFAULT_MODEL = 'Qwen/Qwen2.5-0.5B-Instruct'
 const DEFAULT_PROMPT = 'In one sentence, what is Nebius AI Cloud?'
 
 /**
@@ -112,6 +116,13 @@ export default NebiusInstance(
   }),
 
   Effect.gen(function* () {
+    // Which model to ask for. The stack ships `AI_CHAT_MODEL` in the instance
+    // `env` so the two endpoint variants (llama.cpp / vLLM) stay in sync with
+    // this request — vLLM rejects a mismatch, llama.cpp ignores the field.
+    const model = yield* Effect.orDie(
+      Config.string('AI_CHAT_MODEL').pipe(Config.withDefault(DEFAULT_MODEL)),
+    )
+
     // The typed runtime client. `ChatCompletionsHttp` resolves the injected env
     // (NEBIUS_ENDPOINT_URL / NEBIUS_ENDPOINT_AUTH_TOKEN) on an instance host.
     const endpoint = yield* NebiusEndpoint.ref('llm')
@@ -129,12 +140,8 @@ export default NebiusInstance(
         const outcome = yield* Effect.result(
           chat(
             new ChatCompletionRequest({
-              model: MODEL,
+              model,
               messages: [{ role: 'user', content: prompt }],
-              // Qwen3 is a REASONING model: it emits a `<think>…</think>` block
-              // before the answer, so a small budget truncates mid-thought (the
-              // verified run returned a cut-off `<think>` block). Raise this (or
-              // ask for a directly-formatted answer) for longer replies.
               max_tokens: 128,
               ...(streaming ? { stream: true } : {}),
             }),

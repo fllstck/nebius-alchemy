@@ -413,7 +413,7 @@ See [`examples/storage.bindings.ts`](examples/storage.bindings.ts) for the full 
 | [`examples/actions.ts`](examples/actions.ts)       | Read-only discovery actions for IAM, VPC, and quotas                  |
 | [`examples/storage.bindings.ts`](examples/storage.bindings.ts) | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)          |
 | [`examples/ai.bindings.ts`](examples/ai.bindings.ts)         | Nebius AI endpoint bindings for a Cloudflare Worker (ChatCompletions) |
-| [`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts) | **Hosted Nebius instance** running an Effect program: GPU vLLM endpoint + `ChatCompletions` binding → `curl 'http://<ip>:3000/?prompt=…'` returns a real completion. The instance-host counterpart of `ai.bindings.ts` (`…-program.ts` is what the VM executes) |
+| [`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts) | **Hosted Nebius instance** running an Effect program: OpenAI-compatible endpoint + `ChatCompletions` binding → `curl 'http://<ip>:3000/?prompt=…'` returns a real completion (`&stream=1` streams SSE). Defaults to a cheap **CPU** endpoint (llama.cpp + 0.5B model); the GPU vLLM config is a commented alternative. The instance-host counterpart of `ai.bindings.ts` (`…-program.ts` is what the VM executes) |
 
 ## Usage
 

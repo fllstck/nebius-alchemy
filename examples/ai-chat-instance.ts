@@ -17,12 +17,37 @@
  * and its env lands in the systemd EnvironmentFile the VM reads at runtime. The
  * program file only consumes it.
  *
- * ⚠️ BILLABLE + SLOW: a GPU VM (endpoint) *and* a CPU VM (instance) run until you
- * destroy the stack, and a cold vLLM start downloads the model and boots the
- * container — budget ~10-20 minutes before the first chat call succeeds
- * (`--enforce-eager` already skips torch.compile + CUDA-graph capture; drop it
- * for production throughput). Requires an eu-north1 project: the account's GPU
- * quota lives there and `gpu-l40s-a` does not exist in other regions.
+ * ⚠️ BILLABLE: a GPU VM (endpoint) *and* a CPU VM (instance) run until you
+ * destroy the stack. **This file defaults to the CHEAP configuration**: a
+ * CPU-only endpoint serving a 0.5B model with llama.cpp (no GPU, 64 GiB disk,
+ * no shared memory) — a real chat completion for a fraction of the cost. The
+ * production-shaped GPU configuration (vLLM on an L40S, as used by
+ * `ai.bindings.ts`) is kept below as a commented block; the two differ ONLY in
+ * the endpoint and the served model name.
+ *
+ * Cost knobs, in order of impact:
+ *   1. GPU → CPU        this example: an L40S + 500 GiB + 16 GiB shm is
+ *                       replaced by `cpu-d3` + 64 GiB. Also removes the ~10 GB
+ *                       vLLM image pull and the multi-minute CUDA warmup.
+ *   2. Model size       `Qwen2.5-0.5B-Instruct` Q4_K_M is ~0.4 GB (vs a 7B-class
+ *                       model's ~4 GB) → faster container start, fewer tokens.
+ *                       Prefer a NON-reasoning instruct model for demos: Qwen3
+ *                       emits a `<think>` block first, which truncates at low
+ *                       `max_tokens`.
+ *   3. `preemptible`    the GPU variant below sets `true` (cheaper, may be
+ *                       reclaimed). The CPU platform REJECTS it
+ *                       (`3 INVALID_ARGUMENT: Preemptible is invalid`), so this
+ *                       config uses `false`. The instance stays on-demand so a
+ *                       demo is not interrupted mid-flight.
+ *   4. Instance size    `cpu-d3`/`4vcpu-16gb` is the smallest preset this repo
+ *                       has verified; the boot disk uses the 64 GiB floor.
+ *
+ * Verified 2026-09-10 (the CPU configuration below, as written): deploy 341 s for
+ * 19 resources; the first `curl` returned a real completion
+ * (`{"reply":"Hello! How may I help you?","usage":{"completion_tokens":9,…}}`);
+ * `&stream=1` delivered 36 SSE frames incrementally; destroy took 192 s. Note
+ * llama.cpp echoes its own GGUF name in `model` (it IGNORES the requested one),
+ * while vLLM validates it — that is why the model name is an env knob.
  *
  * Usage:
  *   NEBIUS_API_KEY=… NEBIUS_TENANT_ID=… NEBIUS_PROJECT_ID=… \
@@ -33,7 +58,7 @@
  *   IP=$(nebius compute instance get <instance-id> --format json \
  *         | jq -r '.status.network_interfaces[0].public_ip_address.address' | cut -d/ -f1)
  *   curl "http://$IP:3000/?prompt=Say+hello+in+five+words"
- *   # → { "ok": true, "model": "Qwen/Qwen3-0.6B", "reply": "…", "usage": { … } }
+ *   curl -N "http://$IP:3000/?prompt=Count+to+five&stream=1"   # SSE
  *
  *   bun alchemy destroy examples/ai-chat-instance.ts --yes   # stops the billing
  * ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +68,9 @@ import * as Layer from 'effect/Layer'
 import { Stack, localState } from 'alchemy'
 
 import * as Nebius from '@fllstck/nebius-alchemy'
+
+/** The served model's name — vLLM validates it, llama.cpp ignores it. */
+const SERVED_MODEL = 'Qwen/Qwen2.5-0.5B-Instruct'
 
 const REGION = process.env.NEBIUS_REGION ?? 'eu-north1'
 const PROGRAM_MAIN = new URL('./ai-chat-instance-program.ts', import.meta.url).href
@@ -81,25 +109,54 @@ export default Stack(
       egress: { destinationCidrs: ['0.0.0.0/0'] },
     })
 
-    // ── The model server: vLLM (OpenAI-compatible) on one L40S ──────────────
-    // The canonical Nebius Serverless-AI cookbook template (Qwen3-0.6B). The
-    // binding derives its URL + bearer token from this resource's attributes.
+    // ── The model server: OpenAI-compatible, CPU-only, tiny model ────────────
+    // llama.cpp's server is a ~0.5 GB image that pulls a ~0.4 GB GGUF at start —
+    // no GPU, no CUDA warmup, so a demo is up in minutes on the cheapest preset.
+    // The binding derives its URL + bearer token from this resource's attributes.
     const endpoint = yield* Nebius.ai.Endpoint('llm', {
-      image: 'vllm/vllm-openai:v0.19.1',
-      containerCommand: 'python3',
-      args: '-m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --host 0.0.0.0 --port 8000 --enforce-eager',
-      platform: 'gpu-l40s-a',
-      preset: '1gpu-8vcpu-32gb',
+      image: 'ghcr.io/ggml-org/llama.cpp:server',
+      containerCommand: '/app/llama-server',
+      args: `-hf ${SERVED_MODEL}-GGUF:Q4_K_M --host 0.0.0.0 --port 8080`,
+      platform: 'cpu-d3',
+      preset: '4vcpu-16gb',
       subnetId: subnet.id,
       publicIp: true,
-      preemptible: true,
+      // ⚠️ The API rejects `preemptible: true` on this CPU platform
+      // (`3 INVALID_ARGUMENT: Preemptible is invalid`); it is accepted for the
+      // GPU variant below. Preemptible is the cheaper option where allowed.
+      preemptible: false,
       environmentVariables: [],
-      ports: [{ containerPort: 8000, protocol: 'HTTP' }],
+      ports: [{ containerPort: 8080, protocol: 'HTTP' }],
       volumes: [],
-      disk: { type: 'NETWORK_SSD', sizeBytes: 536_870_912_000 }, // 500 GiB (template value)
-      shmSizeBytes: 17_179_869_184, // 16 GiB — vLLM wants large shared memory
+      // The 64 GiB floor; no shared memory (that is a vLLM requirement).
+      disk: { type: 'NETWORK_SSD', sizeBytes: 68_719_476_736 },
       authToken: 'replace-with-a-real-token',
     })
+    // ── Production-shaped GPU alternative (vLLM on an L40S) ─────────────────
+    // The configuration `examples/ai.bindings.ts` uses. Swap it in for real
+    // throughput; note the cost jump (GPU hour + 500 GiB + 16 GiB shm) and the
+    // multi-minute CUDA/model warmup (`--enforce-eager` skips torch.compile and
+    // CUDA-graph capture). Requires an eu-north1 project: the account's GPU quota
+    // lives there and `gpu-l40s-a` does not exist in other regions. The program's
+    // model name must match `--model` (vLLM rejects others) — set
+    // `AI_CHAT_MODEL: 'Qwen/Qwen3-0.6B'` in the instance `env` below.
+    //
+    // const endpoint = yield* Nebius.ai.Endpoint('llm', {
+    //   image: 'vllm/vllm-openai:v0.19.1',
+    //   containerCommand: 'python3',
+    //   args: '-m vllm.entrypoints.openai.api_server --model Qwen/Qwen3-0.6B --host 0.0.0.0 --port 8000 --enforce-eager',
+    //   platform: 'gpu-l40s-a',
+    //   preset: '1gpu-8vcpu-32gb',
+    //   subnetId: subnet.id,
+    //   publicIp: true,
+    //   preemptible: true,
+    //   environmentVariables: [],
+    //   ports: [{ containerPort: 8000, protocol: 'HTTP' }],
+    //   volumes: [],
+    //   disk: { type: 'NETWORK_SSD', sizeBytes: 536_870_912_000 },
+    //   shmSizeBytes: 17_179_869_184,
+    //   authToken: 'replace-with-a-real-token',
+    // })
 
     // ── The runtime: a hosted instance that serves the chat program ─────────
     const instance = yield* Nebius.compute.Instance(
@@ -134,7 +191,11 @@ export default Stack(
         port: 3000,
         build: { output: { minify: true } },
         // Shipped into the program's environment (read via Config there).
-        env: { AI_CHAT_SUBNET_ID: subnet.id, AI_CHAT_SA_ID: sa.id },
+        env: {
+          AI_CHAT_SUBNET_ID: subnet.id,
+          AI_CHAT_SA_ID: sa.id,
+          AI_CHAT_MODEL: SERVED_MODEL,
+        },
       },
       Effect.gen(function* () {
         // DEPLOY-SIDE binding registration. This init Effect runs at plan/deploy
