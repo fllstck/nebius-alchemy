@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -12,6 +11,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as AccessPermitSchema from './access-permit.schema.ts'
 import * as Factory from '../../factory.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -123,7 +123,7 @@ export const NebiusAccessPermitProvider: Layer.Layer<
   // or leak grants.
   list: Effect.fn('Nebius.iam.v1.AccessPermit.list')(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
       iam.group.list(project.metadata!.id).pipe(

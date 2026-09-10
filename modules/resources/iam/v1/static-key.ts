@@ -14,6 +14,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as StaticKeySchema from './static-key.schema.ts'
 import * as Factory from '../../factory.ts'
 import * as ServiceAccountSchema from './service-account.schema.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -157,7 +158,7 @@ export const NebiusStaticKeyProvider: Layer.Layer<
   // 3 years) when it deletes the SA.
   list: Effect.fn('Nebius.iam.v1.StaticKey.list')(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
       iam.serviceAccount.list(project.metadata!.id).pipe(

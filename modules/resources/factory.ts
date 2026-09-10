@@ -1,11 +1,11 @@
 import * as Effect from 'effect/Effect'
 import * as Clock from 'effect/Clock'
-import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Alchemy from 'alchemy'
 import * as AlchemyTags from 'alchemy/Tags'
 import type { GrpcError, GrpcDeadlineExceededError } from '../api-client/grpc-utils.ts'
 import { GrpcError as GrpcErrorCtor } from '../api-client/grpc-utils.ts'
+import { resolveTenantId } from './shared/tenant.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -204,8 +204,8 @@ export const makeTenantScopedList = <
   Effect.fn(`${config.resourceName}.list`)(function* () {
     const svc = yield* config.service
     const iam = yield* config.iamService
-    const tenantId = yield* Config.string(config.tenantEnvVar ?? 'NEBIUS_TENANT_ID')
-    const projects = yield* config.projectList(iam, tenantId)
+    const tenant = yield* resolveTenantId(config.tenantEnvVar)
+    const projects = yield* config.projectList(iam, tenant)
     const allResults = yield* Effect.forEach(projects, (project) =>
       config.listByParent(svc, config.projectId(project)).pipe(
         Effect.catch(() => Effect.succeed([] as ReadonlyArray<Raw>)),

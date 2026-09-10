@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -11,6 +10,7 @@ import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as InvitationSchema from './invitation.schema.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -87,7 +87,7 @@ export const NebiusInvitationProvider: Layer.Layer<
     }
 
     // Create new invitation — API rejects metadata.name
-    const parentId = news.parentId || (yield* Config.string('NEBIUS_TENANT_ID'))
+    const parentId = news.parentId || (yield* resolveTenantId())
     const internalLabels = yield* AlchemyTags.createInternalTags(id)
     const labels = { ...internalLabels, ...news.labels }
 
@@ -127,7 +127,7 @@ export const NebiusInvitationProvider: Layer.Layer<
 
   list: Effect.fn('Nebius.iam.v1.Invitation.list')(function* () {
     const svc = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const items = yield* svc.invitation.list(tenantId)
     return items.map(toFriendlyAttributes)
   }),

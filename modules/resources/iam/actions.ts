@@ -6,6 +6,7 @@ import * as Validation from '../validation.ts'
 import * as ProjectModule from './v2/project.ts'
 import * as GroupModule from './v1/group.ts'
 import type * as Index from './index.ts'
+import { resolveTenantId } from '../shared/tenant.ts'
 
 // ── Project ───────────────────────────────────────────────────────────────
 
@@ -13,7 +14,7 @@ export const GetProject = Alchemy.Action(
   'Nebius.iam.actions.GetProject',
   Effect.gen(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     return ({ name }: { name: string }) =>
       Effect.gen(function* () {
         const result = yield* iam.project
@@ -38,7 +39,7 @@ export const ListProjects = Alchemy.Action(
   'Nebius.iam.actions.ListProjects',
   Effect.gen(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     return () =>
       Effect.gen(function* () {
         const list = yield* iam.project.list(tenantId).pipe(
@@ -82,7 +83,7 @@ export const ListGroups = Alchemy.Action(
   'Nebius.iam.actions.ListGroups',
   Effect.gen(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: Index.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)

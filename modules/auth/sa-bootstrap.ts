@@ -341,13 +341,25 @@ const createAccessPermit = (
   ).pipe(Effect.asVoid)
 
 /**
- * Best-effort project name lookup (for friendlier prompts). Fails soft — a
- * name-resolution error must never block the bootstrap.
+ * Best-effort project lookup (for friendlier prompts, and to record the
+ * tenant). Fails soft — a lookup error must never block the bootstrap.
+ *
+ * Returns the project's display name AND the tenant it belongs to. The tenant
+ * is the project's `metadata.parentId`; Nebius has no dedicated "get tenant for
+ * project" call, so this is where the SA-key path learns it. Both come from ONE
+ * request because the bootstrap needs both and it happens once.
+ *
+ * Recording the tenant matters: tenant-scoped operations (project fan-out in
+ * `factory.ts`'s `makeTenantScopedList`, tenant-parented resources, the
+ * `Nebius.*.action.*` discovery resources) read `NEBIUS_TENANT_ID`, and
+ * `alchemy unsafe nuke` is the only place alchemy calls a provider's `list`.
+ * An OAuth profile already records it; an SA-key profile historically did not,
+ * so those users hit a bare `ConfigError` on exactly those operations.
  */
-const getProjectNameImpl = (
+const getProjectDetailsImpl = (
   token: Redacted.Redacted<string>,
   projectId: string,
-): Effect.Effect<string | undefined, SaBootstrapError> =>
+): Effect.Effect<{ name?: string; tenantId?: string }, SaBootstrapError> =>
   Effect.gen(function* () {
     const transport = tokenTransport(token)
     const channel = yield* transport.channelFor('nebius.iam.v2.ProjectService').pipe(
@@ -357,13 +369,16 @@ const getProjectNameImpl = (
       const client = new NebiusProjectServiceSchema.ProjectServiceClient('unused', grpc.credentials.createSsl(), {
         channelOverride: channel,
       })
-      const project = yield* callUnary<Project>(client, (callback) =>
+      return yield* callUnary<Project>(client, (callback) =>
         client.get(NebiusProjectServiceSchema.GetProjectRequest.fromPartial({ id: projectId }), callback),
       ).pipe(
         Effect.result,
-        Effect.map((r) => (r._tag === 'Success' ? r.success.metadata?.name : undefined)),
+        Effect.map((r) =>
+          r._tag === 'Success'
+            ? { name: r.success.metadata?.name, tenantId: r.success.metadata?.parentId }
+            : {},
+        ),
       )
-      return project
     } finally {
       channel.close()
     }
@@ -464,10 +479,14 @@ export class SaBootstrap extends Context.Service<
       token: Redacted.Redacted<string>,
       options: BootstrapOptions,
     ) => Effect.Effect<SaKey, SaBootstrapError>
-    readonly getProjectName: (
+    /**
+     * Best-effort: the project's display name and the tenant it belongs to
+     * (`metadata.parentId`). Returns `{}` rather than failing.
+     */
+    readonly getProjectDetails: (
       token: Redacted.Redacted<string>,
       projectId: string,
-    ) => Effect.Effect<string | undefined, SaBootstrapError>
+    ) => Effect.Effect<{ name?: string; tenantId?: string }, SaBootstrapError>
     /** Deactivate an authorized key server-side (`sa-key` logout). */
     readonly deactivateKey: (
       token: Redacted.Redacted<string>,
@@ -478,7 +497,7 @@ export class SaBootstrap extends Context.Service<
 
 export const SaBootstrapLive = Layer.succeed(SaBootstrap, {
   bootstrap: (token, options): Effect.Effect<SaKey, SaBootstrapError> => bootstrapWithToken(token, options),
-  getProjectName: (token, projectId): Effect.Effect<string | undefined, SaBootstrapError> =>
-    getProjectNameImpl(token, projectId),
+  getProjectDetails: (token, projectId): Effect.Effect<{ name?: string; tenantId?: string }, SaBootstrapError> =>
+    getProjectDetailsImpl(token, projectId),
   deactivateKey: (token, keyId): Effect.Effect<void, SaBootstrapError> => deactivateAuthPublicKey(token, keyId),
 })

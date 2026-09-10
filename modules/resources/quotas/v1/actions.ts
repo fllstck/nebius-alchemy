@@ -6,6 +6,7 @@ import * as QuotasGrpc from '../../../api-client/quotas.ts'
 import * as Validation from '../../validation.ts'
 import * as QuotaAllowanceModule from './quota-allowance.ts'
 import type * as ProjectSchema from '../../iam/v2/project.schema.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ── Quota ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ export const ListQuotas = Alchemy.Action(
   Effect.gen(function* () {
     const quotas = yield* QuotasGrpc.QuotasGrpcService
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: ProjectSchema.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)

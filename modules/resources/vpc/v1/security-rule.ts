@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
@@ -14,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecurityRuleSchema from './security-rule.schema.ts'
 import * as Factory from '../../factory.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -142,7 +142,7 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
   list: Effect.fn('Nebius.vpc.v1.SecurityRule.list')(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
       vpc.securityGroup.list(project.metadata!.id).pipe(

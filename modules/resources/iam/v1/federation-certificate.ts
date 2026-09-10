@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -13,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as FedCertSchema from './federation-certificate.schema.ts'
 import * as Factory from '../../factory.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -116,7 +116,7 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
   // tenant federation and list its certificates.
   list: Effect.fn('Nebius.iam.v1.FederationCertificate.list')(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const federations = yield* iam.federation.list(tenantId)
     const rows = yield* Effect.forEach(federations, (federation) =>
       iam.federationCertificate.listByFederation(federation.metadata!.id).pipe(

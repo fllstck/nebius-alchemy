@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -14,6 +13,7 @@ import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecretVersionSchema from './secret-version.schema.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -118,7 +118,7 @@ export const NebiusSecretVersionProvider: Layer.Layer<
   list: Effect.fn('Nebius.mysterybox.v1.SecretVersion.list')(function* () {
     const mysterybox = yield* MysteryBoxGrpc.MysteryBoxGrpcService
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
       mysterybox.secret.list(project.metadata!.id).pipe(

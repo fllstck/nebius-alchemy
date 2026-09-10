@@ -41,7 +41,12 @@ const saBootstrapImpl = {
       keyId: 'publickey-bootstrapped',
       privateKey: '-----BEGIN PRIVATE KEY-----\nBOOTSTRAPPED\n-----END PRIVATE KEY-----',
     }),
-  getProjectName: () => Effect.succeed('Test Project'),
+  /**
+   * Returns the project's name AND its tenant — the SA-key bootstrap records
+   * the tenant so tenant-scoped operations work without `NEBIUS_TENANT_ID`.
+   */
+  getProjectDetails: () =>
+    Effect.succeed({ name: 'Test Project', tenantId: 'tenant-from-bootstrap' }),
   deactivateKey: (_token: Redacted.Redacted<string>, _keyId: string) => Effect.succeed(undefined),
 }
 

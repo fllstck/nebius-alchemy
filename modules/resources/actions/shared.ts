@@ -1,6 +1,6 @@
-import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as IamGrpc from '../../api-client/iam.ts'
+import { resolveTenantId } from '../shared/tenant.ts'
 
 /**
  * Resolve all project IDs under the configured tenant.
@@ -8,7 +8,7 @@ import * as IamGrpc from '../../api-client/iam.ts'
  */
 export const listProjectIds = Effect.gen(function* () {
   const iam = yield* IamGrpc.IamGrpcService
-  const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+  const tenantId = yield* resolveTenantId()
   const projects = yield* iam.project.list(tenantId)
   return projects.map((p) => p.metadata!.id)
 })

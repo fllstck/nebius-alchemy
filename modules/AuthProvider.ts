@@ -110,6 +110,16 @@ export const NebiusSaKeyCredentialsSchema = Schema.Struct({
   keyId: Schema.String,
   privateKey: Schema.String,
   projectId: Schema.String,
+  /**
+   * Tenant the project belongs to, captured at bootstrap so tenant-scoped
+   * operations work without `NEBIUS_TENANT_ID` in the environment.
+   *
+   * Optional because keys bootstrapped before this was recorded lack it, and
+   * stored credential documents must keep decoding (the whole point of the
+   * schema). Absent → those operations fall back to the env var, which is the
+   * historical behaviour.
+   */
+  tenantId: Schema.optional(Schema.String),
 })
 
 export type NebiusSaKeyCredentials = typeof NebiusSaKeyCredentialsSchema.Type
@@ -320,12 +330,16 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
                 .pipe(mapPromptCancellation),
             )
 
-      // Best-effort project name so the prompts show the project name, not
-      // just the opaque ID (falls back to the ID alone on any failure).
-      const projectName = yield* saBootstrap.getProjectName(token, Redacted.value(projectId)).pipe(
+      // Best-effort project lookup: gives friendlier prompts (name, not just
+      // the opaque ID) and captures the tenant, so tenant-scoped operations
+      // (project fan-out, `alchemy unsafe nuke`, discovery actions) work later
+      // without the user having to set NEBIUS_TENANT_ID.
+      const projectDetails = yield* saBootstrap.getProjectDetails(token, Redacted.value(projectId)).pipe(
         Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
       )
-      const projectLabel = projectName ? `${projectName} (${Redacted.value(projectId)})` : Redacted.value(projectId)
+      const projectLabel = projectDetails.name
+        ? `${projectDetails.name} (${Redacted.value(projectId)})`
+        : Redacted.value(projectId)
 
       const saName = yield* interaction.prompt
         .text({
@@ -365,6 +379,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         type: 'saKey',
         ...key,
         projectId: Redacted.value(projectId),
+        ...(projectDetails.tenantId ? { tenantId: projectDetails.tenantId } : {}),
       })
       yield* interaction.output.success('Nebius: service-account key created and stored.')
       yield* interaction.output.info('To use in CI, set:')

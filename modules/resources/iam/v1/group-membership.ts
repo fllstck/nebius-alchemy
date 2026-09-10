@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Schedule from 'effect/Schedule'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
@@ -14,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as GroupMembershipSchema from './group-membership.schema.ts'
 import * as Factory from '../../factory.ts'
 import { GrpcError } from '../../../api-client/grpc-utils.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -135,7 +135,7 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
   // before their group, so group deletes would fail or leak memberships.
   list: Effect.fn('Nebius.iam.v1.GroupMembership.list')(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
       iam.group.list(project.metadata!.id).pipe(

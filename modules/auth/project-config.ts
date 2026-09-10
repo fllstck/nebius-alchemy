@@ -40,7 +40,11 @@ export const NebiusProjectConfigProviderLive = Layer.effect(
       NebiusAuthProvider.NebiusSaKeyCredentialsSchema,
     )
     const projectId = oauth?.projectId ?? saKey?.projectId
-    const tenantId = oauth?.tenantId
+    // OAuth records the tenant directly; SA-key profiles record it at
+    // bootstrap (derived from the project's `parentId`). Either source means
+    // the user does NOT have to set NEBIUS_TENANT_ID for tenant-scoped
+    // operations — only env/CI auth has to.
+    const tenantId = oauth?.tenantId ?? saKey?.tenantId
     if (!projectId && !tenantId) return base
 
     // env/base first, stored tenant/project as the fallback for missing keys.

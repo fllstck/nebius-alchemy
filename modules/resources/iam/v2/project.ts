@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
@@ -13,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as ProjectSchema from './project.schema.ts'
 import * as Factory from '../../factory.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -76,7 +76,7 @@ export const NebiusProjectProvider: Layer.Layer<
 
     // 2. Ensure — create if missing (with ownership tags)
     if (!project) {
-      const parentId = news.parentId || (yield* Config.string('NEBIUS_TENANT_ID'))
+      const parentId = news.parentId || (yield* resolveTenantId())
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)
       const labels = { ...internalLabels, ...news.labels }
@@ -121,7 +121,7 @@ export const NebiusProjectProvider: Layer.Layer<
 
   list: Effect.fn('Nebius.iam.v2.Project.list')(function* () {
     const svc = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const items = yield* svc.project.list(tenantId)
     return items
       .filter((p) => !p.metadata?.name?.startsWith('default-'))

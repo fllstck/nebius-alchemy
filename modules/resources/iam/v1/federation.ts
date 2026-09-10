@@ -1,6 +1,5 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
@@ -13,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as FederationSchema from './federation.schema.ts'
 import * as Factory from '../../factory.ts'
+import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
 
@@ -59,7 +59,7 @@ export const NebiusFederationProvider: Layer.Layer<
     }
 
     if (!federation) {
-      const parentId = news.parentId || (yield* Config.string('NEBIUS_TENANT_ID'))
+      const parentId = news.parentId || (yield* resolveTenantId())
       const name = news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)
       const labels = { ...internalLabels, ...news.labels }
@@ -125,7 +125,7 @@ export const NebiusFederationProvider: Layer.Layer<
 
   list: Effect.fn('Nebius.iam.v1.Federation.list')(function* () {
     const svc = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+    const tenantId = yield* resolveTenantId()
     const items = yield* svc.federation.list(tenantId)
     return items.map(toFriendlyAttributes)
   }),
