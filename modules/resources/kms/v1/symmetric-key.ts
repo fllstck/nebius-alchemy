@@ -129,6 +129,9 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* SymmetricKeySchema.validateSymmetricKeyProps(news)
+
     // Algorithm is immutable — changing requires replace
     if (news.algorithm !== olds?.algorithm) return { action: 'replace' }
     if (news.name !== olds?.name) return { action: 'replace' }

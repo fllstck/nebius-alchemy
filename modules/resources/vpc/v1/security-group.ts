@@ -120,6 +120,9 @@ export const NebiusSecurityGroupProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* SecurityGroupSchema.validateSecurityGroupProps(news)
+
     if (news.name !== olds?.name) return { action: 'replace' }
     if (news.networkId !== olds?.networkId) return { action: 'replace' }
 

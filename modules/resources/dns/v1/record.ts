@@ -139,6 +139,9 @@ export const NebiusRecordProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* RecordSchema.validateRecordProps(news)
+
     // Zone change requires replace (can't move records between zones)
     if (news.parentId !== olds?.parentId) return { action: 'replace' }
     // Type change requires replace

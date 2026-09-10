@@ -153,6 +153,9 @@ export const NebiusTransferProvider: Layer.Layer<
   diff: Effect.fn('Nebius.storage.v1.Transfer.diff')(function* ({ news, olds }) {
     news = news || ({} as TransferSchema.TransferProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* TransferSchema.validateTransferProps(news)
     if (news.source !== olds?.source) return { action: 'replace' }
     if (news.destination !== olds?.destination) return { action: 'replace' }
     if (news.overwriteStrategy !== olds?.overwriteStrategy) return { action: 'replace' }

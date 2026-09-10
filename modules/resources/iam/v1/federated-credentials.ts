@@ -135,6 +135,9 @@ export const NebiusFederatedCredentialsProvider: Layer.Layer<
   diff: Effect.fn('Nebius.iam.v1.FederatedCredentials.diff')(function* ({ news, olds }) {
     news = news || ({} as FedCredsSchema.FederatedCredentialsProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* FedCredsSchema.validateFederatedCredentialsProps(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

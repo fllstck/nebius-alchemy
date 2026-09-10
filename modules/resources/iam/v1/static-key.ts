@@ -182,6 +182,9 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     news = news || ({} as StaticKeySchema.StaticKeyProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* StaticKeySchema.validateStaticKeyProps(news)
+
     // Static keys can't move between service accounts
     if (news.serviceAccountId !== olds?.serviceAccountId) return { action: 'replace' }
     // Service type change requires replace (keys are immutable)

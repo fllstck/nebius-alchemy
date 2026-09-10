@@ -133,6 +133,9 @@ export const NebiusProjectProvider: Layer.Layer<
     news = news || ({} as ProjectSchema.ProjectProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* ProjectSchema.validateProjectProps(news)
+
     // Name is immutable per proto — changing it requires a replace
     if (news.name !== olds?.name) return { action: 'replace' }
 

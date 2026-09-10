@@ -114,6 +114,9 @@ export const NebiusPoolProvider: Layer.Layer<
   diff: Effect.fn('Nebius.vpc.v1.Pool.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* PoolSchema.validatePoolProps(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

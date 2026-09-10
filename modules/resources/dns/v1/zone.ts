@@ -115,6 +115,9 @@ export const NebiusZoneProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* ZoneSchema.validateZoneProps(news)
+
     // Domain name is immutable — changing it requires replace
     if (news.domainName !== olds?.domainName) return { action: 'replace' }
     // Name change requires replace

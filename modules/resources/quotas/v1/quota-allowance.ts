@@ -123,6 +123,9 @@ export const NebiusQuotaAllowanceProvider: Layer.Layer<
   diff: Effect.fn('Nebius.quotas.v1.QuotaAllowance.diff')(function* ({ news, olds }) {
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* QuotaAllowanceSchema.validateQuotaAllowanceProps(news)
+
     // Identity is (name, region) — any change requires replace
     if (news.name !== olds?.name) return { action: 'replace' }
     if (news.region !== olds?.region) return { action: 'replace' }

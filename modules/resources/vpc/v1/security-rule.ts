@@ -166,6 +166,9 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* SecurityRuleSchema.validateSecurityRuleProps(news)
+
     // Name is immutable — changing it requires a replace
     if (news.name !== olds?.name) return { action: 'replace' }
     // Can't move a rule between security groups — must recreate

@@ -158,6 +158,9 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
   diff: Effect.fn('Nebius.iam.v1.GroupMembership.diff')(function* ({ news, olds }) {
     news = news || ({} as GroupMembershipSchema.GroupMembershipProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* GroupMembershipSchema.validateGroupMembershipProps(news)
     // memberId is immutable
     if (news.memberId !== olds?.memberId) return { action: 'replace' }
     // parentId is immutable (membership can't move groups)

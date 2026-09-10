@@ -227,6 +227,9 @@ export const NebiusAccessKeyProvider: Layer.Layer<
     news = news || ({} as AccessKeySchema.AccessKeyProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* AccessKeySchema.validateAccessKeyProps(news)
+
     // Access keys can't move between service accounts
     if (news.serviceAccountId !== olds?.serviceAccountId) return { action: 'replace' }
 

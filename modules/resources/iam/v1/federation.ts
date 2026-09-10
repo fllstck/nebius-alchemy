@@ -134,6 +134,9 @@ export const NebiusFederationProvider: Layer.Layer<
   diff: Effect.fn('Nebius.iam.v1.Federation.diff')(function* ({ news, olds }) {
     news = news || ({} as FederationSchema.FederationProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* FederationSchema.validateFederationProps(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

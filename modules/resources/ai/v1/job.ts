@@ -133,6 +133,9 @@ export const NebiusJobProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* JobSchema.validateJobProps(news)
+
     const newsWithoutLabels: Record<string, unknown> = { ...news }
     delete newsWithoutLabels.labels
     const oldsWithoutLabels: Record<string, unknown> = { ...olds }

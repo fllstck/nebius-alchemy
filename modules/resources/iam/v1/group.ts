@@ -104,6 +104,9 @@ export const NebiusGroupProvider: Layer.Layer<
   diff: Effect.fn('Nebius.iam.v1.Group.diff')(function* ({ news, olds }) {
     news = news || ({} as GroupSchema.GroupProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* GroupSchema.validateGroupProps(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

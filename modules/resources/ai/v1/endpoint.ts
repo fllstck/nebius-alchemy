@@ -286,6 +286,9 @@ export const NebiusEndpointProvider: Layer.Layer<
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
 
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* EndpointSchema.validateEndpointProps(news)
+
     const newsWithoutLabels: Record<string, unknown> = { ...news }
     delete newsWithoutLabels.labels
     const oldsWithoutLabels: Record<string, unknown> = { ...olds }

@@ -114,6 +114,9 @@ export const NebiusAllocationProvider: Layer.Layer<
   diff: Effect.fn('Nebius.vpc.v1.Allocation.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* AllocationSchema.validateAllocationProps(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

@@ -136,6 +136,9 @@ export const NebiusInvitationProvider: Layer.Layer<
   diff: Effect.fn('Nebius.iam.v1.Invitation.diff')(function* ({ news, olds }) {
     news = news || ({} as InvitationSchema.InvitationProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* InvitationSchema.validateInvitationProps(news)
     // email is immutable
     if (news.email !== olds?.email) return { action: 'replace' }
     return undefined

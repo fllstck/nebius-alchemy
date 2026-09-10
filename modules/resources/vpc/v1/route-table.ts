@@ -114,6 +114,9 @@ export const NebiusRouteTableProvider: Layer.Layer<
   diff: Effect.fn('Nebius.vpc.v1.RouteTable.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* RouteTableSchema.validateRouteTableProps(news)
     if (news.name !== olds?.name) return { action: 'replace' }
     if (news.networkId !== olds?.networkId) return { action: 'replace' }
     return undefined

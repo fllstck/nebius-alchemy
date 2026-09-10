@@ -141,6 +141,9 @@ export const NebiusSecretVersionProvider: Layer.Layer<
   diff: Effect.fn('Nebius.mysterybox.v1.SecretVersion.diff')(function* ({ news, olds }) {
     news = news || ({} as SecretVersionSchema.SecretVersionProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* SecretVersionSchema.validateSecretVersionProps(news)
     // parentId is immutable (version can't move secrets)
     if (news.parentId !== olds?.parentId) return { action: 'replace' }
     return undefined

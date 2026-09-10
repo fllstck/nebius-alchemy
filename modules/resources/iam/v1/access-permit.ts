@@ -146,6 +146,9 @@ export const NebiusAccessPermitProvider: Layer.Layer<
   diff: Effect.fn('Nebius.iam.v1.AccessPermit.diff')(function* ({ news, olds }) {
     news = news || ({} as AccessPermitSchema.AccessPermitProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* AccessPermitSchema.validateAccessPermitProps(news)
     // resourceId, role, and parentId are all immutable
     if (news.resourceId !== olds?.resourceId) return { action: 'replace' }
     if (news.role !== olds?.role) return { action: 'replace' }

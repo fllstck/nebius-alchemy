@@ -131,6 +131,9 @@ export const NebiusFilesystemProvider: Layer.Layer<
   diff: Effect.fn('Nebius.compute.v1.Filesystem.diff')(function* ({ news, olds }) {
     news = news || ({} as FilesystemSchema.FilesystemProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* FilesystemSchema.validateFilesystemProps(news)
     // type is immutable
     if (news.type !== olds?.type) return { action: 'replace' }
     return Factory.nameChangeRequiresReplace(news, olds)

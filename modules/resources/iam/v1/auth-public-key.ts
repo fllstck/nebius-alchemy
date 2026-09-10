@@ -138,6 +138,9 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
   diff: Effect.fn('Nebius.iam.v1.AuthPublicKey.diff')(function* ({ news, olds }) {
     news = news || ({} as AuthPublicKeySchema.AuthPublicKeyProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Plan-time props validation — fail `alchemy plan` fast, before any API call.
+    yield* AuthPublicKeySchema.validateAuthPublicKeyProps(news)
     if (news.accountId !== olds?.accountId) return { action: 'replace' }
     if (news.data !== olds?.data) return { action: 'replace' }
     return Factory.nameChangeRequiresReplace(news, olds)
