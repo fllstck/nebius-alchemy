@@ -195,6 +195,20 @@ CreateRequest.fromPartial({ spec: { access: 'ALLOW' } })
 SecurityRuleSpec.fromJSON(news.spec)
 ```
 
+### `google.protobuf.Duration` from JSON: `{ seconds, nanos }` only
+
+The generated `Duration.fromJSON` accepts **only** the message form. The
+canonical protobuf JSON form — the **string** `"2592000s"`, which is what the
+Nebius CLI and the API's JSON renderings emit — is **silently dropped** (the
+field becomes `0`, then encodes as absent). Well-known-type JSON needs an
+explicit reshape; expose a `...Seconds` number on props and map it, as
+`storage/v1/transfer.interIterationIntervalSeconds` and
+`kms/v1/symmetric-key.rotationPeriodSeconds` do.
+
+Corollary: props never come straight from API/CLI JSON. SDK JSON is
+**snake_case**, props are camelCase, and `Duration`/`Timestamp` well-known types
+have no shared representation.
+
 ### `Effect.cachedInvalidateWithTTL` inner effect retains requirements `R`
 
 Resolve dependencies inside the `Effect.gen` block so the cached token source has `R = never`.
