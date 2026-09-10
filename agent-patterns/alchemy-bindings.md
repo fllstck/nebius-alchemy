@@ -184,6 +184,39 @@ at deploy time it's undefined and the real provider registers. (Backfilled to
 all 35 resource modules via `spikes/backfill-provider-guard.ts`.) Result: AI
 worker entry 1152 KB → 115 KB, zero gRPC.
 
+### The guard removes the PROVIDER, not the module — three ways it leaks
+
+Measured 2026-09-10 (see TASKS.md §D8). The guard is necessary but not
+sufficient; each of these survived a correctly-guarded provider:
+
+1. **A module-scope helper that references a gRPC service.**
+   `const waitUntilRunning = Effect.fn('…')(function* () { … yield* AiGrpc.AiGrpcService … })`
+   is a top-level CALL, and calls are assumed impure — rolldown keeps it, and the
+   retained closure drags the whole api-client + proto-schema graph in. Fix:
+   annotate the declaration `/* @__PURE__ */` so it becomes droppable when unused
+   (it is still called normally at plan/deploy, where nothing folds). Hit
+   `ai/v1/endpoint.ts` (88 `grpc-js` sites), `compute/v1/instance.ts`, and
+   `iam/v2/access-key.ts`. AI example entry: 884 KB → 139 KB.
+2. **A module-scope REFERENCE to a deploy-side module.** `instance.ts` passed
+   `transformProps: (id, props) => Hosted.transformInstanceProps(id, props)` to
+   `Alchemy.Platform` at module scope, so `hosted.ts` (→ `alchemy/Bundle` →
+   rolldown/vite/postcss, the IAM api-client, protobuf schemas, s3-lite-client)
+   stayed in the bundle even though the function body is dead at runtime. Fix:
+   load it lazily behind the guard —
+   `globalThis.__ALCHEMY_RUNTIME__ ? Effect.succeed(props) : Effect.flatMap(Effect.promise(() => import('./hosted.ts')), (H) => H.transformInstanceProps(id, props))`
+   plus `yield* (yield* loadHosted()).…` at the deploy-only call sites (which live
+   inside the guarded provider and vanish with it). Minimal hosted-instance
+   bundle: entry 1917.9 KB → 160.7 KB (53.1 KB minified), total 4867 KB → 966 KB,
+   `grpc-js`/`AccessPermit`/proto-schemas/s3-lite all 0.
+3. **A static import of a deploy-side module with side effects.** Even unused,
+   an import of a module the bundler cannot prove pure stays. `sideEffects:
+   false` in package.json does NOT rescue it when the module is reached through a
+   retained reference (see 2) — remove the reference, then the import goes too.
+
+Rule of thumb: after the guard, check the bundle again. Anything the provider
+body referenced that still has a module-scope reference or impure top-level call
+will keep the graph alive.
+
 ## Bundle analysis: lib not src, entry size matters, lazy chunks are inert
 
 - Rolldown resolves `alchemy` to **`lib/*.js`**, NOT `src/*.ts` — patching
@@ -194,7 +227,19 @@ worker entry 1152 KB → 115 KB, zero gRPC.
   binding module's ENTRY (main script — what startup evaluates) is ~112 KB
   even though the total is ~1 MB.
 - Measure entry size + check for gRPC markers (`@grpc`, `node:net` as static
-  imports) — `spikes/ai-bindings-bundle.ts` does both.
+  imports) — `spikes/ai-bindings-bundle.ts` does both. Since 2026-09-10 that
+  harness mirrors alchemy's own `Cloudflare/Workers/Sources/Rolldown.ts`
+  option-for-option and has a REAL fold control (raw rolldown with an explicit
+  `define`; `Bundle.build` lets `ALCHEMY_DEFINE` win, so a caller-supplied
+  `false` is silently ignored).
+- Scanning **sourcemaps** produces false marker hits: with alchemy's
+  `sourcemap: 'hidden'` the original source text of DROPPED modules is embedded
+  in the output, so a clean bundle appears to contain `grpc-js`. Measure with
+  `sourcemap: false`.
+- Hosted-instance bundles are a different consumer: the VM's fetch script
+  downloads EVERY file in the manifest (entry + lazy chunks), so total size
+  matters there even though only the entry is evaluated. Minification is worth
+  it: 2749 KB → 966 KB total, entry 160.7 → 53.1 KB.
 
 ## Effect/API gotchas hit along the way
 

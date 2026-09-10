@@ -17,8 +17,23 @@ import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as InstanceSchema from './instance.schema.ts'
-import * as Hosted from './hosted.ts'
 import * as Factory from '../../factory.ts'
+
+/**
+ * D8: `hosted.ts` is the deploy-side half of the hosted runtime (rolldown
+ * bundling via `alchemy/Bundle`, the IAM api-client + proto schemas for the
+ * composed identity, the S3 client for artifact upload). Loading it through a
+ * DYNAMIC import — only on the unfolded (plan/deploy) side of the runtime guard —
+ * is what keeps that whole graph out of a bundled program.
+ *
+ * A static `import * as Hosted` is NOT enough: `transformProps` is handed to
+ * `Alchemy.Platform` at module scope, so the reference survives the provider
+ * fold and keeps `hosted.ts` (and therefore rolldown/vite/postcss, the gRPC
+ * api-clients and the IAM/proto schemas) in the bundle. Measured on a minimal
+ * hosted instance: entry 1917.9 KB → 160.6 KB, `grpc-js` 68 → 0, IAM
+ * `AccessPermit` schemas 97 → 0 (TASKS.md §D8).
+ */
+const loadHosted = () => Effect.promise(() => import('./hosted.ts'))
 
 // ----- RESOURCE TYPES
 
@@ -82,7 +97,10 @@ export const NebiusInstance: Alchemy.Platform<
   // Compose the hosted-mode identity (assets bucket + fetch key + grants) as
   // REAL child resources at plan time when `main` is set. No-op for low-level
   // instances and inside deployed bundles (see hosted.transformInstanceProps).
-  transformProps: (id, props) => Hosted.transformInstanceProps(id, props),
+  transformProps: (id, props) =>
+    globalThis.__ALCHEMY_RUNTIME__
+      ? Effect.succeed(props)
+      : Effect.flatMap(loadHosted(), (Hosted) => Hosted.transformInstanceProps(id, props)),
 })
 
 // ----- HELPERS
@@ -263,7 +281,7 @@ export const NebiusInstanceProvider: Layer.Layer<
 
     // Host mode: bundle → ship → resolve the runtime (user-data + state).
     // Low-level mode: passthrough (runtime.userData = the user's cloud-init).
-    const runtime = yield* Hosted.resolveHostedRuntime({ id, news, bindings, output })
+    const runtime = yield* (yield* loadHosted()).resolveHostedRuntime({ id, news, bindings, output })
 
     // Strip hosted props (platform-level, never InstanceSpec fields) and
     // inject the merged cloud-init user-data (bootstrap first, user's after).
@@ -425,7 +443,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     // Hosted-runtime cleanup FIRST (S3 objects under the asset prefix + the
     // dedicated fetch key — idempotent): the bucket's own delete (stack
     // destroy) fails with BucketNotEmpty while objects remain.
-    yield* Hosted.cleanupHostedRuntime({ id, output, session })
+    yield* (yield* loadHosted()).cleanupHostedRuntime({ id, output, session })
     if (output?.id) {
       yield* session.note(`Deleting Instance (${output.id})`)
       const computeGrpcService = yield* ComputeGrpc.ComputeGrpcService
@@ -529,7 +547,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     // still needs a plan: re-bundle at plan time and compare the hash against
     // what the VM is running (mirrors the AWS EC2 diff).
     if (news.main && output?.code?.hash) {
-      const { hash } = yield* Hosted.bundleProgram(id, news)
+      const { hash } = yield* (yield* loadHosted()).bundleProgram(id, news)
       if (hash !== output.code.hash) {
         return { action: 'update', stables: stableAttrs }
       }
