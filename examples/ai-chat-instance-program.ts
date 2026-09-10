@@ -22,6 +22,9 @@
  *
  * Usage (from the host that deployed the stack):
  *   curl "http://<instance-public-ip>:3000/?prompt=Say+hello+in+five+words"
+ *   curl -N "http://<instance-public-ip>:3000/?prompt=Count+to+five&stream=1"
+ *     → Server-Sent Events, one frame per chunk: `data: {"t":ms,"delta":"…"}`
+ *       (verified on a VM: 122 frames arriving incrementally, then `{"done":true}`)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import * as Config from 'effect/Config'
@@ -35,12 +38,41 @@ import {
   ChatCompletions,
   ChatCompletionsHttp,
 } from '@fllstck/nebius-alchemy/resources/ai/v1/bindings.ts'
-import { ChatCompletionRequest } from '@fllstck/nebius-alchemy/resources/ai/v1/bindings.schema.ts'
+import {
+  ChatCompletionChunk,
+  ChatCompletionRequest,
+} from '@fllstck/nebius-alchemy/resources/ai/v1/bindings.schema.ts'
 import { NebiusInstance } from '@fllstck/nebius-alchemy/resources/compute/v1/instance.ts'
 
 /** Must match the endpoint's `args` in the stack — vLLM rejects other models. */
 const MODEL = 'Qwen/Qwen3-0.6B'
 const DEFAULT_PROMPT = 'In one sentence, what is Nebius AI Cloud?'
+
+/**
+ * `stream: true` — re-emit the typed chunks as Server-Sent Events, each carrying
+ * the delta + milliseconds since the first chunk, so `curl -N` shows the tokens
+ * ARRIVING (not one buffered blob). The binding decodes the endpoint's SSE into
+ * typed `ChatCompletionChunk`s; here they go straight back out as SSE.
+ */
+const toSseStream = (chunks: ReadableStream<ChatCompletionChunk>): ReadableStream<Uint8Array> => {
+  const encoder = new TextEncoder()
+  const started = Date.now()
+  return chunks.pipeThrough(
+    new TransformStream<ChatCompletionChunk, Uint8Array>({
+      transform(chunk, controller) {
+        const delta = chunk.choices[0]?.delta.content
+        if (delta) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ t: Date.now() - started, delta })}\n\n`),
+          )
+        }
+      },
+      flush(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, t: Date.now() - started })}\n\n`))
+      },
+    }),
+  )
+}
 
 export default NebiusInstance(
   'AiChatInstance',
@@ -87,10 +119,12 @@ export default NebiusInstance(
 
     return {
       // GET /?prompt=… → one chat completion through the binding.
+      // GET /?prompt=…&stream=1 → the same call streamed back as SSE.
       fetch: Effect.gen(function* () {
         const request = yield* HttpServerRequest
-        const prompt =
-          new URL(request.url, 'http://localhost').searchParams.get('prompt') ?? DEFAULT_PROMPT
+        const params = new URL(request.url, 'http://localhost').searchParams
+        const prompt = params.get('prompt') ?? DEFAULT_PROMPT
+        const streaming = params.get('stream') === '1'
 
         const outcome = yield* Effect.result(
           chat(
@@ -102,6 +136,7 @@ export default NebiusInstance(
               // verified run returned a cut-off `<think>` block). Raise this (or
               // ask for a directly-formatted answer) for longer replies.
               max_tokens: 128,
+              ...(streaming ? { stream: true } : {}),
             }),
           ),
         )
@@ -115,9 +150,27 @@ export default NebiusInstance(
           )
         }
 
+        if (streaming) {
+          if (outcome.success.stream !== true) {
+            return yield* HttpServerResponse.json(
+              { ok: false, error: 'expected a streamed response' },
+              { status: 501 },
+            )
+          }
+          // `raw` passes a Web ReadableStream straight through to the runtime.
+          return HttpServerResponse.raw(toSseStream(outcome.success.chunks), {
+            status: 200,
+            headers: {
+              'content-type': 'text/event-stream',
+              'cache-control': 'no-cache',
+              connection: 'keep-alive',
+            },
+          })
+        }
+
         if (outcome.success.stream !== false) {
           return yield* HttpServerResponse.json(
-            { ok: false, error: 'streaming responses are not shown in this example' },
+            { ok: false, error: 'streaming responses need &stream=1' },
             { status: 501 },
           )
         }

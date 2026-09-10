@@ -358,7 +358,14 @@ integrationTest(
           secretSha256?: string | null
           region?: string | null
         }
-        ai?: { url?: string | null; hasToken?: boolean; tokenShape?: string; probe?: string }
+        ai?: {
+          url?: string | null
+          hasToken?: boolean
+          tokenShape?: string
+          probe?: string
+          typed?: string
+          typedBadToken?: string
+        }
         roundTrip?: string
         now?: string
       }
@@ -395,6 +402,12 @@ integrationTest(
       expect(body.ai?.hasToken).toBe(true)
       expect(body.ai?.tokenShape).toBe(`${AI_TEST_TOKEN.length}ch`)
       expect(body.ai?.probe).toBe('ok:200')
+      // The TYPED binding client, executing ON the VM. nginx is not
+      // OpenAI-compatible, so the request reaches the endpoint and 404s — the
+      // tagged error path, verified on real hardware instead of only in unit
+      // tests. With a wrong bearer token the platform rejects it first (401).
+      expect(body.ai?.typed).toBe('error:EndpointNotFound')
+      expect(body.ai?.typedBadToken).toBe('error:EndpointUnauthorized')
       expect(body.roundTrip).toBe('ok:hello-from-binding')
     }).pipe(safeDestroy(stack, verifyAssetsCleanup)),
   // Budget: two VMs (the nginx AI endpoint + the hosted instance), the instance's

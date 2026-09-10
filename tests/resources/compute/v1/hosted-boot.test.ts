@@ -81,8 +81,16 @@ test('bundle + locally boot the hosted fixture', async () => {
         secretSha256: null,
       },
       // No AI binding on a local boot either — proves the env comes from the
-      // binding, not from the framework.
-      ai: { url: null, hasToken: false, tokenShape: 'absent', probe: 'skipped' },
+      // binding, not from the framework. The typed probes report the same
+      // absence: `InvalidCredentials` lists the missing names.
+      ai: {
+        url: null,
+        hasToken: false,
+        tokenShape: 'absent',
+        probe: 'skipped',
+        typed: 'error:InvalidCredentials',
+        typedBadToken: 'error:InvalidCredentials',
+      },
       roundTrip: 'skipped',
       // Request-time VM clock (skew diagnostic) — dynamic by nature.
       now: expect.any(String),

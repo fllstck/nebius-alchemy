@@ -259,6 +259,17 @@ from a VM (GPU endpoint) — i.e. the deployment-time behaviour of a GPU-backed
 endpoint plus the model's first token — so treat it as the last GPU-only check
 rather than as the AI bindings' main e2e.
 
+**UPDATE 2 (2026-09-10) — the GPU half is covered too, by an example.**
+`examples/ai-chat-instance.ts` deploys a vLLM endpoint + hosted instance; on real
+hardware a non-streaming call returned a completion, and `&stream=1` re-emitted
+the typed chunks as SSE (122 frames arriving incrementally). The e2e's fixture
+also runs the TYPED client on the VM and reports its tagged errors
+(`EndpointNotFound` against nginx, `EndpointUnauthorized` with a wrong token).
+So NOTHING in this file is now exclusive to it: it remains useful as a
+self-contained mocked-host + real-endpoint regression test (managed URL,
+`secret_text` wire shape, nginx 404), but the claims it was written to protect
+are all covered by cheaper tests and the example.
+
   **Real-infra session findings (all fixed):** region/project mismatch (CLI
   profile vs `.env`); `cpu-e2` is eu-north1-only; plan-phase evaluation needs
   the lenient env derivation (O1); raw `IP:port` in `publicEndpoints[0]` broke

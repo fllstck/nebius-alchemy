@@ -18,14 +18,35 @@
  */
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
+import * as Result from 'effect/Result'
 import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
 import { createHash } from 'node:crypto'
 import { S3Client } from '@bradenmacdonald/s3-lite-client'
 import { NebiusInstance } from '@fllstck/nebius-alchemy/resources/compute/v1/instance.ts'
+import { NebiusEndpoint } from '@fllstck/nebius-alchemy/resources/ai/v1/endpoint.ts'
+import {
+  ChatCompletions,
+  ChatCompletionsHttp,
+} from '@fllstck/nebius-alchemy/resources/ai/v1/bindings.ts'
+import { ChatCompletionRequest } from '@fllstck/nebius-alchemy/resources/ai/v1/bindings.schema.ts'
 import { runDiskName } from '../helpers/run-token.ts'
 
 const ROUND_TRIP_KEY = 'hosted-binding-roundtrip.txt'
 const ROUND_TRIP_VALUE = 'hello-from-binding'
+
+/** The model the deploy side serves (nginx ignores it; vLLM rejects others). */
+const MODEL = 'Qwen/Qwen3-0.6B'
+
+/** One chat call through the TYPED binding client — the outcome as a string. */
+const typedChat = (
+  chat: (request: ChatCompletionRequest) => Effect.Effect<unknown, { readonly _tag: string }>,
+): Effect.Effect<string> =>
+  Effect.gen(function* () {
+    const outcome = yield* Effect.result(chat(new ChatCompletionRequest({ model: MODEL, messages: [] })))
+    if (Result.isFailure(outcome)) return `error:${outcome.failure._tag}`
+    const result = outcome.success as { stream: boolean }
+    return result.stream ? 'ok:stream' : 'ok:completion'
+  })
 
 /**
  * A real call to the bound AI endpoint — proves the injected URL is the MANAGED
@@ -45,11 +66,18 @@ const aiProbe = async (): Promise<string> => {
 }
 
 /** The AI binding's env — `url: null` when the binding did not reach the VM. */
-const aiReport = (probe: string) => ({
+const aiReport = (probe: string, typed: string, typedBadToken: string) => ({
   url: process.env.NEBIUS_ENDPOINT_URL ?? null,
   hasToken: Boolean(process.env.NEBIUS_ENDPOINT_AUTH_TOKEN),
   tokenShape: shape(process.env.NEBIUS_ENDPOINT_AUTH_TOKEN),
+  // Plain `fetch` with the injected values (URL/token usability).
   probe,
+  // The TYPED binding client, running on the VM: its tagged-error mapping is
+  // only unit-covered otherwise. Against nginx this is `EndpointNotFound`;
+  // against vLLM it returns a completion.
+  typed,
+  // The same call with a deliberately wrong bearer token — the 401 path.
+  typedBadToken,
 })
 
 /** Shape-only diagnostics — never the secret itself. A JSON-serialized Output (i.e. an UNRESOLVED value) is the failure mode this reports. */
@@ -166,6 +194,27 @@ export default NebiusInstance(
     // deploy-side binding registration lives in the e2e test's init Effect).
     const roundTrip = yield* Effect.promise(s3RoundTrip)
     const ai = yield* Effect.promise(aiProbe)
+
+    // The TYPED client on the VM: `ref` is just a handle (the runtime client
+    // reads the injected env), and the layer provides the implementation.
+    const endpoint = yield* NebiusEndpoint.ref('llm')
+    const chat = yield* ChatCompletions(endpoint).pipe(Effect.provide(ChatCompletionsHttp))
+    const typed = yield* typedChat(chat)
+
+    // Error path: the same call with a wrong token. `runtimeEnv` hands back
+    // `process.env` itself on an instance host, so the override is visible to
+    // the client — restored immediately after the call.
+    const savedToken = process.env.NEBIUS_ENDPOINT_AUTH_TOKEN
+    process.env.NEBIUS_ENDPOINT_AUTH_TOKEN = 'deliberately-wrong-token'
+    const typedBadToken = yield* typedChat(chat).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (savedToken === undefined) delete process.env.NEBIUS_ENDPOINT_AUTH_TOKEN
+          else process.env.NEBIUS_ENDPOINT_AUTH_TOKEN = savedToken
+        }),
+      ),
+    )
+
     return {
       // Per-request body: `now` is the request-time clock (skew check), while
       // `roundTrip`/`ai` are the cold-start results.
@@ -174,7 +223,7 @@ export default NebiusInstance(
           ok: true,
           echo: process.env.HOSTED_TEST_ECHO ?? '',
           s3: s3Report(),
-          ai: aiReport(ai),
+          ai: aiReport(ai, typed, typedBadToken),
           roundTrip,
           now: new Date().toISOString(),
         }),
