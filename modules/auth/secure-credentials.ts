@@ -12,24 +12,32 @@
  * is surfaced.
  *
  * Generic helper, not `Effect.fn`: `Effect.fn`'s traced signature can't
- * express the `T` credential type param, so this follows the `unrequiring`
+ * express the `A` credential type param, so this follows the `unrequiring`
  * precedent for generic helpers.
+ *
+ * Since alchemy v2 beta.77 the store round-trips every credential document
+ * through a `Schema.Codec`, so callers pass the schema alongside the value —
+ * this is what makes a hand-edited or stale credentials file fail with a
+ * reconfigure hint instead of reaching provider code unchecked.
  */
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import type { PlatformError } from 'effect/PlatformError'
+import * as Schema from 'effect/Schema'
+import type { AuthError } from 'alchemy/Auth/AuthProvider'
 import * as Credentials from 'alchemy/Auth/Credentials'
 
-export const writeSecureCredentials = <T>(
+export const writeSecureCredentials = <A, E>(
   store: Credentials.CredentialsStoreService,
   profile: string,
   provider: string,
-  credentials: T,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem> =>
+  schema: Schema.Codec<A, E>,
+  credentials: A,
+): Effect.Effect<void, AuthError | PlatformError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
     const filePath = Credentials.credentialsFilePath(profile, provider)
-    yield* store.write(profile, provider, credentials)
+    yield* store.write(profile, provider, schema, credentials)
     yield* fs.chmod(filePath, 0o600).pipe(
       Effect.catch((cause) =>
         fs.remove(filePath).pipe(

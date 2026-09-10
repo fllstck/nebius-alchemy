@@ -2,7 +2,6 @@ import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Redacted from 'effect/Redacted'
 import * as AlchemyAuth from 'alchemy/Auth'
-import * as Config from 'effect/Config'
 import * as Layer from 'effect/Layer'
 import * as NebiusAuthProvider from './AuthProvider.ts'
 
@@ -11,19 +10,25 @@ export class NebiusCredentials extends Context.Service<
   Effect.Effect<{ apiKey: Redacted.Redacted<string> }>
 >()('NebiusCredentials') {}
 
+/**
+ * Resolve Nebius credentials through alchemy's provider-resolution pipeline:
+ * environment variables win (the CI path — profiles do not exist there), then
+ * the selected profile's stored config, decoded against the provider's
+ * `configSchema`. Replaces the removed
+ * `AlchemyProfile.loadOrConfigure(...) + auth.read(...)` dance, and with it the
+ * hand-rolled `CI` flag: alchemy now decides the environment-vs-profile
+ * precedence itself and passes `updateConfig` so a provider can persist
+ * refreshed material.
+ */
 export const fromAuthProvider = Layer.effect(
   NebiusCredentials,
   Effect.gen(function* () {
-    const profile = yield* AlchemyAuth.AlchemyProfile
-    const auth = yield* AlchemyAuth.getAuthProvider<
+    const { resolve } = yield* AlchemyAuth.resolveProviderConfig<
       NebiusAuthProvider.NebiusAuthConfig,
       NebiusAuthProvider.NebiusResolvedCredentials
     >(NebiusAuthProvider.NEBIUS_AUTH_PROVIDER_NAME)
-    const profileName = yield* AlchemyAuth.ALCHEMY_PROFILE
-    const ci = yield* Config.boolean('CI').pipe(Config.withDefault(false))
 
-    return yield* profile.loadOrConfigure(auth, profileName, { ci }).pipe(
-      Effect.flatMap((config) => auth.read(profileName, config)),
+    return yield* resolve.pipe(
       Effect.map((creds) => ({ apiKey: creds.apiKey })),
       Effect.orDie,
       Effect.cached,

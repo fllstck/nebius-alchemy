@@ -154,7 +154,7 @@ export const providers = () =>
     Layer.provideMerge(SaToken.SaTokenMinterLive),
     Layer.provideMerge(SaBootstrap.SaBootstrapLive),
   ).pipe(
-    Layer.provideMerge(AlchemyAuth.ProfileLive),
+    Layer.provideMerge(AlchemyAuth.ProfileStoreLive),
     // Must precede CredentialsStoreLive: its CredentialsStore requirement is
     // satisfied by that later merge (provideMerge only feeds SELF's
     // accumulated requirements, never the other way).

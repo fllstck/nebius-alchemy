@@ -25,8 +25,16 @@ export const NebiusProjectConfigProviderLive = Layer.effect(
     const profileName = yield* AlchemyAuth.ALCHEMY_PROFILE
     const store = yield* CredentialsStore
 
-    const oauth = yield* store.read<NebiusAuthProvider.NebiusOAuthCredentials>(profileName, OAUTH_STORAGE_KEY)
-    const saKey = yield* store.read<NebiusAuthProvider.NebiusSaKeyCredentials>(profileName, SA_STORAGE_KEY)
+    const oauth = yield* store.read(
+      profileName,
+      OAUTH_STORAGE_KEY,
+      NebiusAuthProvider.NebiusOAuthCredentialsSchema,
+    )
+    const saKey = yield* store.read(
+      profileName,
+      SA_STORAGE_KEY,
+      NebiusAuthProvider.NebiusSaKeyCredentialsSchema,
+    )
     const projectId = oauth?.projectId ?? saKey?.projectId
     const tenantId = oauth?.tenantId
     if (!projectId && !tenantId) return base
