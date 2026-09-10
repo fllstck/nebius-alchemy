@@ -125,46 +125,37 @@ jobs:
         run: bun run generate:schemas
       - name: Pack tarball
         run: echo "TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" | tail -1)" >> "$GITHUB_ENV"
-      - name: Install tarball into scratch project
+      # The two installers are not equivalent and neither is redundant:
+      #   npm — enforces the exact `@effect/platform-node-shared` peer, so the
+      #         tree is correct with NO consumer configuration (README: "nothing
+      #         to do"). Asserting that here keeps the claim honest.
+      #   bun — ignores peer version ranges, so the shared package floats to the
+      #         next rc and the import crashes unless the consumer adds the
+      #         README's `overrides` block. This is the path that broke 0.7.0 and
+      #         it was previously untested: installing with bun is the documented
+      #         consumer workflow, and `<cli> install` exiting 0 proves nothing.
+      - name: Install tarball + import (npm, no overrides)
+        run: bash .github/smoke/consumer.sh npm "$RUNNER_TEMP/consumer-npm" "$RUNNER_TEMP/$TARBALL"
+      - name: Install tarball + import (bun, README overrides)
+        run: bash .github/smoke/consumer.sh bun "$RUNNER_TEMP/consumer-bun" "$RUNNER_TEMP/$TARBALL" --overrides
+      # Makes the workaround self-expiring. The drift is a property of upstream's
+      # unreleased fix, not of this repo, so this step must never block — it only
+      # tells us the moment the `overrides` requirement can be deleted along with
+      # the README section. Deliberately no overrides: the drift is the subject.
+      - name: Canary — is the upstream prerelease caret still drifting?
+        continue-on-error: true
         run: |
-          mkdir -p "$RUNNER_TEMP/consumer"
-          cd "$RUNNER_TEMP/consumer"
-          npm init -y > /dev/null
-          # Mirror the overrides the README tells consumers they MUST add.
-          # Without them the package cannot be imported at all: a prerelease
-          # caret pulls @effect/platform-node-shared@rc.113, which imports
-          # `effect/ByteSize` — absent from the rc.112 the consumer installed.
-          node -e "
-            const fs=require('fs');
-            const p=JSON.parse(fs.readFileSync('package.json','utf8'));
-            p.overrides={
-              '@effect/platform-node-shared':'4.0.0-rc.112',
-              '@effect/sql-d1':'4.0.0-rc.112',
-              '@effect/sql-sqlite-do':'4.0.0-rc.112',
-              '@effect/vitest':'4.0.0-rc.112',
-            };
-            fs.writeFileSync('package.json', JSON.stringify(p,null,2));
-          "
-          npm install "$RUNNER_TEMP/$TARBALL" \
-            effect@4.0.0-rc.112 \
-            @effect/platform-bun@4.0.0-rc.112 \
-            @effect/platform-node@4.0.0-rc.112 \
-            typescript@7
-      - name: Compile README quick-start
-        run: |
-          cd "$RUNNER_TEMP/consumer"
-          cp "$GITHUB_WORKSPACE/.github/smoke/smoke.ts" .
-          cp "$GITHUB_WORKSPACE/.github/smoke/tsconfig.json" .
-          ./node_modules/.bin/tsc --noEmit
-      # `tsc` above proves only that the TYPES resolve. With `skipLibCheck` it
-      # never resolves runtime imports, so it structurally CANNOT catch a broken
-      # transitive dependency — exactly the failure that shipped past the first
-      # version of this job (a prerelease caret drifting to a shared package
-      # importing a subpath missing from the pinned `effect`). Actually
-      # importing does, and it fails at load rather than at typecheck.
-      # Bun is used purely as a TS-capable runtime; the install above is npm.
-      - name: Import the package for real (catches broken transitive deps)
-        run: |
-          cd "$RUNNER_TEMP/consumer"
-          bun -e "await import('@fllstck/nebius-alchemy'); console.log('import OK')"
-          bun -e "await import('alchemy'); console.log('alchemy import OK')"
+          d="$RUNNER_TEMP/consumer-canary"
+          rm -rf "$d"; mkdir -p "$d"; cd "$d"
+          printf '{"name":"canary","version":"1.0.0","private":true}' > package.json
+          PIN=$(node -p "require('$GITHUB_WORKSPACE/package.json').peerDependencies.effect")
+          BUN_PEER=$(node -p "require('$GITHUB_WORKSPACE/package.json').peerDependencies['@effect/platform-bun']")
+          NODE_PEER=$(node -p "require('$GITHUB_WORKSPACE/package.json').peerDependencies['@effect/platform-node']")
+          bun add "$RUNNER_TEMP/$TARBALL" "effect@$PIN" \
+            "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER" > /dev/null 2>&1 || true
+          RESOLVED=$(node -p "require('./node_modules/@effect/platform-node-shared/package.json').version" 2>/dev/null || echo unknown)
+          if [ "$RESOLVED" = "$PIN" ]; then
+            echo "::warning title=Overrides workaround may be removable::@effect/platform-node-shared now resolves to $RESOLVED without overrides. Upstream no longer drifts — drop the overrides requirement from the README and the bun smoke step (see TASKS.md Phase 6)."
+          else
+            echo "Drift still present: shared resolved $RESOLVED (pinned $PIN) — bun consumers still need the overrides block. No action."
+          fi
