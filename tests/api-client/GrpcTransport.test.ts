@@ -18,7 +18,7 @@ import { runIntegration, INTEGRATION_TIMEOUT_MS } from '../helpers/gate.ts'
 const { beforeAll, describe, expect, test } = BunTest
 const { UnknownServiceError } = EndpointsModule
 const { AuthProviders } = AlchemyAuthProvider
-const { ProfileLive } = AlchemyProfile
+const { ProfileStoreLive } = AlchemyProfile
 const { CredentialsStoreLive } = AlchemyCredentials
 const { NebiusAuth } = NebiusAuthModule
 const { NebiusCredentials, fromAuthProvider } = NebiusCredentialsModule
@@ -54,7 +54,7 @@ const mockLayer = NebiusGrpcTransportLive.pipe(
  *   fromAuthProvider → NebiusCredentials (needs Profile, Auth, ConfigProvider)
  *   NebiusGrpcTransportLive → NebiusGrpcTransport (needs NebiusCredentials + Scope)
  */
-const authLayer = Layer.mergeAll(ProfileLive, NebiusAuth).pipe(
+const authLayer = Layer.mergeAll(ProfileStoreLive, NebiusAuth).pipe(
   Layer.provide(CredentialsStoreLive),
   Layer.provideMerge(
     Layer.mergeAll(

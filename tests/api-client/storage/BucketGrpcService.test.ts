@@ -20,7 +20,7 @@ import { fakeChannel } from '../../helpers/channel.ts'
 
 const { beforeAll, describe, expect, test } = BunTest
 const { AuthProviders } = AlchemyAuthProvider
-const { ProfileLive } = AlchemyProfile
+const { ProfileStoreLive } = AlchemyProfile
 const { CredentialsStoreLive } = AlchemyCredentials
 const { NebiusAuth } = NebiusAuthModule
 const { NebiusCredentials, fromAuthProvider } = NebiusCredentialsModule
@@ -53,7 +53,7 @@ const mockServiceLayer = StorageGrpcServiceLive.pipe(
  * Uses fromAuthProvider for credential resolution (env, stored, or CLI),
  * NOT direct process.env access.
  */
-const authLayer = Layer.mergeAll(ProfileLive, NebiusAuth).pipe(
+const authLayer = Layer.mergeAll(ProfileStoreLive, NebiusAuth).pipe(
   Layer.provide(CredentialsStoreLive),
   Layer.provideMerge(
     Layer.mergeAll(

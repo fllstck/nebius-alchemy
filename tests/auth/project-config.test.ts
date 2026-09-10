@@ -32,7 +32,7 @@ const resolveProject = (env: Record<string, string>, stored: unknown) =>
       return yield* Config.string('NEBIUS_PROJECT_ID').pipe(Effect.orElseSucceed(() => '<missing>'))
     }).pipe(
       Effect.provide(NebiusProjectConfigProviderLive),
-      Effect.provide(AlchemyAuth.ProfileLive),
+      Effect.provide(AlchemyAuth.ProfileStoreLive),
       Effect.provide(makeStore(stored)),
       Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
       Effect.provide(PlatformNode.NodeServices.layer),

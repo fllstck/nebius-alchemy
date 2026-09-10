@@ -5,12 +5,14 @@ import * as Layer from 'effect/Layer'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Redacted from 'effect/Redacted'
 import * as PlatformNode from '@effect/platform-node'
-import { AuthProviders, getAuthProvider, AuthError } from 'alchemy/Auth/AuthProvider'
+import { AuthProviders, getAuthProvider, AuthError, NeedsReauth } from 'alchemy/Auth/AuthProvider'
+import { layerNonInteractive } from 'alchemy/Interaction'
 import * as AlchemyProfile from 'alchemy/Auth/Profile'
 import * as AlchemyCredentials from 'alchemy/Auth/Credentials'
 
 import {
   NebiusAuth,
+  NebiusSaKeyCredentialsSchema,
   type NebiusAuthConfig,
   NEBIUS_AUTH_PROVIDER_NAME,
   type NebiusResolvedCredentials,
@@ -64,7 +66,7 @@ const credentialsLayer = AlchemyCredentials.CredentialsStoreLive.pipe(Layer.prov
  * Uses the same `mergeAll + provideMerge` pattern as Alchemy's own
  * `Auth/Profile.test.ts`.
  */
-const authTestLayer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+const authTestLayer = Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
   Layer.provide(credentialsLayer),
   Layer.provideMerge(
     Layer.mergeAll(Layer.succeed(AuthProviders, {}), baseServices, fakeSaTokenMinter, fakeSaBootstrap),
@@ -73,7 +75,7 @@ const authTestLayer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pip
 
 /** Build with custom env vars substituted into ConfigProvider. */
 const authTestLayerWithEnv = (env: Record<string, string>) =>
-  Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+  Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
     Layer.provide(credentialsLayer),
     Layer.provideMerge(
       Layer.mergeAll(
@@ -158,8 +160,8 @@ describe('NebiusAuth', () => {
         resolveCredentials('test-profile', { method: 'stored' }).pipe(Effect.flip, Effect.provide(authTestLayer)),
       )
 
-      expect(error).toBeInstanceOf(AuthError)
-      if (error instanceof AuthError) {
+      expect(error).toBeInstanceOf(NeedsReauth)
+      if (error instanceof NeedsReauth) {
         expect(error.message).toContain('stored')
       }
     })
@@ -185,7 +187,7 @@ describe('NebiusAuth', () => {
           }),
       })
       inMemory.set('test-profile:nebius-oauth', stored)
-      return Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+      return Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
         Layer.provide(fakeStore),
         Layer.provideMerge(
           Layer.mergeAll(
@@ -233,8 +235,8 @@ describe('NebiusAuth', () => {
           ),
         ),
       )
-      expect(error).toBeInstanceOf(AuthError)
-      if (error instanceof AuthError) expect(error.message).toContain('expired')
+      expect(error).toBeInstanceOf(NeedsReauth)
+      if (error instanceof NeedsReauth) expect(error.message).toContain('expired')
     })
 
     test('fails with guidance when nothing is stored', async () => {
@@ -244,8 +246,8 @@ describe('NebiusAuth', () => {
           Effect.provide(oauthLayerWithStore(undefined)),
         ),
       )
-      expect(error).toBeInstanceOf(AuthError)
-      if (error instanceof AuthError) expect(error.message).toContain('alchemy login')
+      expect(error).toBeInstanceOf(NeedsReauth)
+      if (error instanceof NeedsReauth) expect(error.message).toContain('alchemy login')
     })
   })
 
@@ -331,7 +333,7 @@ describe('NebiusAuth', () => {
         projectId: 'project-stored',
       })
 
-      const layer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+      const layer = Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
         Layer.provide(fakeStore),
         Layer.provideMerge(
           Layer.mergeAll(
@@ -377,7 +379,7 @@ describe('NebiusAuth', () => {
         projectId: 'project-stored',
       })
 
-      const layer = Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+      const layer = Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
         Layer.provide(fakeStore),
         Layer.provideMerge(
           Layer.mergeAll(
@@ -420,7 +422,7 @@ describe('NebiusAuth', () => {
       expect(typeof auth.configure).toBe('function')
       expect(typeof auth.login).toBe('function')
       expect(typeof auth.logout).toBe('function')
-      expect(typeof auth.prettyPrint).toBe('function')
+      expect(typeof auth.details).toBe('function')
     })
   })
 
@@ -450,12 +452,16 @@ describe('NebiusAuth', () => {
       calls: Array<{ keyId: string }>,
       deactivate: () => Effect.Effect<void, SaBootstrap.SaBootstrapError>,
     ) =>
-      Layer.mergeAll(AlchemyProfile.ProfileLive, NebiusAuth).pipe(
+      Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
         Layer.provide(credentialsLayer),
         Layer.provideMerge(
           Layer.mergeAll(
             Layer.succeed(AuthProviders, {}),
             baseServices,
+            // `logout` reports through `Interaction` now, so the layer must
+            // provide it. Non-interactive is correct here — logout only ever
+            // *outputs*, it never prompts.
+            layerNonInteractive(),
             fakeSaTokenMinter,
             Layer.succeed(SaBootstrap.SaBootstrap, {
               ...saBootstrapImpl,
@@ -483,7 +489,7 @@ describe('NebiusAuth', () => {
       await Effect.gen(function* () {
         const store = yield* AlchemyCredentials.CredentialsStore
         try {
-          yield* writeSecureCredentials(store, profile, SA_KEY_PROVIDER, {
+          yield* writeSecureCredentials(store, profile, SA_KEY_PROVIDER, NebiusSaKeyCredentialsSchema, {
             type: 'saKey',
             serviceAccountId: 'serviceaccount-logout',
             keyId: 'publickey-logout',
@@ -495,7 +501,7 @@ describe('NebiusAuth', () => {
           // Server-side deactivation was requested with the stored key ID.
           expect(calls).toEqual([{ keyId: 'publickey-logout' }])
           // Local material is gone.
-          const remaining = yield* store.read(profile, SA_KEY_PROVIDER)
+          const remaining = yield* store.read(profile, SA_KEY_PROVIDER, NebiusSaKeyCredentialsSchema)
           expect(remaining).toBeUndefined()
         } finally {
           yield* store.deleteProfile(profile)
@@ -512,7 +518,7 @@ describe('NebiusAuth', () => {
       await Effect.gen(function* () {
         const store = yield* AlchemyCredentials.CredentialsStore
         try {
-          yield* writeSecureCredentials(store, profile, SA_KEY_PROVIDER, {
+          yield* writeSecureCredentials(store, profile, SA_KEY_PROVIDER, NebiusSaKeyCredentialsSchema, {
             type: 'saKey',
             serviceAccountId: 'serviceaccount-logout',
             keyId: 'publickey-logout',
@@ -522,7 +528,7 @@ describe('NebiusAuth', () => {
           // Logout must NOT fail even though deactivation errored.
           yield* logoutSaKey(profile).pipe(Effect.provide(layer))
           expect(calls).toEqual([{ keyId: 'publickey-logout' }])
-          const remaining = yield* store.read(profile, SA_KEY_PROVIDER)
+          const remaining = yield* store.read(profile, SA_KEY_PROVIDER, NebiusSaKeyCredentialsSchema)
           expect(remaining).toBeUndefined()
         } finally {
           yield* store.deleteProfile(profile)

@@ -22,7 +22,11 @@ export const NebiusProjectConfigProviderLive = Layer.effect(
   ConfigProvider.ConfigProvider,
   Effect.gen(function* () {
     const base = yield* ConfigProvider.ConfigProvider
-    const profileName = yield* AlchemyAuth.ALCHEMY_PROFILE
+    // `ALCHEMY_PROFILE` is a bare `Config.string` with NO default since
+    // beta.77 — reading it directly fails when unset. `currentProfileName`
+    // resolves the selection properly (falling back to the default profile)
+    // and only requires `ProfileStore`.
+    const profileName = yield* AlchemyAuth.currentProfileName
     const store = yield* CredentialsStore
 
     const oauth = yield* store.read(

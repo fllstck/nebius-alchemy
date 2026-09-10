@@ -13,7 +13,6 @@ import { safeDestroy } from '../../../helpers/cleanup.ts'
 import { runDiskName } from '../../../helpers/run-token.ts'
 import * as ComputeGrpc from '../../../../modules/api-client/compute.ts'
 import * as Ids from '../../../../modules/resources/compute/v1/ids.ts'
-import * as VpcGrpc from '../../../../modules/api-client/vpc.ts'
 import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 
 const SUBNET_ID = 'vpcsubnet-e00rf5t1vkbq0ew96x'
