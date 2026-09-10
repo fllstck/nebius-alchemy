@@ -54,11 +54,33 @@ Nebius.vpc.v1.Network
 
 ## Vendored Repositories
 
-The Effect V4 monorepo is vendored at `repos/effect-smol/` for reference.
+The Effect V4 monorepo is vendored at **`repos/effect/`** (read-only reference).
 
-**Before writing any Effect code**, read `repos/effect-smol/LLMS.md` — it contains authoritative best practices for Effect patterns, services, errors, streams, and more. Prefer patterns from the vendored source over web search or `node_modules` (which may be outdated).
+> ⚠️ **The vendored copy is STALE.** It is `effect@4.0.0-beta.102`; this project
+> compiles against **`4.0.0-rc.112`**. It still teaches `Schema.TaggedErrorClass`,
+> which was **removed** in rc.112 (we migrated to `Schema.TaggedError` — see
+> `agent-patterns/effect-schema.md`). Copying API usage out of it will
+> reintroduce exactly that bug. Use it for **concepts** (modelling, services,
+> layers, streams), never as the API reference.
 
-The Alchemy V2 monorepo is **not** vendored. Read it from `node_modules/alchemy/src/` — that is the installed version this project actually compiles and runs against, so it is authoritative for `AuthProvider`, `Interaction`, `Provider`, `Bundle`, `Tags`, and everything else. Prefer it over web search and over the published docs (which track `latest`, not the version pinned here). `agent-patterns/alchemy-*.md` are the curated summaries of it.
+**Authoritative sources, in precedence order:**
+
+1. **`node_modules/effect/dist/*.d.ts`** and **`node_modules/alchemy/src/`** — the
+   versions this project actually compiles and runs against, so they are current
+   by definition. Start here for ANY API-surface question (does `X` still exist,
+   what are the argument types). `node_modules` is NOT "possibly outdated" here;
+   it is the pinned truth.
+2. **`repos/effect/LLMS.md`** — Effect's own best-practice guide, still excellent
+   for *how to structure* Effect code. Verify every API it names against (1).
+3. **`agent-patterns/*.md`** — this repo's curated summaries, kept in sync with
+   the pinned versions. Prefer these over (2) for anything version-sensitive.
+
+The Alchemy V2 monorepo is **not** vendored. Read it from
+`node_modules/alchemy/src/` — that is the installed version this project actually
+compiles and runs against, so it is authoritative for `AuthProvider`,
+`Interaction`, `Provider`, `Bundle`, `Tags`, and everything else. Prefer it over
+web search and over the published docs (which track `latest`, not the version
+pinned here). `agent-patterns/alchemy-*.md` are the curated summaries of it.
 
 ### Pattern reference files
 

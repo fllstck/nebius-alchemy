@@ -1,3 +1,46 @@
+# [0.7.0](https://github.com/fllstck/nebius-alchemy/compare/v0.6.0...v0.7.0) (2026-09-10)
+
+
+### Bug Fixes
+
+* **auth:** resolve profile via currentProfileName and update tests for API changes ([54335e3](https://github.com/fllstck/nebius-alchemy/commit/54335e36288614aa5bdac3ee3f2e741ba98fa544))
+* **compute:** enforce Nebius boot disk minimum and network interface requirements ([505557a](https://github.com/fllstck/nebius-alchemy/commit/505557a7ad8d01490b2b7b6261caed960336cc33))
+* **compute:** ensure unzip is installed before bun installer runs ([1177db8](https://github.com/fllstck/nebius-alchemy/commit/1177db8bede970d083a06d79711b974b7e5eb665))
+* **compute:** export HOME before bun install in hosted user data ([bfac2c6](https://github.com/fllstck/nebius-alchemy/commit/bfac2c6a1399b3e7de933ab58cd019e05db8475e))
+* **compute:** switch hosted user-data to cloud-config multipart format ([aaf05e6](https://github.com/fllstck/nebius-alchemy/commit/aaf05e6133b6641fe0108ad3bdb4ccf75240e85d))
+* **storage:** set zero TTL on bucket delete and improve S3 cleanup resilience ([cc7ece4](https://github.com/fllstck/nebius-alchemy/commit/cc7ece43aa48bfbc8d8dd55785656f0305525e67))
+* **tests:** combine SG/rules and instance into single deploy in minimal-online test ([89bf7f7](https://github.com/fllstck/nebius-alchemy/commit/89bf7f7dfc66e51266c01c19ab7e1dbcb1474a81))
+* **tests:** tolerate async soft-deletes in post-destroy leak checks ([8992f62](https://github.com/fllstck/nebius-alchemy/commit/8992f62c49b122222bbb487c3a043cd4e2fb4f12))
+* **tests:** use per-run token for managed disk names to avoid orphan collisions ([c099b26](https://github.com/fllstck/nebius-alchemy/commit/c099b269438c850b1e83d4b75cc4e48c641d3937))
+* **vpc:** apply platform defaults to security rule spec to prevent drift ([dcf1ec4](https://github.com/fllstck/nebius-alchemy/commit/dcf1ec461fd785807beed18d3275c594b8b3168c))
+
+
+### Features
+
+* **ai:** support instance hosts for ChatCompletions env bindings ([db91e43](https://github.com/fllstck/nebius-alchemy/commit/db91e432c1f117f281d3e2bcb468fa6a0f013038))
+* **api-client:** add minimal online integration test for compute instances ([d207efe](https://github.com/fllstck/nebius-alchemy/commit/d207efe92ab55fa24708c62e958e39d7f9383670))
+* **auth:** add schema validation and provider metadata for Nebius auth ([f66d89a](https://github.com/fllstck/nebius-alchemy/commit/f66d89a9f91aa86ef4c4a927fe9c181709e38372))
+* **auth:** capture tenant ID during SA-key bootstrap ([3156f2b](https://github.com/fllstck/nebius-alchemy/commit/3156f2b34d815a87e0a065eca959316837e1adcd))
+* **auth:** deactivate SA-key server-side on logout ([7f7bca4](https://github.com/fllstck/nebius-alchemy/commit/7f7bca43d1538bf85b953f0ad1596b2333d610f1))
+* **auth:** replace SA grant confirmation with role selection ([443b0f8](https://github.com/fllstck/nebius-alchemy/commit/443b0f81ed4626b355ad3d4fb35431b2aefae113))
+* **auth:** secure credential file permissions with chmod 0600 ([d5d1568](https://github.com/fllstck/nebius-alchemy/commit/d5d1568e70b171ac5cb91a30a025434c14a376b1))
+* **auth:** support custom OAuth client id via environment variable ([688fa8e](https://github.com/fllstck/nebius-alchemy/commit/688fa8eeb1a1d0ad78a34441f2eefab34b5889b9))
+* **compute:** add hosted runtime props to instance schema ([c4b2f55](https://github.com/fllstck/nebius-alchemy/commit/c4b2f55397bdd22c257a5270d47103eb175ca5de))
+* **compute:** add hosted runtime support to Nebius Instance resource ([dd6a26f](https://github.com/fllstck/nebius-alchemy/commit/dd6a26f2f15a8249e25ec6c003551eb535e295fd))
+* **compute:** add Nebius hosted runtime support for Instance ([09b14bd](https://github.com/fllstck/nebius-alchemy/commit/09b14bd95d1515a46a7b4b39e3a92a6535e52100))
+* **compute:** require boot disk image and validate props at plan time ([de673d2](https://github.com/fllstck/nebius-alchemy/commit/de673d2cd6c4a1dbc2cd93ce4ab9e652a9346ddb))
+* **dns:** implement zone-scoped record listing for nuke support ([696e7db](https://github.com/fllstck/nebius-alchemy/commit/696e7db23d51b5b877b7bf4c34f0ddcf9b3c5c3c))
+* **iam:** add list support and nuke ordering for IAM sub-resources ([e26fe8d](https://github.com/fllstck/nebius-alchemy/commit/e26fe8de90b621083f8a5587c713af5168b3b3d6))
+
+
+### ⚠️ Breaking Changes
+
+* **deps:** now requires `alchemy@2.0.0-beta.77` with `effect@4.0.0-rc.112` (peer range `>=4.0.0-rc.112 <4.0.0-rc.113`). Effect and Alchemy must move together — alchemy 2.0.0-beta.70 itself calls `Schema.TaggedErrorClass`, which `effect` removed in rc.112 — so `effect@4.0.0-beta.*` is no longer supported ([bf5c210](https://github.com/fllstck/nebius-alchemy/commit/bf5c210eb))
+* **auth:** the provider is rewritten against Alchemy's new `AuthProviderImpl`. `configSchema` is now required, `configure(profileName, configureContext)` becomes `configure(profileName, currentConfig?)`, and `prettyPrint` is replaced by `details` (returning structured `ProviderDetails`). Interactive methods (`configure`/`login`/`logout`) now require the `Interaction` service. `readEnvironment` + a declared `environment` contract replace the old `ci` flag ([f66d89a](https://github.com/fllstck/nebius-alchemy/commit/f66d89a9f91aa86ef4c4a927fe9c181709e38372))
+* **auth:** `Schema.TaggedErrorClass` → `Schema.TaggedError` throughout — the former was removed upstream in `effect@4.0.0-rc.112` ([bf5c210](https://github.com/fllstck/nebius-alchemy/commit/bf5c210eb))
+* **auth:** expired or absent stored credentials now fail with `NeedsReauth` rather than `AuthError`, so callers can render "needs re-login". Anything matching on `AuthError` by tag must also handle `NeedsReauth` ([f66d89a](https://github.com/fllstck/nebius-alchemy/commit/f66d89a9f91aa86ef4c4a927fe9c181709e38372))
+* **cli:** `alchemy login` was replaced by `alchemy profile` (removed in alchemy 2.0.0-beta.77). Auth error messages now point at `alchemy profile edit` / `alchemy profile refresh` ([66f4156](https://github.com/fllstck/nebius-alchemy/commit/66f41569d))
+
 # [0.6.0](https://github.com/fllstck/nebius-alchemy/compare/v0.5.1...v0.6.0) (2026-08-10)
 
 
