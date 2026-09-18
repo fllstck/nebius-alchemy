@@ -5,10 +5,16 @@ inputs:
     # Pinned to a specific commit for reproducible schema generation.
     # Bump deliberately when new API definitions are needed:
     #   git ls-remote https://github.com/nebius/api.git refs/heads/main
-    ref: 3e4a6ce862c555d2dc1cc4bd8c16e618870f42bc
+    ref: 1396e2a05b3379967512d4d00d102e57705302dd
 
 plugins:
-  - remote: buf.build/community/stephenh-ts-proto
+  # The generator version MUST be pinned. `buf.build/community/stephenh-ts-proto`
+  # without a tag resolves to "latest", so an unpinned ref silently changes the
+  # generated output of every file on the next CI run (the v2.12.0 -> v2.12.1
+  # bump added a decode recursion guard to every generated module). Pin the tag,
+  # bump it as its own deliberate commit, and expect all files to change when
+  # you do.
+  - remote: buf.build/community/stephenh-ts-proto:v2.12.0
     out: schemas
     opt:
       - outputServices=grpc-js

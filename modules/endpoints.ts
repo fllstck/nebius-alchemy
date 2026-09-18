@@ -23,6 +23,8 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
   // --- AI / MSP ---
   'nebius.ai.v1.EndpointService': 'apps.msp.api.nebius.cloud:443',
   'nebius.ai.v1.JobService': 'apps.msp.api.nebius.cloud:443',
+  // Devlab runs on the MSP control plane alongside Endpoint/Job.
+  'nebius.ai.v1.DevlabService': 'apps.msp.api.nebius.cloud:443',
 
   // --- Audit ---
   'nebius.audit.v2.AuditEventExportService': 'audit.api.nebius.cloud:443',
@@ -31,6 +33,8 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
   // --- Capacity ---
   'nebius.capacity.v1.ResourceAdviceService':
     'capacity-advisor.billing-cpl.api.nebius.cloud:443',
+  'nebius.capacity.v1.CapacityAllowanceService':
+    'capacity-blocks.billing-cpl.api.nebius.cloud:443',
   'nebius.capacity.v1.CapacityBlockGroupService':
     'capacity-blocks.billing-cpl.api.nebius.cloud:443',
   'nebius.capacity.v1.CapacityIntervalService':
@@ -93,6 +97,8 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
 
   // --- Storage (Control Plane) ---
   'nebius.storage.v1.BucketService': 'cpl.storage.api.nebius.cloud:443',
+  // S3 Inventory configuration lives on the same control-plane host.
+  'nebius.storage.v1.InventoryService': 'cpl.storage.api.nebius.cloud:443',
 
   // --- Storage (Transfer — separate endpoint) ---
   'nebius.storage.v1.TransferService':
@@ -107,6 +113,8 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
 
   // --- Applications ---
   'nebius.applications.v1alpha1.K8sReleaseService':
+    'deployment-manager.mkt.api.nebius.cloud:443',
+  'nebius.applications.v1alpha1.VmAppTemplateService':
     'deployment-manager.mkt.api.nebius.cloud:443',
 
   // --- DNS ---
@@ -133,6 +141,10 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
   'nebius.msp.postgresql.v1alpha1.ClusterService':
     'postgresql.msp.api.nebius.cloud:443',
 
+  // --- Tunnel (Application Tunnel) ---
+  'nebius.tunnel.v1.TunnelService':
+    'applicationtunnel.mkt.api.nebius.cloud:443',
+
   // --- Quotas ---
   'nebius.quotas.v1.QuotaAllowanceService':
     'quota-dispatcher.billing-cpl.api.nebius.cloud:443',
@@ -156,6 +168,10 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
   'nebius.vpc.v1alpha1.PoolService': 'vpc.api.nebius.cloud:443',
   'nebius.vpc.v1alpha1.ScopeService': 'vpc.api.nebius.cloud:443',
   'nebius.vpc.v1alpha1.SubnetService': 'vpc.api.nebius.cloud:443',
+
+  // --- Monitoring ---
+  'nebius.monitoring.v1.RecordingRuleService':
+    'monitoring.api.nebius.cloud:443',
 
   // --- Common (OperationService — appears on many endpoints) ---
   //

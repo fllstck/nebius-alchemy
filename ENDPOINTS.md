@@ -6,7 +6,11 @@
 - api.calculator.billing-data-plane.api.nebius.cloud:443
   - [nebius.billing.v1.CalculatorService](nebius/billing/v1/calculator_service.proto)
   - [nebius.billing.v1alpha1.CalculatorService](nebius/billing/v1alpha1/calculator_service.proto)
+- applicationtunnel.mkt.api.nebius.cloud:443
+  - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
+  - [nebius.tunnel.v1.TunnelService](nebius/tunnel/v1/tunnel_service.proto)
 - apps.msp.api.nebius.cloud:443
+  - [nebius.ai.v1.DevlabService](nebius/ai/v1/devlab_service.proto)
   - [nebius.ai.v1.EndpointService](nebius/ai/v1/endpoint_service.proto)
   - [nebius.ai.v1.JobService](nebius/ai/v1/job_service.proto)
   - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
@@ -17,6 +21,7 @@
 - capacity-advisor.billing-cpl.api.nebius.cloud:443
   - [nebius.capacity.v1.ResourceAdviceService](nebius/capacity/v1/resource_advice_service.proto)
 - capacity-blocks.billing-cpl.api.nebius.cloud:443
+  - [nebius.capacity.v1.CapacityAllowanceService](nebius/capacity/v1/capacity_allowance_service.proto)
   - [nebius.capacity.v1.CapacityBlockGroupService](nebius/capacity/v1/capacity_block_group_service.proto)
   - [nebius.capacity.v1.CapacityIntervalService](nebius/capacity/v1/capacity_interval_service.proto)
 - compute.api.nebius.cloud:443
@@ -63,11 +68,13 @@
 - cpl.storage.api.nebius.cloud:443
   - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
   - [nebius.storage.v1.BucketService](nebius/storage/v1/bucket_service.proto)
+  - [nebius.storage.v1.InventoryService](nebius/storage/v1/inventory_service.proto)
 - cpl.teplo.api.nebius.cloud:443
   - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
   - [nebius.logging.v1.LogExportService](nebius/logging/v1/log_export_service.proto)
 - deployment-manager.mkt.api.nebius.cloud:443
   - [nebius.applications.v1alpha1.K8sReleaseService](nebius/applications/v1alpha1/k8s_release_service.proto)
+  - [nebius.applications.v1alpha1.VmAppTemplateService](nebius/applications/v1alpha1/vmapp_template_service.proto)
   - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
 - dns.api.nebius.cloud:443
   - [nebius.common.v1.OperationService](nebius/common/v1/operation_service.proto)
@@ -90,6 +97,9 @@
 - mlflow.msp.api.nebius.cloud:443
   - [nebius.common.v1alpha1.OperationService](nebius/common/v1alpha1/operation_service.proto)
   - [nebius.msp.mlflow.v1alpha1.ClusterService](nebius/msp/mlflow/v1alpha1/cluster_service.proto)
+- monitoring.api.nebius.cloud:443
+  - [nebius.common.v1alpha1.OperationService](nebius/common/v1alpha1/operation_service.proto)
+  - [nebius.monitoring.v1.RecordingRuleService](nebius/monitoring/v1/recording_rule_service.proto)
 - observability-agent-manager.api.nebius.cloud:443
   - [nebius.logging.agentmanager.v1.VersionService](nebius/logging/v1/agentmanager/version_service.proto)
 - postgresql.msp.api.nebius.cloud:443
