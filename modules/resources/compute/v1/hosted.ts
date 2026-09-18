@@ -271,7 +271,7 @@ export const transformInstanceProps = Effect.fn('transformInstanceProps')(functi
     id,
     Effect.gen(function* () {
       const stack = yield* Alchemy.Stack
-      const region = (yield* Config.string('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION))) as Region
+      const region = (yield* Config.String('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION))) as Region
 
       // 1. Assets bucket — provider-declared per-stack bucket unless the user
       //    supplied one (the "one bucket for all assets" escape hatch).
@@ -456,8 +456,8 @@ const program = handler.pipe(
     Layer.effect(
       Stack,
       Effect.all([
-        Config.string("ALCHEMY_STACK_NAME"),
-        Config.string("ALCHEMY_STAGE"),
+        Config.String("ALCHEMY_STACK_NAME"),
+        Config.String("ALCHEMY_STAGE"),
       ]).pipe(
         Effect.map(([name, stage]) => ({
           name,
@@ -918,7 +918,7 @@ export const ensureUserBucketGrants = Effect.fn('ensureUserBucketGrants')(functi
   StorageGrpc.StorageGrpcService
 > {
   const storageGrpcService = yield* StorageGrpc.StorageGrpcService
-  const parentId = yield* Config.string('NEBIUS_PROJECT_ID')
+  const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
 
   // Read the bucket (re-read on resourceVersion-conflict retry).
   const readBucket = () => storageGrpcService.bucket.getByName(parentId, bucketName)
@@ -1207,7 +1207,7 @@ export const cleanupHostedRuntime = Effect.fn('cleanupHostedRuntime')(function* 
 
   // 2. Dedicated fetch key — deterministic name lookup, already-gone = success.
   const iamGrpcService = yield* IamGrpc.IamGrpcService
-  const parentId = yield* Config.string('NEBIUS_PROJECT_ID')
+  const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
   const keys = yield* iamGrpcService.accessKeyV2.list(parentId).pipe(Effect.catch(() => Effect.succeed([])))
   const key = keys.find((candidate) => candidate.metadata?.name === hostedRuntimeKeyName(id))
   if (key?.metadata?.id) {

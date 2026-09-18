@@ -49,7 +49,7 @@ export const NebiusQuotaAllowanceProvider: Layer.Layer<
     news = yield* QuotaAllowanceSchema.validateQuotaAllowanceProps(news)
 
     const grpcService = yield* QuotasGrpc.QuotasGrpcService
-    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
+    const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
 
     // 1. Observe — identity is (parentId, name, region), not id
     let qa: NebiusQuotaAllowanceSchema.QuotaAllowance | undefined

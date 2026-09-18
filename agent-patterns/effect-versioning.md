@@ -1,7 +1,8 @@
 # Effect Versioning & Dependency Pinning
 
 > Learned the hard way during the `alchemy@beta.70 → beta.77` /
-> `effect@4.0.0-beta.103 → 4.0.0-rc.112` upgrade. Effect's prerelease
+> `effect@4.0.0-beta.103 → 4.0.0-rc.112` upgrade, and re-confirmed by the
+> `beta.77 → beta.79` / `effect rc.112 → rc.115` bump. Effect's prerelease
 > versioning behaves counter-intuitively in two ways that cost real debugging
 > time.
 
@@ -36,26 +37,27 @@ older `effect` you pinned. Test files then die at *load* time, so whole files
 report zero tests and the suite silently shrinks (535 tests → 140) instead of
 failing loudly.
 
-### Fix: pin every `@effect/*` peer to the exact version
+### Status: dormant since `effect@4.0.0-rc.113` — and still structural
 
-```jsonc
-"overrides": {
-  "@effect/platform-node-shared": "4.0.0-rc.112",
-  "@effect/sql-d1": "4.0.0-rc.112",
-  "@effect/sql-sqlite-do": "4.0.0-rc.112",
-  "@effect/vitest": "4.0.0-rc.112"
-}
-```
+From rc.113 on, the whole `@effect/*` family ships on the **same release**, so
+the internal carets cannot point at a different `rc` than the one you installed.
+Verified on rc.115: all nine installed `@effect/*` packages resolve to
+`4.0.0-rc.115`, with no nested duplicates and no `overrides` block anywhere in
+this repo.
 
-After any `@effect/*` bump, **re-audit**: list what actually installed, not
-what you asked for.
+Do not read that as *fixed*. The carets are unchanged; the drift is absent only
+because the pinned `rc` currently **is** the newest. Publish a newer `rc` and
+`^4.0.0-rc.115` resolves up to it again. The mitigation stays the same and it is
+cheap: pin `effect` exactly, and re-audit after every bump (snippet below).
 
 ### ⚠️ `overrides` do NOT propagate to consumers
 
 This is the part that ships and bites. **`overrides` apply only from the ROOT
 `package.json` of the installing project** — npm, bun, and pnpm all ignore a
 *dependency's* overrides. So a library can fix its own dev tree and still hand
-consumers a broken dependency graph.
+consumers a broken dependency graph — which is why the 0.7.0 release was **held**
+rather than shipped with an "add this block" note, and why that note was deleted
+once a coherent release existed (rc.113+).
 
 Consequence for a published package: if a transitive peer needs pinning, every
 consumer must add the same block themselves. There is no way to ship it.
@@ -101,13 +103,18 @@ tolerant but cannot be satisfied strictly against prereleases, so consumers
 drift silently.
 
 **Declaring the drifting package as an exact peer fixes npm but not bun.**
-Verified both ways on the same tarball:
+Verified both ways on the same tarball at rc.112:
 
 ```jsonc
 "peerDependencies": { "@effect/platform-node-shared": "4.0.0-rc.112" }
 // npm → resolves 4.0.0-rc.112, imports fine, NO consumer overrides needed
 // bun → ignores it, resolves 4.0.0-rc.113, crashes on import
 ```
+
+Since rc.113 **both** installers resolve correctly with no consumer
+configuration at all — asserted in CI for npm *and* bun against the packed
+tarball. The exact peer is **kept** anyway: it is free for npm, and it makes the
+next drift fail loudly instead of silently.
 
 npm satisfies the exact peer *and* the transitive `^4.0.0-rc.112` from the same
 version, so it dedupes correctly. Bun does not enforce peer ranges at all.
@@ -116,9 +123,11 @@ version, so it dedupes correctly. Bun does not enforce peer ranges at all.
 nested copy (`rc.112` beside the hoisted `rc.113`) instead of deduping, so the
 crashing copy survives *and* you ship a duplicate. Verified.
 
-**Practical ordering:** ship an exact peer (free win for npm), document the
-`overrides` block for bun, and add a runtime-import check to CI. Then get onto a
-coherent Effect release as soon as one exists.
+**Practical ordering:** ship an exact peer (free win for npm), add a
+runtime-import check to CI that runs **both** installers, and get onto a coherent
+Effect release as soon as one exists. If none exists yet, hold the release rather
+than documenting a workaround the consumer cannot inherit — and only ever state a
+workaround requirement in the README while it is actually true.
 
 ### Don't assume a runtime/branch lets you dodge it
 
@@ -184,10 +193,10 @@ This repo pins exact versions in `peerDependencies` — no carets, no ranges:
 
 ```jsonc
 "peerDependencies": {
-  "effect": "4.0.0-rc.112",
-  "@effect/platform-bun": "4.0.0-rc.112",
-  "@effect/platform-node": "4.0.0-rc.112",
-  "@effect/platform-node-shared": "4.0.0-rc.112"
+  "effect": "4.0.0-rc.115",
+  "@effect/platform-bun": "4.0.0-rc.115",
+  "@effect/platform-node": "4.0.0-rc.115",
+  "@effect/platform-node-shared": "4.0.0-rc.115"
 }
 ```
 
@@ -196,15 +205,20 @@ Three reasons, in order of how much they matter:
 1. **An exact peer on the *drifting* package is the only declaration that fixes
    npm consumers.** `@effect/platform-node-shared` is not a peer of ours by
    nature — it is declared purely so npm resolves it to the version the rest of
-   the constellation needs. See the table above; it does nothing for bun.
+   the constellation needs. See the table above; it does nothing for bun. (Since
+   rc.113 this is belt-and-braces rather than load-bearing, but it earns its keep
+   the next time a caret drifts.)
 2. **Ranges on prereleases are a lie.** `>=4.0.0-rc.112 <4.0.0-rc.113` reads as
 tolerant but cannot be satisfied strictly, and consumers silently drift out of
 it. An exact pin is a *contract*; the sibling alchemy providers do the same.
-3. **Only one combination actually works.** `rc.113` renamed the `Config`
-   accessors to `Config.String`, and **`Config.String` does not exist on
-   rc.112** (verified: `Config.string` is a function, `Config.String` is
-   `undefined`). Alchemy beta.77 requires rc.112 and calls the lowercase form
-   ~119 times, so the two versions are mutually incompatible in both directions.
+3. **Each alchemy beta requires one specific Effect release.** `rc.113` renamed
+   the `Config` accessors to `Config.String`, and **`Config.String` does not
+   exist on rc.112** (verified at runtime: `Config.string` is a function,
+   `Config.String` is `undefined`). Alchemy beta.77 required rc.112 and called
+   the lowercase form ~119 times, so those two were mutually incompatible in
+   both directions. At rc.115 it is capitalized on both sides — and the same
+   trap catches *our* code: the 55 `Config.string(` call sites had to be renamed
+   in the same commit as the bump, or the package would have thrown at import.
 
 **A migration cannot be staged across such a rename.** Alchemy beta.70 itself
 called `Schema.TaggedErrorClass`, which is *removed* in rc.112 — so old-alchemy
@@ -216,11 +230,11 @@ Alchemy must move in **one** commit.
 Type declarations alone did not prove the `Config` rename. This did:
 
 ```bash
-npm pack effect@4.0.0-rc.112 && tar xzf effect-4.0.0-rc.112.tgz
+npm pack effect@4.0.0-rc.115 && tar xzf effect-4.0.0-rc.115.tgz
 node -e "const C=require('./package/dist/Config.js');
   console.log('string:', typeof C.string, '| String:', typeof C.String)"
-# rc.112 → string: function | String: undefined
-# rc.113 → string: undefined | String: function
+# rc.112  → string: function  | String: undefined
+# rc.113+ → string: undefined | String: function
 ```
 
 Diffing the two tarballs' **exported symbols** is what produced a reliable
@@ -241,7 +255,13 @@ version is faster and more trustworthy than reading changelogs.
    it only breaks users. Grep the repo for every command string you emit.
 5. Grep the new alchemy source for APIs you rely on that were removed in the
    target Effect (`Config.string`, `FileSystem.Size`, `TaggedErrorClass`, …).
-6. Install, then **re-audit installed `@effect/*` versions** (Rule 1) and add
-   `overrides` for any that drifted.
+6. Install, then **re-audit installed `@effect/*` versions** (Rule 1). They must
+   all be one version, with no nested duplicates. Add `overrides` only to unblock
+   your own dev tree — never as the shipped fix, because consumers cannot inherit
+   it.
 7. Count tests before and after. A *drop* in total tests means load-time
    failures, not passing code.
+8. **Pack the tarball and import it from a scratch consumer, with both `npm` and
+   `bun`, and no `overrides`.** This is the only check that exercises real
+   resolution — a typecheck and the unit suite both pass on a broken tree.
+   `.github/smoke/consumer.sh` does exactly this; run it before releasing.

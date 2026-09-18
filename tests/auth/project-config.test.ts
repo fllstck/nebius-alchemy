@@ -35,7 +35,7 @@ const resolveConfigValue = (
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      return yield* Config.string(key).pipe(Effect.orElseSucceed(() => '<missing>'))
+      return yield* Config.String(key).pipe(Effect.orElseSucceed(() => '<missing>'))
     }).pipe(
       Effect.provide(NebiusProjectConfigProviderLive),
       Effect.provide(AlchemyAuth.ProfileStoreLive),

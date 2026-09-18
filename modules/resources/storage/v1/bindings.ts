@@ -276,7 +276,7 @@ const makeStorageHttpBinding = <Req, A>(options: {
 
       if (!globalThis.__ALCHEMY_RUNTIME__ && host !== undefined) {
         const region = yield* Effect.orDie(
-          Config.string('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION)),
+          Config.String('NEBIUS_REGION').pipe(Config.withDefault(DEFAULT_REGION)),
         )
         const { hostIdentity, grantBucketAccess } = yield* Effect.promise(
           () => import('../../shared/host-identity.ts'),

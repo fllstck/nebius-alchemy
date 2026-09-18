@@ -60,7 +60,7 @@ export const NebiusTransferProvider: Layer.Layer<
     }
 
     if (!transfer) {
-      const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
+      const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
       const name =
         news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)

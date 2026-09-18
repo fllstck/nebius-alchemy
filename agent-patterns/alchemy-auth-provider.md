@@ -2,7 +2,10 @@
 
 > Extracted from `node_modules/alchemy/src/Auth/AuthProvider.ts`,
 > `Auth/Profile.ts`, `Auth/Resolve.ts`, `Auth/Credentials.ts`, and
-> `Interaction.ts` at `alchemy@2.0.0-beta.77` / `effect@4.0.0-rc.112`.
+> `Interaction.ts` at `alchemy@2.0.0-beta.79` / `effect@4.0.0-rc.115`.
+> (Re-verified across `beta.77 → beta.79`: the only delta in these files is the
+> upstream `Config.string` → `Config.String` rename, so the contract below is
+> unchanged since beta.77.)
 >
 > **The interface was rewritten in beta.77** (this file replaces the old
 > 7-generic-param shape). If you are reading older notes mentioning

@@ -57,7 +57,7 @@ export const GetGroup = Alchemy.Action(
   'Nebius.iam.actions.GetGroup',
   Effect.gen(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const defaultProjectId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
     return ({ name, parentId }: { name: string; parentId?: Index.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId

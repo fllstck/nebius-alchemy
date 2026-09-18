@@ -194,7 +194,7 @@ export const NebiusEndpointProvider: Layer.Layer<
     // 2. Ensure — create if missing (with ownership tags). `isFresh` marks
     // creates in THIS deploy (vs adopted/observed endpoints) — see step 2.5.
     const isFresh = endpoint === undefined
-    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
+    const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
     if (!endpoint) {
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)

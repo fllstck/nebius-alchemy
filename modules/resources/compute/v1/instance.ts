@@ -133,7 +133,7 @@ export type NebiusInstance = Alchemy.Resource<
  * deploy-side `NebiusCredentials` service resolves via `AlchemyProfile`/auth
  * providers that don't exist on the VM. Bundled code reads Nebius config from
  * the shipped env file (region, project, keys) through the
- * `reifyBoundConfigProvider` interceptor — `Config.string('NEBIUS_REGION')`
+ * `reifyBoundConfigProvider` interceptor — `Config.String('NEBIUS_REGION')`
  * etc. — and calls Nebius APIs via typed bindings (Task 5).
  */
 export type NebiusInstanceServices = AlchemyServer.ServerHost | Alchemy.Stack | Alchemy.Stage
@@ -361,7 +361,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     }
 
     // 2. Ensure — create if missing (with ownership tags)
-    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
+    const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
     if (!instance) {
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
       const internalLabels = yield* AlchemyTags.createInternalTags(id)

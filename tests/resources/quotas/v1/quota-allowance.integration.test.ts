@@ -24,7 +24,7 @@ integrationTest(
   (_stack) =>
     Effect.gen(function* () {
       // Quota allowances are pre-provisioned by Nebius — test the list endpoint directly
-      const parentId = yield* Config.string('NEBIUS_PROJECT_ID')
+      const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
       const items = yield* Effect.scoped(
         Effect.gen(function* () {
           const svc = yield* QuotasGrpc.QuotasGrpcService
@@ -48,7 +48,7 @@ integrationTest(
   'Nebius.quotas.v1.QuotaAllowance list filters virtual defaults',
   (_stack) =>
     Effect.gen(function* () {
-      const tenantId = yield* Config.string('NEBIUS_TENANT_ID')
+      const tenantId = yield* Config.String('NEBIUS_TENANT_ID')
       const iam = yield* IamGrpc.IamGrpcService
       const quotas = yield* QuotasGrpc.QuotasGrpcService
 

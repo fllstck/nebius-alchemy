@@ -14,7 +14,7 @@ export const GetQuota = Alchemy.Action(
   'Nebius.quotas.actions.GetQuota',
   Effect.gen(function* () {
     const quotas = yield* QuotasGrpc.QuotasGrpcService
-    const defaultProjectId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
     return ({ name, region, parentId }: { name: string; region: string; parentId?: ProjectSchema.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId

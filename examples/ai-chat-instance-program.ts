@@ -86,10 +86,10 @@ export default NebiusInstance(
     // (the stack passes them through `env`). Everything else is inert here: at
     // runtime no provider runs, so these values are never sent anywhere.
     const subnetId = yield* Effect.orDie(
-      Config.string('AI_CHAT_SUBNET_ID').pipe(Config.withDefault('')),
+      Config.String('AI_CHAT_SUBNET_ID').pipe(Config.withDefault('')),
     )
     const serviceAccountId = yield* Effect.orDie(
-      Config.string('AI_CHAT_SA_ID').pipe(Config.withDefault('')),
+      Config.String('AI_CHAT_SA_ID').pipe(Config.withDefault('')),
     )
 
     return {
@@ -120,7 +120,7 @@ export default NebiusInstance(
     // `env` so the two endpoint variants (llama.cpp / vLLM) stay in sync with
     // this request — vLLM rejects a mismatch, llama.cpp ignores the field.
     const model = yield* Effect.orDie(
-      Config.string('AI_CHAT_MODEL').pipe(Config.withDefault(DEFAULT_MODEL)),
+      Config.String('AI_CHAT_MODEL').pipe(Config.withDefault(DEFAULT_MODEL)),
     )
 
     // The typed runtime client. `ChatCompletionsHttp` resolves the injected env

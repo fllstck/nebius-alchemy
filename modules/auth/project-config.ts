@@ -5,7 +5,7 @@
  *
  * This is the "choose projects via login flow" plumbing: the login stores the
  * chosen project in the credential store; every resource keeps reading
- * `Config.string('NEBIUS_PROJECT_ID')` unchanged, and this provider fills the
+ * `Config.String('NEBIUS_PROJECT_ID')` unchanged, and this provider fills the
  * gap when the env var is absent.
  */
 import * as ConfigProvider from 'effect/ConfigProvider'
@@ -22,7 +22,7 @@ export const NebiusProjectConfigProviderLive = Layer.effect(
   ConfigProvider.ConfigProvider,
   Effect.gen(function* () {
     const base = yield* ConfigProvider.ConfigProvider
-    // `ALCHEMY_PROFILE` is a bare `Config.string` with NO default since
+    // `ALCHEMY_PROFILE` is a bare `Config.String` with NO default since
     // beta.77 — reading it directly fails when unset. `currentProfileName`
     // resolves the selection properly (falling back to the default profile)
     // and only requires `ProfileStore`.

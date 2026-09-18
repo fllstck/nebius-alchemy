@@ -101,10 +101,12 @@ jobs:
       # `hono@4.11.4` and `@hono/node-server@1.19.9` *exactly* (both vulnerable,
       # so no range bump can resolve them), plus lodash, nanoid, valibot and
       # vitest/@vitest/mocker from its dev tooling. Tracked, not chased: none is
-      # reachable from this package's code paths, we cannot ship an `overrides`
-      # fix to consumers (dependency overrides are ignored), and the Phase 6
-      # alchemy bump refreshes this graph. Expect the total to drift upward as
-      # advisories are published against those pinned versions.
+      # reachable from this package's code paths and we cannot ship an
+      # `overrides` fix to consumers (dependency overrides are ignored).
+      # Re-measured after the 2026-09-18 beta.79/rc.115 bump: still 47, still all
+      # `hono` via `@prisma/dev`. Expect the total to drift upward as advisories
+      # are published against those pinned versions — the gate below is what
+      # matters, and it stays at 0 criticals.
       - name: Full audit report
         run: bun audit
         continue-on-error: true
@@ -141,35 +143,16 @@ jobs:
         run: echo "TARBALL=$(npm pack --pack-destination "$RUNNER_TEMP" | tail -1)" >> "$GITHUB_ENV"
       # The two installers are not equivalent and neither is redundant:
       #   npm — enforces the exact `@effect/platform-node-shared` peer, so the
-      #         tree is correct with NO consumer configuration (README: "nothing
-      #         to do"). Asserting that here keeps the claim honest.
-      #   bun — ignores peer version ranges, so the shared package floats to the
-      #         next rc and the import crashes unless the consumer adds the
-      #         README's `overrides` block. This is the path that broke 0.7.0 and
-      #         it was previously untested: installing with bun is the documented
-      #         consumer workflow, and `<cli> install` exiting 0 proves nothing.
+      #         tree is correct with NO consumer configuration.
+      #   bun — ignores peer version ranges, so a drifted shared package is
+      #         installed silently and only the import fails. This is the path
+      #         that broke 0.7.0, and it was previously untested: installing with
+      #         bun is the documented consumer workflow, and `<cli> install`
+      #         exiting 0 proves nothing about what it resolved.
+      # Both run WITHOUT overrides — a consumer must need none. That is now true
+      # for both installers (effect rc.113+ keeps the whole `@effect/*` family on
+      # one release), and it is asserted here rather than assumed.
       - name: Install tarball + import (npm, no overrides)
         run: bash .github/smoke/consumer.sh npm "$RUNNER_TEMP/consumer-npm" "$RUNNER_TEMP/$TARBALL"
-      - name: Install tarball + import (bun, README overrides)
-        run: bash .github/smoke/consumer.sh bun "$RUNNER_TEMP/consumer-bun" "$RUNNER_TEMP/$TARBALL" --overrides
-      # Makes the workaround self-expiring. The drift is a property of upstream's
-      # unreleased fix, not of this repo, so this step must never block — it only
-      # tells us the moment the `overrides` requirement can be deleted along with
-      # the README section. Deliberately no overrides: the drift is the subject.
-      - name: Canary — is the upstream prerelease caret still drifting?
-        continue-on-error: true
-        run: |
-          d="$RUNNER_TEMP/consumer-canary"
-          rm -rf "$d"; mkdir -p "$d"; cd "$d"
-          printf '{"name":"canary","version":"1.0.0","private":true}' > package.json
-          PIN=$(node -p "require('$GITHUB_WORKSPACE/package.json').peerDependencies.effect")
-          BUN_PEER=$(node -p "require('$GITHUB_WORKSPACE/package.json').peerDependencies['@effect/platform-bun']")
-          NODE_PEER=$(node -p "require('$GITHUB_WORKSPACE/package.json').peerDependencies['@effect/platform-node']")
-          bun add "$RUNNER_TEMP/$TARBALL" "effect@$PIN" \
-            "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER" > /dev/null 2>&1 || true
-          RESOLVED=$(node -p "require('./node_modules/@effect/platform-node-shared/package.json').version" 2>/dev/null || echo unknown)
-          if [ "$RESOLVED" = "$PIN" ]; then
-            echo "::warning title=Overrides workaround may be removable::@effect/platform-node-shared now resolves to $RESOLVED without overrides. Upstream no longer drifts — drop the overrides requirement from the README and the bun smoke step (see TASKS.md Phase 6)."
-          else
-            echo "Drift still present: shared resolved $RESOLVED (pinned $PIN) — bun consumers still need the overrides block. No action."
-          fi
+      - name: Install tarball + import (bun, no overrides)
+        run: bash .github/smoke/consumer.sh bun "$RUNNER_TEMP/consumer-bun" "$RUNNER_TEMP/$TARBALL"

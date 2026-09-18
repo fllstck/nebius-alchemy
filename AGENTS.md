@@ -57,7 +57,7 @@ Nebius.vpc.v1.Network
 The Effect V4 monorepo is vendored at **`repos/effect/`** (read-only reference).
 
 > ⚠️ **The vendored copy is STALE.** It is `effect@4.0.0-beta.102`; this project
-> compiles against **`4.0.0-rc.112`**. It still teaches `Schema.TaggedErrorClass`,
+> compiles against **`4.0.0-rc.115`**. It still teaches `Schema.TaggedErrorClass`,
 > which was **removed** in rc.112 (we migrated to `Schema.TaggedError` — see
 > `agent-patterns/effect-schema.md`). Copying API usage out of it will
 > reintroduce exactly that bug. Use it for **concepts** (modelling, services,

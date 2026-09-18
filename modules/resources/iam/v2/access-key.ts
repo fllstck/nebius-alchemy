@@ -83,7 +83,7 @@ const create = /* @__PURE__ */ Effect.fn('Nebius.iam.v2.AccessKey.create')(funct
   news = yield* AccessKeySchema.validateAccessKeyProps(news)
 
   const iamGrpcService = yield* IamGrpc.IamGrpcService
-  const parentId = yield* Config.string('NEBIUS_PROJECT_ID')
+  const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
 
   // Auto-generate name
   const name = `ak-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`

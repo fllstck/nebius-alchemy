@@ -157,10 +157,10 @@ export default NebiusInstance(
   'HostedTestInstance',
   Effect.gen(function* () {
     const subnetId = yield* Effect.orDie(
-      Config.string('HOSTED_TEST_SUBNET_ID').pipe(Config.withDefault('')),
+      Config.String('HOSTED_TEST_SUBNET_ID').pipe(Config.withDefault('')),
     )
     const serviceAccountId = yield* Effect.orDie(
-      Config.string('HOSTED_TEST_SA_ID').pipe(Config.withDefault('')),
+      Config.String('HOSTED_TEST_SA_ID').pipe(Config.withDefault('')),
     )
     return {
       main: import.meta.url,

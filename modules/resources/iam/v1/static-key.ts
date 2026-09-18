@@ -73,7 +73,7 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     news = yield* StaticKeySchema.validateStaticKeyProps(news)
 
     const iamGrpcService = yield* IamGrpc.IamGrpcService
-    const parentId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
 
     // Auto-generate name
     const name = `sk-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`

@@ -19,83 +19,43 @@ mkdir my-app && cd my-app && bun init -y
 ### Install Dependencies
 
 ```bash
-bun add alchemy@2.0.0-beta.77 effect@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.112 @effect/platform-node@4.0.0-rc.112 @fllstck/nebius-alchemy
+bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 @effect/platform-bun@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @fllstck/nebius-alchemy
 ```
 
-> **Versions are pinned exactly, and that is deliberate.** `alchemy@2.0.0-beta.77`
-> requires `effect@4.0.0-rc.112`. Do **not** let `effect` drift to `rc.113`+:
-> `rc.113` renamed the `Config` accessors (`Config.string` → `Config.String`) and
-> alchemy beta.77 still calls the lowercase form, so the two are incompatible in
-> both directions.
+> **Versions are pinned exactly, and that is deliberate.** Alchemy and Effect must
+> move together — alchemy pins the Effect release it compiles against, and a
+> mismatch fails at import. `alchemy@2.0.0-beta.79` requires
+> `effect@4.0.0-rc.115`.
 >
-> **Why exact rather than a range:** both platform packages declare a *caret*
-> range on the shared implementation package, and a caret on a **prerelease
-> resolves upward**:
+> **Why exact rather than a range:** the `@effect/*` packages declare *caret*
+> ranges on each other, and a caret on a **prerelease resolves upward** — so a
+> newer `rc` can be pulled into your tree ahead of the `effect` you actually
+> installed:
 >
 > ```jsonc
-> // @effect/platform-bun@4.0.0-rc.112 (and .../platform-node likewise)
-> "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.112" }
+> // @effect/platform-bun@4.0.0-rc.115 (and .../platform-node likewise)
+> "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.115" }
 > ```
 >
-> Left alone, that resolves to `@effect/platform-node-shared@4.0.0-rc.113`, which
-> imports `effect/ByteSize` — a subpath that does not exist in the `rc.112` you
-> actually installed. Alchemy loads it, so the failure is immediate:
+> Today that resolves to the matching `rc.115`, but the hazard is structural: the
+> moment a new `rc` is published, that caret pulls it in, and a package built
+> against a different `rc` fails at import with something like:
 >
 > ```
 > Cannot find module 'effect/ByteSize' from
 >   .../node_modules/@effect/platform-node/node_modules/@effect/platform-node-shared/dist/NodeFileSystem.js
 > ```
 >
-> You cannot dodge this by picking a runtime: `@effect/platform-bun` is built
-> **on top of** `@effect/platform-node-shared` and statically imports it from 13
-> of its own modules (`BunFileSystem`, `BunCrypto`, `BunChildProcessSpawner`,
-> `BunPath`, `BunStdio`, `BunTerminal`, …), so Bun pulls it in unconditionally.
+> Installing successfully does **not** mean it works — the failure appears only at
+> import time, and `tsc` does not catch it either, because `skipLibCheck` skips
+> resolving those runtime imports. Pinning `effect` exactly is what keeps the
+> family aligned. See `agent-patterns/effect-versioning.md`.
 >
-> #### With `npm`: nothing to do
->
-> This package declares `@effect/platform-node-shared` as an **exact peer**, which
-> forces the correct version into your tree. Verified: a clean `npm install`
-> resolves `4.0.0-rc.112` and imports successfully with no configuration.
->
-> #### With `bun`: you MUST add this `overrides` block
->
-> Bun does **not** enforce peer version ranges, so it still floats the shared
-> package to `rc.113` and the import crashes. Add this to your own
-> `package.json`:
->
-> ```jsonc
-> "overrides": {
->   "@effect/platform-node-shared": "4.0.0-rc.112",
->   "@effect/sql-d1": "4.0.0-rc.112",
->   "@effect/sql-sqlite-do": "4.0.0-rc.112",
->   "@effect/vitest": "4.0.0-rc.112"
-> }
-> ```
->
-> (Declaring it as a direct dependency does **not** work — bun nests a second
-> copy instead of deduping, and the crashing copy remains. Verified.)
->
-> `overrides` only apply from the ROOT `package.json` of the installing project,
-> so a dependency cannot ship this for you.
->
-> #### This is a temporary condition
->
-> It affects **every** consumer of `alchemy@2.0.0-beta.77` + `effect@4.0.0-rc.112`,
-> not just this package — that pairing is forced, because beta.77 is the newest
-> alchemy release and uses lowercase `Config.string`, which `rc.113` removed.
->
-> It is already fixed upstream: **alchemy PR #1562 (merged 2026-09-10) migrates to
-> `effect@4.0.0-rc.113`**, where the whole `@effect/*` family is the same release
-> and nothing can drift. Once a beta with that change is published, this package
-> will move to it and the `overrides` note disappears.
->
-> **Note:** installing successfully does **not** mean it works — the failure
-> appears only at import time. Typechecking (`tsc`) does not catch it either,
-> because `skipLibCheck` skips resolving those runtime imports.
-> See `agent-patterns/effect-versioning.md`.
+> **Both installers work with no consumer configuration** — `npm` and `bun` are
+> both verified against a clean tree in CI (`.github/smoke/consumer.sh`).
 >
 > **Avoid `alchemy@next`.** The `next` dist-tag currently points at an *older*
-> beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.77`).
+> beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.79`).
 >
 > **Type checking with `tsc`?** This package ships raw TypeScript (bun-first, no build step). If you typecheck with `tsc`, enable `allowImportingTsExtensions` (requires `noEmit`), e.g. `"moduleResolution": "bundler", "allowImportingTsExtensions": true, "noEmit": true`.
 

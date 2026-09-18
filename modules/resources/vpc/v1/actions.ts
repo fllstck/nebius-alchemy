@@ -18,7 +18,7 @@ export const GetNetwork = Alchemy.Action(
   'Nebius.vpc.actions.GetNetwork',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const defaultProjectId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
     return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
@@ -66,7 +66,7 @@ export const GetSubnet = Alchemy.Action(
   'Nebius.vpc.actions.GetSubnet',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const defaultProjectId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
     return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
@@ -114,7 +114,7 @@ export const GetSecurityGroup = Alchemy.Action(
   'Nebius.vpc.actions.GetSecurityGroup',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const defaultProjectId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
     return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
@@ -162,7 +162,7 @@ export const GetRouteTable = Alchemy.Action(
   'Nebius.vpc.actions.GetRouteTable',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const defaultProjectId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
     return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
@@ -210,7 +210,7 @@ export const GetPool = Alchemy.Action(
   'Nebius.vpc.actions.GetPool',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const defaultProjectId = yield* Config.string('NEBIUS_PROJECT_ID')
+    const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
     return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId

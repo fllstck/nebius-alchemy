@@ -59,7 +59,7 @@ export const NebiusFilesystemProvider: Layer.Layer<
         .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
     }
 
-    const parentId = news.parentId || (yield* Config.string('NEBIUS_PROJECT_ID'))
+    const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
     if (!fs) {
       const name =
         news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))

@@ -45,11 +45,11 @@ export default Alchemy.Stack(
   'Compute',
   { providers: Nebius.providers(), state: Alchemy.localState() },
   Effect.gen(function* () {
-    const imageFamily = yield* Config.string('IMAGE_FAMILY').pipe(Config.withDefault('ubuntu24.04-driverless'))
+    const imageFamily = yield* Config.String('IMAGE_FAMILY').pipe(Config.withDefault('ubuntu24.04-driverless'))
     // Nebius enforces a 64 GiB boot-disk floor (smaller disks hang provisioning).
-    const diskSizeGb = yield* Config.string('DISK_SIZE_GB').pipe(Config.withDefault('64'), Config.map(Number))
-    const subnetId = yield* Config.string('SUBNET_ID')
-    const serviceAccountId = yield* Config.string('SERVICE_ACCOUNT_ID')
+    const diskSizeGb = yield* Config.String('DISK_SIZE_GB').pipe(Config.withDefault('64'), Config.map(Number))
+    const subnetId = yield* Config.String('SUBNET_ID')
+    const serviceAccountId = yield* Config.String('SERVICE_ACCOUNT_ID')
 
     // Dynamically find the latest public image by family name
     const image = yield* Nebius.compute.Image('UbuntuImage', {

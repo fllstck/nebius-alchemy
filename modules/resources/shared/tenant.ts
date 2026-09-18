@@ -1,7 +1,7 @@
 /**
  * Resolve the Nebius **tenant** ID that tenant-scoped operations need.
  *
- * ## Why a helper instead of a bare `Config.string`
+ * ## Why a helper instead of a bare `Config.String`
  *
  * Several operations address the *tenant* rather than the project: enumerating
  * projects to fan a `list` out across them (see `factory.ts`'s
@@ -9,7 +9,7 @@
  * group-membership, federation-certificate), and the discovery
  * `Nebius.*.action.*` resources.
  *
- * A plain `yield* Config.string("NEBIUS_TENANT_ID")` fails with
+ * A plain `yield* Config.String("NEBIUS_TENANT_ID")` fails with
  * `ConfigError: SchemaError(Expected string at ["NEBIUS_TENANT_ID"])` — accurate
  * but unactionable: it names the variable without saying where to find the
  * value or why it is suddenly required.
@@ -71,7 +71,7 @@ const guidance = (envVar: string): string =>
  * alternative variable name via `tenantEnvVar`.
  */
 export const resolveTenantId = Effect.fn('Nebius.resolveTenantId')(function* (envVar = 'NEBIUS_TENANT_ID') {
-  const value = yield* Config.option(Config.string(envVar))
+  const value = yield* Config.option(Config.String(envVar))
   if (Option.isSome(value) && value.value !== '') return value.value
   return yield* new MissingTenantIdError({ message: guidance(envVar) })
 })
