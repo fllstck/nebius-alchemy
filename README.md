@@ -275,8 +275,9 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 
 ```ts
 const rows = yield* Nebius.capacity.action.ListResourceAdvice({ region: 'eu-north1', platform: 'gpu-h200-sxm' })
-const fabrics = [...new Set(rows.map((row) => row.fabric))]     // e.g. ['fabric-7']
-const room = rows.find((row) => row.fabric === 'fabric-7')?.onDemand?.available ?? 0
+// Not every row is fabric-scoped — filter out the empty ones.
+const fabrics = [...new Set(rows.map((row) => row.fabric).filter((fabric) => fabric !== ''))]
+const room = rows.find((row) => row.fabric === fabrics[0])?.onDemand?.available ?? 0
 ```
 
 ## Bindings

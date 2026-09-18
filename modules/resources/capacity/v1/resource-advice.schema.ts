@@ -47,8 +47,15 @@ export const ResourceAdviceAttributesSchema = Schema.Struct({
    * **Data center fabric** — the value `Nebius.compute.GpuCluster` wants for its
    * required `infinibandFabric` prop. (The proto calls it "data center fabric or
    * cluster identifier"; `GpuClusterSpec` spells the same thing
-   * `infiniband_fabric`.) Identity is verified by the live probe in
-   * `tests/resources/actions/capacity.test.ts`.
+   * `infiniband_fabric`.)
+   *
+   * **Can be empty**: measured against the live advisor, 12 of 32 rows had no
+   * fabric at all (rows that are not InfiniBand-scoped). Filter those out when
+   * discovering: `rows.filter((row) => row.fabric !== '')`. The observed values
+   * are `fabric-<n>` in `eu-north1`/`eu-west1` and region-shaped
+   * (`us-central1-a`, `me-west1-a`, …) elsewhere; `fabric-7`, the id the Nebius
+   * docs use for GPU clusters, appears verbatim — which is evidence (not proof)
+   * that this is the same namespace `GpuClusterSpec.infinibandFabric` wants.
    */
   fabric: Schema.String,
   /** The machine this advice applies to. */

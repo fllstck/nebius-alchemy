@@ -22,13 +22,27 @@ integrationTest(test.provider, 'Nebius.capacity.action.ListResourceAdvice (live,
 
     expect(rows.length).toBeGreaterThan(0)
 
-    const fabrics = [...new Set(rows.map((row) => row.fabric))]
+    // NOTE: not every row is fabric-scoped — real responses include rows with an
+    // empty `fabric` (non-InfiniBand / CPU platforms). Discovery filters those out.
+    const fabrics = [...new Set(rows.map((row) => row.fabric).filter((fabric) => fabric !== ''))]
     expect(fabrics.length).toBeGreaterThan(0)
-    expect(fabrics.every((fabric) => fabric.length > 0)).toBe(true)
 
     // Printed on purpose: this is what the GpuCluster probe consumes.
+    console.log('PROBE rows:', rows.length, '· rows without a fabric:', rows.filter((r) => r.fabric === '').length)
     console.log('PROBE fabrics:', JSON.stringify(fabrics))
-    console.log('PROBE sample row:', JSON.stringify(rows[0], null, 2))
+    const byRegion = new Map<string, Set<string>>()
+    for (const row of rows) {
+      if (row.fabric === '') continue
+      const set = byRegion.get(row.region) ?? new Set<string>()
+      set.add(row.fabric)
+      byRegion.set(row.region, set)
+    }
+    for (const [region, regionFabrics] of byRegion) {
+      const gpu = rows
+        .filter((row) => row.region === region && row.fabric !== '' && (row.computeInstance?.gpuMemoryGigabytes ?? 0) > 0)
+        .map((row) => `${row.fabric}/${row.computeInstance?.platform}/${row.onDemand?.available ?? '?'}avail`)
+      console.log(`PROBE region ${region}: fabrics=[${[...regionFabrics].join(', ')}] gpu-derived=[${gpu.join(', ')}]`)
+    }
 
     // The filter is applied client-side over the same data.
     const region = rows[0]!.region
