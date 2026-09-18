@@ -98,6 +98,12 @@ This opens your browser for a Nebius OAuth login, then asks you to pick a
 project — no external CLI, no API key, no environment variables. The chosen
 tenant and project are stored and used by every deploy.
 
+> **Write your stack entrypoint first.** `alchemy profile edit` loads your
+> `alchemy.run.ts` to discover which auth providers exist, so running it before
+> that file exists fails with `Auth provider 'Nebius' is not registered.` (The
+> Quick Start order above — install, implement, then authenticate — avoids this.
+> If your entrypoint is not `alchemy.run.ts`, pass `--config <file>`.)
+
 The OAuth login uses Nebius's shared `nebius-cli` client id by default — fine
 for evaluation, but a third-party use of a client we don't own (no separate
 trust boundary, fragile to their config changes). For a distinct trust
@@ -113,11 +119,19 @@ with `invalid_client` after the browser flow completes.
 
 Alternatively, for automation/CI:
 
+- **`env`** — a static IAM API key via `NEBIUS_API_KEY`. Works anywhere: locally
+  and in CI.
 - **`sa-key`** — a service-account key (RSA-4096 authorized key). Renewal is
-automatic via the RFC 8693 token exchange, so it needs no browser after the
-one-time bootstrap (choose *Service Account Key* during `alchemy profile edit`). In CI, set
-`NEBIUS_SA_ID`, `NEBIUS_SA_KEY_ID` and `NEBIUS_SA_PRIVATE_KEY`.
-- **`env`** — a static IAM API key via `NEBIUS_API_KEY`.
+  automatic via the RFC 8693 token exchange, so it needs no browser after the
+  one-time bootstrap (choose *Service Account Key* during `alchemy profile edit`).
+  In CI, set `NEBIUS_SA_ID`, `NEBIUS_SA_KEY_ID` and `NEBIUS_SA_PRIVATE_KEY` (or
+  `NEBIUS_SA_PRIVATE_KEY_FILE`).
+
+> ⚠️ **The `NEBIUS_SA_*` key triple is read only when `CI=true`.** Outside CI those
+> variables are ignored — a local run uses `NEBIUS_API_KEY` or the stored profile,
+> and otherwise reports `Provider 'Nebius' is not configured in profile …`. That is
+> deliberate: the variables are only meaningful together, and the CLI's
+> provider-discovery step cannot tell a half-configured group from a complete one.
 
 Deploy the bucket.
 
@@ -152,15 +166,18 @@ The older `$STAGE` variable is **no longer consulted**.
 
 ### Peer Dependencies
 
-The package ships raw TypeScript source and requires these peer dependencies installed in your project:
+The package ships raw TypeScript source and requires these peer dependencies in your project.
+Versions are **pinned exactly** — alchemy and Effect move together, so a mismatched pair fails
+at import (see *Install Dependencies* above):
 
-| Package                 | Required | Notes                                               |
-| ----------------------- | -------- | --------------------------------------------------- |
-| `effect`                | Yes      | Effect V4 runtime (`>=4.0.0-beta.102` or `>=4.0.0`) |
-| `@effect/platform-bun`  | Yes      | Bun platform bindings                               |
-| `@effect/platform-node` | Yes      | Required by Alchemy CLI                             |
-| `typescript`            | Yes      | TypeScript 7 (`^7.0.0`)                             |
-| `alchemy`               | Yes      | Alchemy V2 (`@next` tag)                            |
+| Package | Required | Pinned to |
+| --- | --- | --- |
+| `effect` | Yes | `4.0.0-rc.115` |
+| `@effect/platform-bun` | Yes | `4.0.0-rc.115` |
+| `@effect/platform-node` | Yes | `4.0.0-rc.115` — required by the Alchemy CLI |
+| `@effect/platform-node-shared` | Yes | `4.0.0-rc.115` — declared exact so npm resolves the whole `@effect/*` family consistently |
+| `typescript` | Yes | TypeScript 7 (`^7`) |
+| `alchemy` | Yes | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which points at an *older* beta |
 
 ### tsconfig.json
 
@@ -187,8 +204,8 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 | Variable | Required | Description |
 | `NEBIUS_PROJECT_ID` | with `env` / env-var `sa-key` | Project ID — not needed after `alchemy profile edit` or the SA bootstrap (picked at login) |
 | `NEBIUS_TENANT_ID` | with `env` / env-var `sa-key` | Tenant ID for project/group discovery/creation actions |
-| `NEBIUS_API_KEY` | with `env` | IAM API key for the `env` auth method |
-| `NEBIUS_SA_ID` / `NEBIUS_SA_KEY_ID` / `NEBIUS_SA_PRIVATE_KEY` | with `sa-key` in CI | Service-account key material (RFC 8693 exchange) |
+| `NEBIUS_API_KEY` | with `env` | IAM API key for the `env` auth method. Read locally **and** in CI |
+| `NEBIUS_SA_ID` / `NEBIUS_SA_KEY_ID` / `NEBIUS_SA_PRIVATE_KEY` (or `…_PRIVATE_KEY_FILE`) | with `sa-key`, **CI only** (`CI=true`) | Service-account key material for the RFC 8693 exchange. Ignored outside CI — use a stored profile or `NEBIUS_API_KEY` locally |
 | `NEBIUS_REGION` | — | Default region (defaults to `eu-north1`) |
 | `NEBIUS_OAUTH_CLIENT_ID` | OAuth login | Client id for the browser OAuth login (default: `nebius-cli`; set to a client registered with Nebius) |
 
@@ -420,7 +437,7 @@ SLOW_TESTS=1 bun test tests/   # full suite incl. real resource lifecycles
 bun run test:integration       # shorthand for the above
 ```
 
-> The flag lives in a single place — `tests/helpers/gate.ts` (`runIntegration()` / `integrationTest()`). Integration tests additionally require real Nebius credentials (resolved from the environment — `NEBIUS_API_KEY` or the `NEBIUS_SA_*` key triple — or from a stored profile); api-client tests skip when credentials aren't resolvable. Destroy cleanup uses `safeDestroy()` from `tests/helpers/cleanup.ts` — a failed destroy fails the test when the body succeeded, and logs (redacted) without masking the body's own failure otherwise.
+> The flag lives in a single place — `tests/helpers/gate.ts` (`runIntegration()` / `integrationTest()`). Integration tests additionally require real Nebius credentials — `NEBIUS_API_KEY`, or a stored profile (`alchemy profile edit --add Nebius`). The `NEBIUS_SA_*` key triple is read **only** when `CI=true`, so it does not apply to a local `SLOW_TESTS` run; api-client tests skip when credentials aren't resolvable. Destroy cleanup uses `safeDestroy()` from `tests/helpers/cleanup.ts` — a failed destroy fails the test when the body succeeded, and logs (redacted) without masking the body's own failure otherwise.
 
 ## Architecture
 
