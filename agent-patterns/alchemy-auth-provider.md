@@ -169,6 +169,55 @@ Implementing `readEnvironment` **without** declaring `environment` is a
 programmer error — the wrapper `Effect.die`s at layer build to make CI
 requirements discoverable. Same for `configureWith` without `configureMethods`.
 
+### Rule 5b — `environment` is a PROBE, not documentation
+
+This list is not "the variables my provider looks at". It is alchemy's
+env-vs-profile precedence probe, consulted by `presentEnvironment`
+(`Auth/AuthProvider.ts`) from `Auth/Demand.ts` and `Auth/Resolve.ts`:
+
+```ts
+// env-vs-profile decision, roughly:
+const used = yield* presentEnvironment(auth.environment)
+const envUsable = used !== undefined   // ← ANY entry present ⇒ env wins
+```
+
+So **an entry is only safe if its presence by itself implies usable
+credentials.** Two ways to get this wrong, both of which cost a release cycle
+here by breaking provider *loading* (so `alchemy profile edit --add Nebius`
+could not run at all — the error was the useless "Could not load auth
+providers"):
+
+| Mistake | Failure |
+| A variable the stack reads but that is not a credential (e.g. a project id) | Env branch selected with no credentials present ⇒ the resolution path runs `readEnvironment` ⇒ `AuthError` ⇒ `Layer.orDie` ⇒ the CLI cannot even collect the provider |
+| A **group** of variables that are only sufficient together (an API key *or* id+key-id+private-key) | Any single one present counts as configured, so a half-set group hijacks resolution the same way. `required: false` is per-variable and cannot express "all of these OR that one" |
+
+Both were invisible in CI (where the credential variables genuinely are set)
+and only appeared once real profile-based credentials were exercised.
+
+**Rules that follow:**
+
+- List only variables whose presence alone means "credentials are usable".
+  Groups and non-credential settings do not belong here; document them in the
+  error message instead.
+- `required: true` does not rescue a group. It means "resolution fails without
+  this", and because `presentEnvironment` bails on the first missing required
+  entry, it breaks the *other* alternatives rather than expressing the OR.
+- Because the list gates the probe, a group-conditional credential path is
+  **CI-only in practice**: under `CI=true`, alchemy skips the probe and calls
+  `readEnvironment` directly, so the full group still works there.
+- You cannot soften this from inside `readEnvironment`: the contract types it
+  `Effect<Credentials, AuthError, R>` (see Rule 2), so it cannot emit the
+  suppressible `MissingProviderConfig` that callers degrade on. The only lever
+  is the list.
+- Make the failure name the missing pieces — a half-set group is the most
+  confusing way to arrive there, and the probe deliberately cannot detect it, so
+  the message is the only place it surfaces.
+
+Regression tests belong at `presentEnvironment(environment)` level (cheap, no
+network): assert that a non-credential variable, a partial group, and a complete
+group all yield `undefined`, and that only the genuinely self-sufficient
+variables are listed.
+
 ## Rule 6 — `ProfileStore` replaced the old profile service
 
 | Old | New |
