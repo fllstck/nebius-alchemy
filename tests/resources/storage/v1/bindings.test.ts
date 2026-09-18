@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
-import { S3Errors } from '@bradenmacdonald/s3-lite-client'
+import { S3Errors, type S3Client } from '@bradenmacdonald/s3-lite-client'
 import * as Bindings from '../../../../modules/resources/storage/v1/bindings.ts'
 
 describe('Nebius.storage.v1 bindings', () => {
@@ -103,6 +103,87 @@ describe('Nebius.storage.v1 bindings', () => {
     test('unknown values map to S3Error Unknown', () => {
       const err = Bindings.toStorageError('k', new Error('weird'))
       expect(err._tag).toBe('S3Error')
+    })
+  })
+
+  describe('putObjectRequest — the s3-lite-client payload seam', () => {
+    /**
+     * Records the arguments the S3 client was handed. The payload is kept as the live
+     * value (no copy) so the assertions can still see buffer/offset identity.
+     */
+    const makeStubClient = () => {
+      const calls: Array<{ key: string; payload: unknown; options: unknown }> = []
+      const client = {
+        putObject: (key: string, payload: unknown, options: unknown) => {
+          calls.push({ key, payload, options })
+          return Promise.resolve({ etag: '"etag-1"', versionId: 'v1' })
+        },
+      } as unknown as S3Client
+      return { client, calls }
+    }
+
+    const put = async (request: Bindings.PutObjectRequest) => {
+      const { client, calls } = makeStubClient()
+      const result = await Effect.runPromise(Bindings.putObjectRequest(() => Effect.succeed(client))(request))
+      return { result, calls }
+    }
+
+    // s3-lite-client 1.0 narrowed `putObject`'s payload to `Uint8Array_`
+    // (`Uint8Array<ArrayBuffer>`). These pin the runtime half of that contract: the
+    // client must never receive a `SharedArrayBuffer`-backed view, and the bytes must
+    // survive the narrowing unchanged.
+    test('normalizes a Uint8Array payload to an ArrayBuffer-backed view', async () => {
+      const { calls } = await put({ key: 'sub/bytes.bin', value: new Uint8Array([1, 2, 3]) })
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0]?.key).toBe('sub/bytes.bin')
+      const sent = calls[0]?.payload as Uint8Array
+      expect([...sent]).toEqual([1, 2, 3])
+      expect(sent.buffer).toBeInstanceOf(ArrayBuffer)
+    })
+
+    test('an offset view uploads only its own bytes', async () => {
+      const backing = new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7])
+      const { calls } = await put({ key: 'sub/view.bin', value: backing.subarray(2, 5) })
+
+      const sent = calls[0]?.payload as Uint8Array
+      expect([...sent]).toEqual([2, 3, 4])
+    })
+
+    test('never hands the client a SharedArrayBuffer-backed view', async () => {
+      const shared = new Uint8Array(new SharedArrayBuffer(2))
+      shared.set([5, 6])
+      const { calls } = await put({ key: 'sub/shared.bin', value: shared })
+
+      const sent = calls[0]?.payload as Uint8Array
+      expect([...sent]).toEqual([5, 6])
+      expect(sent.buffer).toBeInstanceOf(ArrayBuffer)
+      expect(sent.buffer).not.toBe(shared.buffer)
+    })
+
+    test('passes a string payload through untouched', async () => {
+      const { calls } = await put({ key: 'sub/s.txt', value: 'hello' })
+
+      expect(calls[0]?.payload).toBe('hello')
+    })
+
+    test('passes a ReadableStream payload through untouched', async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array([7]))
+          controller.close()
+        },
+      })
+      const { calls } = await put({ key: 'sub/stream.bin', value: stream })
+
+      expect(calls[0]?.payload).toBe(stream)
+    })
+
+    test('contentType becomes the Content-Type metadata, and the result is mapped', async () => {
+      const { result, calls } = await put({ key: 'k', value: 'x', contentType: 'text/plain' })
+
+      expect(calls[0]?.options).toEqual({ metadata: { 'Content-Type': 'text/plain' } })
+      expect(result).toEqual({ etag: '"etag-1"', versionId: 'v1' })
     })
   })
 })

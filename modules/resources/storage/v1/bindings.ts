@@ -27,6 +27,7 @@ import * as Schema from 'effect/Schema'
 import * as Binding from 'alchemy/Binding'
 import { WorkerEnvironment } from 'alchemy/Cloudflare/Workers'
 import { S3Client, S3Errors, type S3ObjectMetadata } from '@bradenmacdonald/s3-lite-client'
+import { asArrayBufferBacked } from '../../shared/s3-payload.ts'
 import * as BindHost from '../../shared/bind-host.ts'
 import type { HostIdentity } from '../../shared/host-identity.ts'
 import type { Region } from '../../regions.schema.ts'
@@ -362,7 +363,7 @@ const getObjectRequest = (
 /**
  * PutObject operation — write an object's content by key.
  */
-const putObjectRequest = (
+export const putObjectRequest = (
   getClient: () => Effect.Effect<S3Client, StorageError, never>,
 ) =>
   Effect.fn('Nebius.storage.Bucket.PutObject')(function* (
@@ -373,8 +374,12 @@ const putObjectRequest = (
     if (request.contentType !== undefined) {
       options.metadata = { 'Content-Type': request.contentType }
     }
+    // `PutObjectRequest.value` keeps the wide `Uint8Array` in the published contract
+    // (narrowing it would break consumers); s3-lite-client 1.0 only accepts
+    // `Uint8Array<ArrayBuffer>`, so the narrowing happens here at the seam.
+    const payload = request.value instanceof Uint8Array ? asArrayBufferBacked(request.value) : request.value
     const info = yield* Effect.tryPromise({
-      try: () => c.putObject(request.key, request.value, options),
+      try: () => c.putObject(request.key, payload, options),
       catch: (e) => toStorageError(request.key, e),
     })
     return { etag: info.etag, versionId: info.versionId }

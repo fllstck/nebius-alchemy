@@ -34,6 +34,7 @@ import * as IamGrpc from '../../../api-client/iam.ts'
 import * as StorageGrpc from '../../../api-client/storage.ts'
 import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import { hostIdentity, grantBucketAccess } from '../../shared/host-identity.ts'
+import { asArrayBufferBacked } from '../../shared/s3-payload.ts'
 import type { ResourceBinding } from 'alchemy'
 import type { Region } from '../../regions.schema.ts'
 
@@ -160,8 +161,8 @@ export interface HostedManifest {
 const unrequiring = <A>(effect: Effect.Effect<A, never, any>): Effect.Effect<A, never, never> =>
   effect as Effect.Effect<A, never, never>
 
-const toBytes = (content: string | Uint8Array<ArrayBufferLike>): Uint8Array<ArrayBufferLike> =>
-  typeof content === 'string' ? new TextEncoder().encode(content) : content
+const toBytes = (content: string | Uint8Array<ArrayBufferLike>): Uint8Array<ArrayBuffer> =>
+  typeof content === 'string' ? new TextEncoder().encode(content) : asArrayBufferBacked(content)
 
 const sha256Hex = (data: string | Uint8Array): string => createHash('sha256').update(data).digest('hex')
 

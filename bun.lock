@@ -5,7 +5,7 @@
     "": {
       "name": "@fllstck/nebius-alchemy",
       "dependencies": {
-        "@bradenmacdonald/s3-lite-client": "0.9.6",
+        "@bradenmacdonald/s3-lite-client": "1.0.0",
         "@bufbuild/protobuf": "2.13.0",
         "@grpc/grpc-js": "^1.14.5",
         "alchemy": "2.0.0-beta.79",
@@ -79,7 +79,7 @@
 
     "@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@7.29.7", "", {}, "sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg=="],
 
-    "@bradenmacdonald/s3-lite-client": ["@bradenmacdonald/s3-lite-client@0.9.6", "", {}, "sha512-Ec7u0jGd8BoaBdK847JFaWja6xeRtVPPe0faMuPaIVeE9Szecu16vNyUJNRrIMwLwsEM3ghLSgnkHySh399pUg=="],
+    "@bradenmacdonald/s3-lite-client": ["@bradenmacdonald/s3-lite-client@1.0.0", "", {}, "sha512-j83jujGwsJDfXPybSF+wA3orT9hO9xIM1HseCk9IDCmdn3zU2WdCK3vk6DSuys7VilB/cVNXcmb7zOpUgor/jQ=="],
 
     "@bufbuild/protobuf": ["@bufbuild/protobuf@2.13.0", "", {}, "sha512-acq7c49vxfm1ggJ95P70TX7ABDM0vxr1SYD3BB0o0jnBLB4OAqeHyKuN+cD3w80gXEDQ2zxHpR6CUeA+O/aU9g=="],
 
