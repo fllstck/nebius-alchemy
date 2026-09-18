@@ -151,7 +151,24 @@ describe('NebiusAuth', () => {
       expect(used).toEqual(['NEBIUS_API_KEY'])
     })
 
-    test('the service-account key triple IS configured credentials', async () => {
+    // The service-account variables are deliberately NOT probed. They form a
+    // group (`required: false` cannot express "all three, or the API key"), so
+    // listing them let any single one count as configured credentials and
+    // hijack resolution away from the profile — killing provider *loading*
+    // (`alchemy profile edit --add Nebius` could not run). SA-key env
+    // credentials are therefore CI-only: under `CI=true` alchemy bypasses this
+    // probe and calls `readEnvironment` directly.
+    test('a partial service-account group is NOT configured credentials', async () => {
+      const used = await Effect.runPromise(
+        presentEnvironment(nebiusEnvironment).pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_SA_ID: 'sa-1' }))),
+        ),
+      )
+
+      expect(used).toBeUndefined()
+    })
+
+    test('a complete service-account group is NOT probed either (CI-only path)', async () => {
       const used = await Effect.runPromise(
         presentEnvironment(nebiusEnvironment).pipe(
           Effect.provide(
@@ -166,12 +183,35 @@ describe('NebiusAuth', () => {
         ),
       )
 
-      expect(used).toBeDefined()
-      expect(used).toContain('NEBIUS_SA_ID')
+      expect(used).toBeUndefined()
     })
 
-    test('NEBIUS_PROJECT_ID is absent from the credential environment contract', () => {
-      expect(nebiusEnvironment.map((variable) => variable.name)).not.toContain('NEBIUS_PROJECT_ID')
+    test('the probed list is exactly the variables whose presence implies usable credentials', () => {
+      // Pins the invariant behind both bugs above: anything added here must be a
+      // variable that alone constitutes usable credentials. `NEBIUS_PROJECT_ID`
+      // is a stack setting, and the SA variables are group-conditional.
+      expect(nebiusEnvironment.map((variable) => variable.name)).toEqual(['NEBIUS_API_KEY'])
+    })
+
+    test('an incomplete service-account group is named in the failure message', async () => {
+      const error = await Effect.runPromise(
+        Effect.gen(function* () {
+          const auth = yield* getAuthProvider<NebiusAuthConfig, NebiusResolvedCredentials>(
+            NEBIUS_AUTH_PROVIDER_NAME,
+          )
+          if (auth.readEnvironment === undefined) return yield* Effect.die('readEnvironment is not implemented')
+          return yield* auth.readEnvironment
+        }).pipe(Effect.flip, Effect.provide(authTestLayerWithEnv({ NEBIUS_SA_ID: 'sa-partial' }))),
+      )
+
+      expect(error).toBeInstanceOf(AuthError)
+      if (error instanceof AuthError) {
+        // Without this, the user sees only "CI credentials not found" and has no
+        // idea that the SA group they half-configured is the reason.
+        expect(error.message).toContain('incomplete')
+        expect(error.message).toContain('NEBIUS_SA_ID')
+        expect(error.message).toContain('NEBIUS_SA_KEY_ID')
+      }
     })
   })
 

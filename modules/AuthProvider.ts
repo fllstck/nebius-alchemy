@@ -135,24 +135,39 @@ export type NebiusResolvedCredentials = {
 // memoizes the whole resolution).
 
 /**
- * The CI environment contract — the variables {@link readEnvironment} actually
- * consumes. Names only; never values.
+ * The CI environment contract — the variables {@link readEnvironment} consumes
+ * that may be probed for PRESENCE. Names only; never values.
  *
- * ⚠️ This list is NOT documentation of every variable the *stack* reads. Alchemy
- * uses it as the env-vs-profile precedence probe
- * (`presentEnvironment`, `Auth/AuthProvider.ts`): it selects the environment
- * credential source as soon as ANY entry here is present (unless a `required`
- * one is missing). So a non-credential variable listed here silently hijacks
- * credential resolution.
+ * ⚠️ Alchemy uses this list as the env-vs-profile precedence probe
+ * (`presentEnvironment`, `Auth/Demand.ts`, `Auth/Resolve.ts`): the environment
+ * credential source is selected as soon as ANY entry here is present (unless a
+ * `required` one is missing). So an entry is only safe here if **its presence by
+ * itself implies usable credentials** — otherwise it hijacks resolution away
+ * from a perfectly good profile.
  *
- * That is exactly what `NEBIUS_PROJECT_ID` did: with it in the environment
- * (e.g. from `.env`, as every example documents) and an OAuth profile stored,
- * alchemy reported "using environment variables (NEBIUS_PROJECT_ID) instead of
- * the profile", then failed with "Nebius CI credentials not found" — because
- * this list claimed env credentials existed when no credential variable was
- * set. It is consumed by the stack (via `Config.String('NEBIUS_PROJECT_ID')` and
- * `NebiusProjectConfigProviderLive`), never by `readEnvironment`, so it must not
- * appear here. Keep this list to credential-bearing variables only.
+ * `NEBIUS_PROJECT_ID` was
+ * removed for exactly that reason: with it in the environment (every example's
+ * `.env`) alchemy reported "using environment variables (NEBIUS_PROJECT_ID)
+ * instead of the profile" and then died in `readEnvironment` with "CI
+ * credentials not found", because no credential variable was set at all. That
+ * broke provider *loading*, so `alchemy profile edit --add Nebius` could not run
+ * on a machine that had a project id but no credentials yet.
+ *
+ * The service-account variables are deliberately **absent too**, and that is the
+ * subtle part: `EnvironmentVariable.required` is a per-variable boolean, so this
+ * contract can express "all of these" and "any of these" but NOT our actual
+ * rule — "`NEBIUS_API_KEY` **or** all three SA variables". Listing them with
+ * `required: false` made any single one count as configured, so a half-set group
+ * (e.g. only `NEBIUS_SA_ID`) hijacked resolution and killed provider loading
+ * the same way the project id did. Verified before and after.
+ *
+ * Consequence, accepted deliberately: **SA-key credentials from the environment
+ * are CI-only.** In CI alchemy bypasses this probe entirely (`CI=true` → it
+ * calls `readEnvironment` directly), so the full SA flow still works there. A
+ * local, non-CI run must use a profile instead.
+ *
+ * `readEnvironment` still *consumes* the SA variables and documents them in its
+ * error message — this list governs probing, not capability.
  */
 export const nebiusEnvironment: ReadonlyArray<EnvironmentVariable> = [
   {
@@ -160,29 +175,6 @@ export const nebiusEnvironment: ReadonlyArray<EnvironmentVariable> = [
     required: false,
     secret: true,
     description: 'Static Nebius API key. Takes precedence over all service-account variables.',
-  },
-  {
-    name: SA_ID_ENV,
-    required: false,
-    description: 'Service account ID for the non-interactive RFC 8693 key exchange.',
-    alternatives: [SA_PRIVATE_KEY_FILE_ENV],
-  },
-  {
-    name: SA_KEY_ID_ENV,
-    required: false,
-    description: 'Authorized key ID for the service-account key exchange.',
-  },
-  {
-    name: SA_PRIVATE_KEY_ENV,
-    required: false,
-    secret: true,
-    description: 'Inline PEM private key for the service-account key exchange.',
-    alternatives: [SA_PRIVATE_KEY_FILE_ENV],
-  },
-  {
-    name: SA_PRIVATE_KEY_FILE_ENV,
-    required: false,
-    description: 'Path to a PEM private key file, used when the inline variable is unset.',
   },
 ]
 
@@ -703,9 +695,23 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
         }
       }
 
+      // Nothing usable. Name the missing pieces when the service-account group is
+      // the cause: a half-set group is the most confusing way to arrive here, and
+      // it deliberately cannot be detected from `nebiusEnvironment` (see the
+      // comment there), so the error message is the only place it surfaces.
+      const saVars = [SA_ID_ENV, SA_KEY_ID_ENV, SA_PRIVATE_KEY_ENV, SA_PRIVATE_KEY_FILE_ENV]
+      const saPresent = (yield* Effect.forEach(saVars, (name) =>
+        getEnvRedacted(name).pipe(Effect.map((value) => (value != null ? [name] : []))),
+      )).flat()
+      const incomplete =
+        saPresent.length > 0
+          ? ` The service-account group is incomplete — set: ${saPresent.join(', ')}; required: ${SA_ID_ENV} + ${SA_KEY_ID_ENV} + (${SA_PRIVATE_KEY_ENV} or ${SA_PRIVATE_KEY_FILE_ENV}).`
+          : ''
+
       return yield* new AuthError({
         message:
-          'Nebius CI credentials not found. Set NEBIUS_API_KEY, or NEBIUS_SA_ID + NEBIUS_SA_KEY_ID + NEBIUS_SA_PRIVATE_KEY (or NEBIUS_SA_PRIVATE_KEY_FILE).',
+          'Nebius CI credentials not found. Set NEBIUS_API_KEY, or NEBIUS_SA_ID + NEBIUS_SA_KEY_ID + NEBIUS_SA_PRIVATE_KEY (or NEBIUS_SA_PRIVATE_KEY_FILE).' +
+          incomplete,
       })
     })
 
