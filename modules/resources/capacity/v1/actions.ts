@@ -55,7 +55,12 @@ export const ListResourceAdvice = Alchemy.Action(
   Effect.gen(function* () {
     const capacity = yield* CapacityGrpc.CapacityGrpcService
     const tenantId = yield* resolveTenantId()
-    return (filter: ListResourceAdviceFilter = {}) =>
+    // No default value on `filter`: a defaulted parameter makes `In` infer as
+    // `T | undefined`, the call signature's mapped type then collapses to `{}`,
+    // and callers lose BOTH the input type and the `Out` type (no `.map`, no
+    // `.length`) even though the action works at runtime. Pass `({})` for
+    // "everything" instead.
+    return (filter: ListResourceAdviceFilter) =>
       Effect.gen(function* () {
         const rows = yield* capacity.resourceAdvice.list(tenantId)
         return filterResourceAdvice(

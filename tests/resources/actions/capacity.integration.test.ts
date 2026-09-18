@@ -40,7 +40,10 @@ integrationTest(test.provider, 'Nebius.capacity.action.ListResourceAdvice (live,
     for (const [region, regionFabrics] of byRegion) {
       const gpu = rows
         .filter((row) => row.region === region && row.fabric !== '' && (row.computeInstance?.gpuMemoryGigabytes ?? 0) > 0)
-        .map((row) => `${row.fabric}/${row.computeInstance?.platform}/${row.onDemand?.available ?? '?'}avail`)
+        .map(
+          (row) =>
+            `${row.fabric}/${row.computeInstance?.platform}/od=${row.onDemand?.available ?? '?'}of${row.onDemand?.limit ?? '?'} pre=${row.preemptible?.available ?? '?'}of${row.preemptible?.limit ?? '?'}`,
+        )
       console.log(`PROBE region ${region}: fabrics=[${[...regionFabrics].join(', ')}] gpu-derived=[${gpu.join(', ')}]`)
     }
 
