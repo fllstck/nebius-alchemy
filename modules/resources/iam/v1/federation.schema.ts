@@ -1,7 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Federation Props (user input)
@@ -15,7 +16,7 @@ const SamlSettingsSchema = Schema.Struct({
 
 export const FederationPropsSchema = Schema.Struct({
   /** Tenant ID. Defaults to NEBIUS_TENANT_ID. */
-  parentId: Schema.optional(ProjectSchema.TenantId),
+  parentId: Schema.optional(IamV2Ids.TenantId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   userAccountAutoCreation: Schema.optional(Schema.Boolean),
@@ -30,12 +31,9 @@ export const validateFederationProps = Validation.makeValidateProps(FederationPr
 // Federation Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const FederationId = Schema.String.pipe(Schema.brand('FederationId'))
-export type FederationId = typeof FederationId.Type
-
 export const FederationAttributesSchema = Schema.Struct({
-  id: FederationId,
-  parentId: ProjectSchema.TenantId,
+  id: Ids.FederationId,
+  parentId: IamV2Ids.TenantId,
   name: Schema.String,
   userAccountAutoCreation: Schema.optional(Schema.Boolean),
   samlSettings: Schema.optional(SamlSettingsSchema),

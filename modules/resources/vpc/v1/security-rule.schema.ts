@@ -92,11 +92,8 @@ export const validateSecurityRuleProps = Validation.makeValidateProps(SecurityRu
 // SecurityRule Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const SecurityRuleId = Schema.String.pipe(Schema.brand('SecurityRuleId'))
-export type SecurityRuleId = typeof SecurityRuleId.Type
-
 export const SecurityRuleAttributesSchema = Schema.Struct({
-  id: SecurityRuleId,
+  id: Ids.SecurityRuleId,
   parentId: Ids.SecurityGroupId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),

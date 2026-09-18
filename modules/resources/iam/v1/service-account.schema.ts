@@ -1,14 +1,15 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // ServiceAccount Props (user input)
 // ---------------------------------------------------------------------------
 
 export const ServiceAccountPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   description: Schema.optional(Schema.String),
@@ -26,14 +27,9 @@ export const validateServiceAccountProps = Validation.makeValidateProps(ServiceA
 // ServiceAccount Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const ServiceAccountId = Schema.String.check(
-  Validation.isResourceId('serviceaccount-', 'ServiceAccount'),
-).pipe(Schema.brand('ServiceAccountId'))
-export type ServiceAccountId = typeof ServiceAccountId.Type
-
 export const ServiceAccountAttributesSchema = Schema.Struct({
-  id: ServiceAccountId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.ServiceAccountId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Record(Schema.String, Schema.String),
   description: Schema.String,

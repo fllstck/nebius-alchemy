@@ -5,6 +5,9 @@ import { NodeFileSystem } from '@effect/platform-node'
 import * as Module from '../../../../modules/resources/compute/v1/instance.ts'
 import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/instance.schema.ts'
+import * as IamIds from '../../../../modules/resources/iam/v1/ids.ts'
+import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
+import { GpuClusterId } from '../../../../modules/resources/compute/v1/ids.ts'
 import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
 import { readInput, resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
 
@@ -37,7 +40,9 @@ const runDiffWithOutput = async (
 
 /** Minimal valid Instance props (all required sub-schemas populated). */
 const validInstanceProps = {
-  serviceAccountId: 'sa-abc123',
+  // Realistic IDs on purpose: the brands carry `isResourceId` refinements
+  // (`serviceaccount-`), so a placeholder like `sa-abc123` fails validation.
+  serviceAccountId: IamIds.ServiceAccountId.make('serviceaccount-abc123'),
   resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
   bootDisk: {
     attachMode: 'READ_WRITE',
@@ -50,7 +55,13 @@ const validInstanceProps = {
       },
     },
   },
-  networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+  networkInterfaces: [
+    {
+      subnetId: VpcIds.SubnetId.make('subnet-abc123'),
+      name: 'eth0',
+      ipAddress: { allocationId: '' },
+    },
+  ],
 }
 
 describe('Nebius.compute.v1.Instance', () => {
@@ -240,7 +251,7 @@ describe('Nebius.compute.v1.Instance', () => {
       const result = await runEffect(
         SchemaModule.validateInstanceProps(validInstanceProps),
       )
-      expect(result.serviceAccountId).toBe('sa-abc123')
+      expect(result.serviceAccountId).toBe('serviceaccount-abc123')
     })
 
     test('rejects a GPU preset on a CPU platform', async () => {
@@ -450,13 +461,13 @@ describe('Nebius.compute.v1.Instance', () => {
       expect(spec.cloudInitUserData).toBe('# generated bootstrap\necho user')
       // The spec input keeps the low-level fields — including the create-only
       // `gpuCluster`, which is a real InstanceSpec field, not a hosted prop.
-      expect(spec.serviceAccountId).toBe('sa-abc123')
+      expect(spec.serviceAccountId).toBe('serviceaccount-abc123')
       expect(spec.resources).toBeDefined()
     })
 
     test('`gpuCluster` is a low-level spec field, not a hosted prop', async () => {
       const spec = Module.hostedSpecInput(
-        { ...validInstanceProps, gpuCluster: { id: 'gpucluster-abc123' } } as SchemaModule.InstanceProps,
+        { ...validInstanceProps, gpuCluster: { id: GpuClusterId.make('gpucluster-abc123') } } as SchemaModule.InstanceProps,
         undefined,
       )
       expect(spec.gpuCluster).toEqual({ id: 'gpucluster-abc123' })

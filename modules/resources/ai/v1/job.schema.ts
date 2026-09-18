@@ -1,8 +1,10 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
+import * as VpcIds from '../../vpc/v1/ids.ts'
+import * as MysteryboxIds from '../../mysterybox/v1/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Shared nested sub-schemas (reused by endpoint.schema.ts)
@@ -10,8 +12,8 @@ import * as Validation from '../../validation.ts'
 
 /** Reference to a MysteryBox secret (secret + version). */
 export const MysteryBoxSecretRefSchema = Schema.Struct({
-  secretId: Schema.String,
-  versionId: Schema.String,
+  secretId: MysteryboxIds.SecretId,
+  versionId: MysteryboxIds.SecretVersionId,
 })
 
 /** Exactly one of `value` / `mysteryboxSecret` must be provided. */
@@ -39,6 +41,10 @@ export const PortSchema = Schema.Struct({
 })
 
 export const S3CredentialsSchema = Schema.Struct({
+  /**
+   * The AWS-compatible access key ID (SID *value*, e.g. `AKIA…`) used to mount
+   * the S3 volume — NOT a Nebius resource ID, so deliberately unbranded.
+   */
   accessKeyId: Schema.String,
   secretAccessKey: Schema.String,
   sessionToken: Schema.optional(Schema.String),
@@ -137,7 +143,7 @@ export const FileInjectionSchema = Schema.Struct({
 // ---------------------------------------------------------------------------
 
 export const JobPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** The Docker image to run the job's container. */
@@ -147,7 +153,7 @@ export const JobPropsSchema = Schema.Struct({
   /** Compute preset for the platform, e.g. "4vcpu-16gb". */
   preset: Schema.String,
   /** Subnet ID where the job will be deployed. */
-  subnetId: Schema.String,
+  subnetId: VpcIds.SubnetId,
   /** Whether to assign a public IP to the job. */
   publicIp: Schema.Boolean,
   /** Whether to use a preemptible VM (cheaper, can be stopped by the platform). */
@@ -194,7 +200,7 @@ export const validateJobProps = Validation.makeValidateProps(JobPropsSchema)
 
 export const JobAttributesSchema = Schema.Struct({
   id: Ids.JobId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   state: Schema.Union([

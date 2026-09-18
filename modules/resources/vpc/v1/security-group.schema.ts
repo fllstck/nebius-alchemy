@@ -1,15 +1,15 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // SecurityGroup Props (user input)
 // ---------------------------------------------------------------------------
 
 export const SecurityGroupPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   networkId: Ids.NetworkId,
@@ -30,7 +30,7 @@ export const validateSecurityGroupProps = Validation.makeValidateProps(SecurityG
 
 export const SecurityGroupAttributesSchema = Schema.Struct({
   id: Ids.SecurityGroupId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   networkId: Ids.NetworkId,

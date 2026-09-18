@@ -1,14 +1,14 @@
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
-import * as FederationSchema from './federation.schema.ts'
+import * as Ids from './ids.ts'
 
 // ---------------------------------------------------------------------------
 // FederationCertificate Props (user input)
 // ---------------------------------------------------------------------------
 
 export const FederationCertificatePropsSchema = Schema.Struct({
-  parentId: FederationSchema.FederationId,
+  parentId: Ids.FederationId,
   name: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   description: Schema.optional(Schema.String),
@@ -24,12 +24,9 @@ export const validateFederationCertificateProps = Validation.makeValidateProps(F
 // FederationCertificate Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const FederationCertificateId = Schema.String.pipe(Schema.brand('FederationCertificateId'))
-export type FederationCertificateId = typeof FederationCertificateId.Type
-
 export const FederationCertificateAttributesSchema = Schema.Struct({
-  id: FederationCertificateId,
-  parentId: FederationSchema.FederationId,
+  id: Ids.FederationCertificateId,
+  parentId: Ids.FederationId,
   name: Schema.String,
   description: Schema.String,
   data: Schema.String,

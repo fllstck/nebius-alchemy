@@ -1,7 +1,7 @@
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
-import * as GroupSchema from './group.schema.ts'
+import * as Ids from './ids.ts'
 
 // ---------------------------------------------------------------------------
 // GroupMembership Props (user input)
@@ -9,11 +9,15 @@ import * as GroupSchema from './group.schema.ts'
 
 export const GroupMembershipPropsSchema = Schema.Struct({
   /** Parent group ID (the group this membership belongs to). */
-  parentId: GroupSchema.GroupId,
+  parentId: Ids.GroupId,
   name: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  /** The member ID (tenant user account or service account). Immutable after creation. */
-  memberId: Schema.String,
+  /**
+   * The member ID. Immutable after creation. Polymorphic but closed: the proto's
+   * `GroupMemberKind.Kind` allows a tenant user account or a service account
+   * (see `ids.ts` for why this is a union of brands, not a nominal brand).
+   */
+  memberId: Ids.GroupMembershipMemberId,
   /** Optional duration in hours after which the membership is revoked. */
   revokeAfterHours: Schema.optional(Schema.Finite),
 })
@@ -26,14 +30,11 @@ export const validateGroupMembershipProps = Validation.makeValidateProps(GroupMe
 // GroupMembership Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const GroupMembershipId = Schema.String.pipe(Schema.brand('GroupMembershipId'))
-export type GroupMembershipId = typeof GroupMembershipId.Type
-
 export const GroupMembershipAttributesSchema = Schema.Struct({
-  id: GroupMembershipId,
-  parentId: GroupSchema.GroupId,
+  id: Ids.GroupMembershipId,
+  parentId: Ids.GroupId,
   name: Schema.String,
-  memberId: Schema.String,
+  memberId: Ids.GroupMembershipMemberId,
   memberKind: Schema.optional(Schema.String),
   revokeAt: Schema.optional(Schema.DateFromString),
 })

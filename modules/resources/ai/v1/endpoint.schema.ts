@@ -1,9 +1,10 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as Ids from './ids.ts'
 
 import * as JobSchema from './job.schema.ts'
 import * as Validation from '../../validation.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
+import * as VpcIds from '../../vpc/v1/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Endpoint Props (user input)
@@ -23,7 +24,7 @@ const authTokenValid = Schema.makeFilter((props: Record<string, unknown>) => {
 })
 
 export const EndpointPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** The Docker image to run the endpoint's container. */
@@ -33,7 +34,7 @@ export const EndpointPropsSchema = Schema.Struct({
   /** Compute preset for the platform, e.g. "4vcpu-16gb". */
   preset: Schema.String,
   /** Subnet ID where the endpoint will be deployed. */
-  subnetId: Schema.String,
+  subnetId: VpcIds.SubnetId,
   /** Whether to assign a public IP to the endpoint. */
   publicIp: Schema.Boolean,
   /** Whether to use a preemptible VM (cheaper, can be stopped by the platform). */
@@ -84,7 +85,7 @@ export const validateEndpointProps = Validation.makeValidateProps(EndpointPropsS
 
 export const EndpointAttributesSchema = Schema.Struct({
   id: Ids.EndpointId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   state: Schema.Union([

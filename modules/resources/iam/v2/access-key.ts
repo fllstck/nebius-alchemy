@@ -23,7 +23,7 @@ export class AccessKeyCollisionError extends Schema.TaggedError<AccessKeyCollisi
     message: Schema.String,
   },
 ) {}
-import * as ServiceAccountSchema from '../v1/service-account.schema.ts'
+import * as IamIds from '../v1/ids.ts'
 
 // ----- RESOURCE TYPES
 
@@ -47,7 +47,7 @@ const toFriendlyAttributes = (
   })
   // Extract serviceAccountId from the nested spec.account
   const serviceAccountId =
-    (rawKey.spec?.account?.serviceAccount?.id || '') as unknown as ServiceAccountSchema.ServiceAccountId
+    (rawKey.spec?.account?.serviceAccount?.id || '') as unknown as IamIds.ServiceAccountId
   // Derive secretDeliveryMode from the spec (encoded as enum number, toJSON gives string)
   const deliveryMode = (rawKey.spec?.secretDeliveryMode != null
     ? NebiusAccessKeyV2Schema.secretDeliveryModeToJSON(rawKey.spec.secretDeliveryMode)

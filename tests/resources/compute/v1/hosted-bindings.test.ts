@@ -52,6 +52,8 @@ import * as GroupMembershipResource from '../../../../modules/resources/iam/v1/g
 import * as AccessKeyResource from '../../../../modules/resources/iam/v2/access-key.ts'
 import * as AccessPermitResource from '../../../../modules/resources/iam/v1/access-permit.ts'
 import * as InstanceResource from '../../../../modules/resources/compute/v1/instance.ts'
+import { ServiceAccountId } from '../../../../modules/resources/iam/v1/ids.ts'
+import { SubnetId } from '../../../../modules/resources/vpc/v1/ids.ts'
 import * as EndpointResource from '../../../../modules/resources/ai/v1/endpoint.ts'
 
 class TestProviders extends AlchemyProvider.ProviderCollection<TestProviders>()('NebiusTest') {}
@@ -84,7 +86,7 @@ const planningProviders = () =>
 const { test } = Test.make({ providers: planningProviders() as any })
 
 const hostedInstanceProps = {
-  serviceAccountId: 'sa-abc123',
+  serviceAccountId: ServiceAccountId.make('serviceaccount-abc123'),
   resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
   bootDisk: {
     attachMode: 'READ_WRITE',
@@ -97,7 +99,7 @@ const hostedInstanceProps = {
       },
     },
   },
-  networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+  networkInterfaces: [{ subnetId: SubnetId.make('subnet-abc123'), name: 'eth0', ipAddress: { allocationId: '' } }],
 } as const
 
 const bucketProps = {
@@ -143,7 +145,7 @@ test.provider('a real hosted Instance resolves Binding.Host to itself (no mock)'
     const plan = yield* stack.plan(
       Effect.gen(function* () {
         const bucket = yield* Nebius.storage.Bucket('Assets', bucketProps)
-        const endpoint = yield* Nebius.ai.Endpoint('Llm', { ...endpointProps, subnetId: 'subnet-abc123' })
+        const endpoint = yield* Nebius.ai.Endpoint('Llm', { ...endpointProps, subnetId: SubnetId.make('subnet-abc123') })
 
         yield* Nebius.compute.Instance(
           'Api',
@@ -322,7 +324,7 @@ test.provider('the hosted-entry guard allows the legitimate shapes', () =>
       false,
     )
     // Low-level mode: no `main`, so nothing is bundled at all.
-    yield* InstanceResource.assertHostedEntryIsRunnable('Api', { serviceAccountId: 'sa-x' }, false)
+    yield* InstanceResource.assertHostedEntryIsRunnable('Api', { serviceAccountId: ServiceAccountId.make('serviceaccount-x') }, false)
   }),
 )
 

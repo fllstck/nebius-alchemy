@@ -1,8 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Disk Props (user input)
@@ -17,7 +17,8 @@ const DiskTypeSchema = Schema.Union([
 
 const SourceImageFamilySchema = Schema.Struct({
   imageFamily: Schema.String,
-  parentId: Schema.optional(Schema.String),
+  /** Defaults to the region's public-images parent (`project-<region>public-images`). */
+  parentId: Schema.optional(IamV2Ids.ProjectId),
 })
 
 /**
@@ -56,7 +57,7 @@ const atMostOneDiskSource = Schema.makeFilter(
 )
 
 export const DiskPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** Disk size in gibibytes. One of the size fields must be set. */
@@ -91,7 +92,7 @@ export const validateDiskProps = Validation.makeValidateProps(DiskPropsSchema)
 
 export const DiskAttributesSchema = Schema.Struct({
   id: Ids.DiskId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   type: DiskTypeSchema,

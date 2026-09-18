@@ -1,7 +1,9 @@
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
-import * as ServiceAccountSchema from '../v1/service-account.schema.ts'
+import * as Ids from './ids.ts'
+import * as IamIds from '../v1/ids.ts'
+import * as MysteryboxIds from '../../mysterybox/v1/ids.ts'
 
 // ---------------------------------------------------------------------------
 // SecretDeliveryMode — mirrors nebius.iam.v2.SecretDeliveryMode
@@ -19,7 +21,7 @@ export type SecretDeliveryMode = typeof SecretDeliveryMode.Type
 // ---------------------------------------------------------------------------
 
 export const AccessKeyPropsSchema = Schema.Struct({
-  serviceAccountId: ServiceAccountSchema.ServiceAccountId,
+  serviceAccountId: IamIds.ServiceAccountId,
   description: Schema.optional(Schema.String),
   /** When the access key expires. If not set, the key does not expire. */
   expiresAt: Schema.optional(Schema.DateFromString),
@@ -44,19 +46,19 @@ export const validateAccessKeyProps = Validation.makeValidateProps(AccessKeyProp
 // AccessKey Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const AccessKeyId = Schema.String.pipe(Schema.brand('AccessKeyId'))
-export type AccessKeyId = typeof AccessKeyId.Type
-
 export const AccessKeyAttributesSchema = Schema.Struct({
-  id: AccessKeyId,
-  serviceAccountId: ServiceAccountSchema.ServiceAccountId,
+  id: Ids.AccessKeyId,
+  serviceAccountId: IamIds.ServiceAccountId,
   description: Schema.String,
-  /** The AWS-compatible access key ID (e.g. AKIAIOSFODNN7EXAMPLE). */
+  /**
+   * The AWS-compatible access key ID (e.g. AKIAIOSFODNN7EXAMPLE). NOT branded:
+   * this is the SID *value*, not the `AccessKey` resource ID (`Ids.AccessKeyId`).
+   */
   awsAccessKeyId: Schema.String,
   /** The secret access key. Only available at creation time for INLINE/EXPLICIT delivery. */
   secretAccessKey: Schema.String,
   /** When MYSTERY_BOX delivery is used, references the MysteryBox secret containing the actual key material. */
-  secretReferenceId: Schema.optional(Schema.String),
+  secretReferenceId: Schema.optional(MysteryboxIds.SecretId),
   state: Schema.String,
   createdAt: Schema.optional(Schema.DateFromString),
   expiresAt: Schema.optional(Schema.DateFromString),

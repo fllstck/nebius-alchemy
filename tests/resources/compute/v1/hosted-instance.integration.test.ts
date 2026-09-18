@@ -42,6 +42,8 @@ const FETCH_KEY_NAME = `ak-${`${INSTANCE_LOGICAL_ID}HostedRuntimeKey`.replace(/_
  * propagation delay: `NEBIUS_TEST_SUBNET_ID=<id>`.
  */
 const STABLE_SUBNET_ID = process.env.NEBIUS_TEST_SUBNET_ID
+  ? VpcIds.SubnetId.make(process.env.NEBIUS_TEST_SUBNET_ID)
+  : undefined
 
 /** Resolve a subnet's network id (for the SG when reusing a stable subnet). */
 const subnetNetworkId = (subnetId: string) =>

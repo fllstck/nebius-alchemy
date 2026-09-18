@@ -1,8 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Allocation Props (user input)
@@ -24,7 +24,7 @@ const allocationValid = Schema.makeFilter((props: Record<string, unknown>) => {
 })
 
 export const AllocationPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   ipv4Private: Schema.optional(IPv4AllocationSpecSchema),
@@ -42,7 +42,7 @@ export const validateAllocationProps = Validation.makeValidateProps(AllocationPr
 
 export const AllocationAttributesSchema = Schema.Struct({
   id: Ids.AllocationId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   state: Schema.Union([

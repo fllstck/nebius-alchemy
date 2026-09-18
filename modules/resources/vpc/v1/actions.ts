@@ -9,8 +9,8 @@ import * as Subnet from './subnet.ts'
 import * as SecurityGroup from './security-group.ts'
 import * as RouteTable from './route-table.ts'
 import * as Pool from './pool.ts'
-import type * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ── Network ───────────────────────────────────────────────────────────────
 
@@ -19,7 +19,7 @@ export const GetNetwork = Alchemy.Action(
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
-    return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
+    return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
         const result = yield* vpc.network
@@ -46,7 +46,7 @@ export const ListNetworks = Alchemy.Action(
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
-    return ({ parentId }: { parentId?: ProjectSchema.ProjectId } = {}) =>
+    return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
         const results = yield* Effect.forEach(parentIds, (pid) =>
@@ -67,7 +67,7 @@ export const GetSubnet = Alchemy.Action(
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
-    return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
+    return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
         const result = yield* vpc.subnet
@@ -94,7 +94,7 @@ export const ListSubnets = Alchemy.Action(
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
-    return ({ parentId }: { parentId?: ProjectSchema.ProjectId } = {}) =>
+    return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
         const results = yield* Effect.forEach(parentIds, (pid) =>
@@ -115,7 +115,7 @@ export const GetSecurityGroup = Alchemy.Action(
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
-    return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
+    return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
         const result = yield* vpc.securityGroup
@@ -142,7 +142,7 @@ export const ListSecurityGroups = Alchemy.Action(
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
-    return ({ parentId }: { parentId?: ProjectSchema.ProjectId } = {}) =>
+    return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
         const results = yield* Effect.forEach(parentIds, (pid) =>
@@ -163,7 +163,7 @@ export const GetRouteTable = Alchemy.Action(
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
-    return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
+    return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
         const result = yield* vpc.routeTable
@@ -190,7 +190,7 @@ export const ListRouteTables = Alchemy.Action(
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
-    return ({ parentId }: { parentId?: ProjectSchema.ProjectId } = {}) =>
+    return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
         const results = yield* Effect.forEach(parentIds, (pid) =>
@@ -211,7 +211,7 @@ export const GetPool = Alchemy.Action(
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const defaultProjectId = yield* Config.String('NEBIUS_PROJECT_ID')
-    return ({ name, parentId }: { name: string; parentId?: ProjectSchema.ProjectId }) =>
+    return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
         const result = yield* vpc.pool
@@ -238,7 +238,7 @@ export const ListPools = Alchemy.Action(
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
-    return ({ parentId }: { parentId?: ProjectSchema.ProjectId } = {}) =>
+    return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
         const results = yield* Effect.forEach(parentIds, (pid) =>

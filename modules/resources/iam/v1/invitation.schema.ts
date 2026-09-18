@@ -1,7 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Invitation Props (user input)
@@ -9,7 +10,7 @@ import * as Validation from '../../validation.ts'
 
 export const InvitationPropsSchema = Schema.Struct({
   /** Tenant ID. Defaults to NEBIUS_TENANT_ID. */
-  parentId: Schema.optional(ProjectSchema.TenantId),
+  parentId: Schema.optional(IamV2Ids.TenantId),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   description: Schema.optional(Schema.String),
   /** Email address to send the invitation to. */
@@ -28,15 +29,13 @@ export const validateInvitationProps = Validation.makeValidateProps(InvitationPr
 // Invitation Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const InvitationId = Schema.String.pipe(Schema.brand('InvitationId'))
-export type InvitationId = typeof InvitationId.Type
-
 export const InvitationAttributesSchema = Schema.Struct({
-  id: InvitationId,
-  parentId: ProjectSchema.TenantId,
+  id: Ids.InvitationId,
+  parentId: IamV2Ids.TenantId,
   description: Schema.String,
   email: Schema.String,
-  tenantUserAccountId: Schema.optional(Schema.String),
+  /** The tenant user account created by the invitation. */
+  tenantUserAccountId: Schema.optional(Ids.TenantUserAccountId),
   expiresAt: Schema.optional(Schema.DateFromString),
   state: Schema.String,
 })

@@ -65,7 +65,8 @@ export default Alchemy.Stack(
 
     // Create a preemptible instance with the disk as boot disk
     const instance = yield* Nebius.compute.Instance('TestInstance', {
-      serviceAccountId,
+      // IDs read from the environment are branded at the boundary.
+      serviceAccountId: Nebius.iam.ServiceAccountId.make(serviceAccountId),
       resources: {
         platform: 'gpu-h200-sxm',
         preset: '1gpu-16vcpu-200gb',
@@ -74,7 +75,9 @@ export default Alchemy.Stack(
         existingDisk: { id: disk.id },
         attachMode: 'READ_WRITE',
       },
-      networkInterfaces: [{ subnetId, name: 'eth0', ipAddress: { allocationId: '' } }],
+      networkInterfaces: [
+        { subnetId: Nebius.vpc.SubnetId.make(subnetId), name: 'eth0', ipAddress: { allocationId: '' } },
+      ],
       preemptible: { onPreemption: 'STOP' },
     })
 

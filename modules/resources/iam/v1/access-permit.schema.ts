@@ -1,7 +1,7 @@
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
-import * as GroupSchema from './group.schema.ts'
+import * as Ids from './ids.ts'
 
 // ---------------------------------------------------------------------------
 // AccessPermit Props (user input)
@@ -9,11 +9,15 @@ import * as GroupSchema from './group.schema.ts'
 
 export const AccessPermitPropsSchema = Schema.Struct({
   /** Parent group ID (the subject receiving the permit). Also serves as the identity. */
-  parentId: GroupSchema.GroupId,
+  parentId: Ids.GroupId,
   name: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  /** The resource ID to grant access to. Immutable after creation. */
-  resourceId: Schema.String,
+  /**
+   * The resource ID to grant access to. Immutable after creation. Polymorphic:
+   * a permit can target any resource type, so it carries its own nominal brand
+   * rather than another resource's (see AGENTS.md §"Branded IDs").
+   */
+  resourceId: Ids.AccessPermitResourceId,
   /** The role to grant. Immutable after creation. */
   role: Schema.String,
 })
@@ -26,14 +30,11 @@ export const validateAccessPermitProps = Validation.makeValidateProps(AccessPerm
 // AccessPermit Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const AccessPermitId = Schema.String.pipe(Schema.brand('AccessPermitId'))
-export type AccessPermitId = typeof AccessPermitId.Type
-
 export const AccessPermitAttributesSchema = Schema.Struct({
-  id: AccessPermitId,
-  parentId: GroupSchema.GroupId,
+  id: Ids.AccessPermitId,
+  parentId: Ids.GroupId,
   name: Schema.optional(Schema.String),
-  resourceId: Schema.String,
+  resourceId: Ids.AccessPermitResourceId,
   role: Schema.String,
 })
 

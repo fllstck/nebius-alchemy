@@ -1,7 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Filesystem Props (user input)
@@ -15,7 +16,7 @@ const FilesystemTypeSchema = Schema.Union([
 ])
 
 export const FilesystemPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** Size in gibibytes. */
@@ -36,12 +37,9 @@ export const validateFilesystemProps = Validation.makeValidateProps(FilesystemPr
 // Filesystem Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const FilesystemId = Schema.String.pipe(Schema.brand('FilesystemId'))
-export type FilesystemId = typeof FilesystemId.Type
-
 export const FilesystemAttributesSchema = Schema.Struct({
-  id: FilesystemId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.FilesystemId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   sizeGibibytes: Schema.Finite,
   blockSizeBytes: Schema.optional(Schema.Finite),

@@ -1,9 +1,10 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
-import * as FilesystemSchema from './filesystem.schema.ts'
 import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
+import * as IamIds from '../../iam/v1/ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
+import * as VpcIds from '../../vpc/v1/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Nested sub-schemas
@@ -89,7 +90,7 @@ const DiskTypeSchema = Schema.Union([
 const SourceImageFamilySchema = Schema.Struct({
   imageFamily: Schema.String,
   /** Defaults to the region's public-images parent (`project-<region>public-images`). */
-  parentId: Schema.optional(Schema.String),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
 })
 
 /**
@@ -130,7 +131,7 @@ const ManagedDiskSchema = Schema.Struct({
 })
 
 const ExistingDiskSchema = Schema.Struct({
-  id: Schema.String,
+  id: Ids.DiskId,
 })
 
 const AttachedDiskSpecSchema = Schema.Struct({
@@ -139,7 +140,10 @@ const AttachedDiskSpecSchema = Schema.Struct({
   existingDisk: Schema.optional(ExistingDiskSchema),
   /** Create a managed disk (deleted with the instance). */
   managedDisk: Schema.optional(ManagedDiskSchema),
-  /** User-defined device identifier for /dev/disk/by-id/virtio-{device_id}. */
+  /**
+   * User-defined device identifier for /dev/disk/by-id/virtio-{device_id}.
+   * NOT branded: a guest-side device name, not a Nebius resource ID.
+   */
   deviceId: Schema.optional(Schema.String),
 }).check(
   Schema.makeFilter((props: Record<string, unknown>) => {
@@ -153,16 +157,20 @@ const AttachedDiskSpecSchema = Schema.Struct({
 )
 
 const SecurityGroupIdSchema = Schema.Struct({
-  id: Schema.String,
+  id: VpcIds.SecurityGroupId,
 })
 
 const IPAddressSchema = Schema.Struct({
-  /** Allocation identifier if it was created before. */
+  /**
+   * Allocation identifier if it was created before. NOT branded: the empty
+   * string is the documented auto-allocate sentinel (`{ allocationId: '' }`),
+   * so a brand here would type `''` as an allocation ID.
+   */
   allocationId: Schema.String,
 })
 
 const PublicIPAddressSchema = Schema.Struct({
-  /** Allocation identifier if it was created before. */
+  /** Allocation identifier if it was created before (see `IPAddressSchema` — unbranded: `''` = auto-allocate). */
   allocationId: Schema.optional(Schema.String),
   /**
    * If false - Allocation will be created/deleted during NetworkInterface.Allocate/Deallocate.
@@ -188,7 +196,7 @@ const networkInterfaceValid = Schema.makeFilter((networkInterface: Record<string
 
 const NetworkInterfaceSpecSchema = Schema.Struct({
   /** Subnet ID to attach this interface to. */
-  subnetId: Schema.String,
+  subnetId: VpcIds.SubnetId,
   /** Interface name (truncated to 15 chars inside VM OS). Required by the API. */
   name: Schema.String,
   /** Private IPv4 address associated with the interface. The API REQUIRES this field (use `{ allocationId: "" }` for auto-allocation). */
@@ -209,7 +217,7 @@ const PreemptibleSchema = Schema.Struct({
  * the referenced filesystem (`oneof type` is required).
  */
 const ExistingFilesystemSchema = Schema.Struct({
-  id: FilesystemSchema.FilesystemId,
+  id: Ids.FilesystemId,
 })
 
 const AttachedFilesystemSpecSchema = Schema.Struct({
@@ -260,7 +268,11 @@ const ReservationPolicySchema = Schema.Struct({
    * FORBID — on-demand only. STRICT — capacity blocks only, fail otherwise.
    */
   policy: Schema.Union([Schema.Literal('AUTO'), Schema.Literal('FORBID'), Schema.Literal('STRICT')]),
-  /** Capacity block IDs, in priority order. */
+  /**
+   * Capacity block IDs, in priority order. Deliberately unbranded for now: the
+   * capacity resource family (and therefore its ID brand) is not implemented
+   * yet — see TASKS.md §"ID1 — Branded IDs" (group D).
+   */
   reservationIds: Schema.Array(Schema.String),
 }).check(reservationPolicyValid)
 
@@ -277,16 +289,28 @@ const ReservationPolicySchema = Schema.Struct({
  */
 const BundleConfigSchema = Schema.Record(Schema.String, Schema.Unknown)
 
+/**
+ * Service account to associate, or `''` for none.
+ *
+ * The API treats an empty `service_account_id` as "no service account" (the
+ * field's default), and that sentinel is used for real: `instance.integration`
+ * and `instance-minimal-online` deploy instances without one, and the VM-only
+ * hosted programs read the id from the shipped env with a `''` fallback. A bare
+ * `ServiceAccountId` cannot model it — its `serviceaccount-` refinement rejects
+ * the empty string — so the field is a union.
+ */
+const InstanceServiceAccountId = Schema.Union([IamIds.ServiceAccountId, Schema.Literal('')])
+
 // ---------------------------------------------------------------------------
 // Instance Props (user input)
 // ---------------------------------------------------------------------------
 
 export const InstancePropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  /** Service account ID to associate with this instance. */
-  serviceAccountId: Schema.String,
+  /** Service account ID to associate with this instance, or `''` for none. */
+  serviceAccountId: InstanceServiceAccountId,
   /** Compute resources specification. */
   resources: ResourcesSpecSchema,
   /** Boot disk specification. */
@@ -300,11 +324,11 @@ export const InstancePropsSchema = Schema.Struct({
   /** Capacity reservation policy. */
   reservationPolicy: Schema.optional(ReservationPolicySchema),
   /** NVLink Instance Group to join (GPU/NVLink platforms). */
-  nvlInstanceGroupId: Schema.optional(Schema.String),
+  nvlInstanceGroupId: Schema.optional(Ids.NVLInstanceGroupId),
   /** Network interfaces. Must have at least one. */
   networkInterfaces: Schema.Array(NetworkInterfaceSpecSchema),
   /** GPU cluster ID for InfiniBand interconnect. Only settable at creation. */
-  gpuCluster: Schema.optional(Schema.Struct({ id: Schema.String })),
+  gpuCluster: Schema.optional(Schema.Struct({ id: Ids.GpuClusterId })),
   /** Recovery policy on host failure. Default: RECOVER. */
   recoveryPolicy: Schema.optional(RecoveryPolicySchema),
   /** Set to create a preemptible VM (cheaper, can be stopped by platform). */
@@ -356,10 +380,10 @@ export const validateInstanceProps = Validation.makeValidateProps(InstancePropsS
 
 export const InstanceAttributesSchema = Schema.Struct({
   id: Ids.InstanceId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
-  serviceAccountId: Schema.String,
+  serviceAccountId: InstanceServiceAccountId,
   state: Schema.Union([
     Schema.Literal('CREATING'),
     Schema.Literal('UPDATING'),
@@ -381,7 +405,8 @@ export const InstanceAttributesSchema = Schema.Struct({
   hostedBucketName: Schema.optional(Schema.String),
   /** @internal assets bucket region (cleanup S3 endpoint). */
   hostedRegion: Schema.optional(Schema.String),
-  /** @internal upload S3 access key id (cleanup creds). */
+  /** @internal upload S3 access key id (cleanup creds). NOT branded: the S3 SID
+   * *value* (`identity.awsAccessKeyId`), not the `AccessKey` resource ID. */
   hostedAccessKeyId: Schema.optional(Schema.String),
   /** @internal upload S3 secret access key (cleanup creds). */
   hostedSecretAccessKey: Schema.optional(Schema.String),

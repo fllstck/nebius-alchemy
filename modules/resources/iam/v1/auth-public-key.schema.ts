@@ -1,19 +1,19 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../v2/project.schema.ts'
-import * as ServiceAccountSchema from './service-account.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // AuthPublicKey Props (user input)
 // ---------------------------------------------------------------------------
 
 export const AuthPublicKeyPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** The account this key belongs to. Immutable after creation. */
-  accountId: ServiceAccountSchema.ServiceAccountId,
+  accountId: Ids.ServiceAccountId,
   description: Schema.optional(Schema.String),
   /** When the key expires. Immutable after creation. */
   expiresAt: Schema.optional(Schema.DateFromString),
@@ -29,14 +29,11 @@ export const validateAuthPublicKeyProps = Validation.makeValidateProps(AuthPubli
 // AuthPublicKey Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const AuthPublicKeyId = Schema.String.pipe(Schema.brand('AuthPublicKeyId'))
-export type AuthPublicKeyId = typeof AuthPublicKeyId.Type
-
 export const AuthPublicKeyAttributesSchema = Schema.Struct({
-  id: AuthPublicKeyId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.AuthPublicKeyId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
-  accountId: ServiceAccountSchema.ServiceAccountId,
+  accountId: Ids.ServiceAccountId,
   description: Schema.String,
   data: Schema.String,
   expiresAt: Schema.optional(Schema.DateFromString),

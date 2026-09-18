@@ -1,8 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Network Props (user input)
@@ -21,7 +21,7 @@ const IPv4PublicPoolsSchema = Schema.Struct({
 })
 
 export const NetworkPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   ipv4PrivatePools: Schema.optional(IPv4PrivatePoolsSchema),
@@ -43,7 +43,7 @@ export const validateNetworkProps = Validation.makeValidateProps(NetworkPropsSch
 // Re-export for consumers
 export const NetworkAttributesSchema = Schema.Struct({
   id: Ids.NetworkId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   state: Schema.Union([Schema.Literal('CREATING'), Schema.Literal('READY'), Schema.Literal('DELETING')]),

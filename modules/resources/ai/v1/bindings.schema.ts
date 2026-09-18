@@ -81,6 +81,7 @@ export class ChatCompletionChoice extends Schema.Class<ChatCompletionChoice>('Ch
 
 /** Full (non-streamed) chat completion response. */
 export class ChatCompletion extends Schema.Class<ChatCompletion>('ChatCompletion')({
+  /** OpenAI-compatible completion ID (`chatcmpl-…`) — mirrors the OpenAI API, not a Nebius resource ID. */
   id: Schema.String,
   object: Schema.Literal('chat.completion'),
   created: Schema.Finite,
@@ -109,6 +110,7 @@ export class ChatCompletionChunkChoice extends Schema.Class<ChatCompletionChunkC
 
 /** One SSE event in a `stream: true` response. */
 export class ChatCompletionChunk extends Schema.Class<ChatCompletionChunk>('ChatCompletionChunk')({
+  /** See `ChatCompletion.id` — OpenAI-compatible, deliberately unbranded. */
   id: Schema.String,
   object: Schema.Literal('chat.completion.chunk'),
   created: Schema.Finite,

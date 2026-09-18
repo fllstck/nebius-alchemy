@@ -3,13 +3,13 @@ export {
   NebiusServiceAccountProvider as ServiceAccountProvider,
   type NebiusServiceAccount as ServiceAccountResource,
 } from './service-account.ts'
-export { type ServiceAccountId } from './service-account.schema.ts'
+export { ServiceAccountId } from './ids.ts'
 export {
   NebiusStaticKey as StaticKey,
   NebiusStaticKeyProvider as StaticKeyProvider,
   type NebiusStaticKey as StaticKeyResource,
 } from './static-key.ts'
-export { type StaticKeyId } from './static-key.schema.ts'
+export { StaticKeyId } from './ids.ts'
 export {
   NebiusFederation as Federation,
   NebiusFederationProvider as FederationProvider,

@@ -35,6 +35,8 @@ import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 
 /** Stable-subnet override — see the header comment. */
 const STABLE_SUBNET_ID = process.env.NEBIUS_TEST_SUBNET_ID
+  ? VpcIds.SubnetId.make(process.env.NEBIUS_TEST_SUBNET_ID)
+  : undefined
 
 /** Public image family + parent (mirrors the CLI's `--source-image-family`). */
 const IMAGE_FAMILY = process.env.NEBIUS_TEST_IMAGE_FAMILY ?? 'ubuntu24.04-driverless'

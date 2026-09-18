@@ -1,8 +1,9 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Zone Props (user input)
@@ -41,7 +42,7 @@ const SoaSpecSchema = Schema.Struct({
 }).check(negativeTtlValid)
 
 export const ZonePropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** Fully qualified domain name, e.g. "example.com.". Immutable. */
@@ -64,12 +65,9 @@ export const validateZoneProps = Validation.makeValidateProps(ZonePropsSchema)
 // Zone Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const ZoneId = Schema.String.pipe(Schema.brand('ZoneId'))
-export type ZoneId = typeof ZoneId.Type
-
 export const ZoneAttributesSchema = Schema.Struct({
-  id: ZoneId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.ZoneId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   domainName: Schema.String,

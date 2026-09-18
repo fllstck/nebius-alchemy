@@ -18,8 +18,9 @@ import * as Effect from 'effect/Effect'
 import * as Output from 'alchemy/Output'
 import * as AlchemyNamespace from 'alchemy/Namespace'
 import * as Iam from '../iam/index.ts'
-import type * as GroupSchema from '../iam/v1/group.schema.ts'
-import type * as ServiceAccountSchema from '../iam/v1/service-account.schema.ts'/**
+import * as IamIds from '../iam/v1/ids.ts'
+
+/**
  * Erase the deploy-time Provider requirements of lazily-declared resources.
  *
  * The Binding.Service contract types binding impl fns with `R = never` (same
@@ -46,9 +47,9 @@ const unrequiring = <A>(effect: Effect.Effect<A, never, any>): Effect.Effect<A, 
  */
 export interface HostIdentity {
   /** The host's service account id. */
-  serviceAccountId: Output.Output<ServiceAccountSchema.ServiceAccountId>
+  serviceAccountId: Output.Output<IamIds.ServiceAccountId>
   /** The host's group id (grant subject). */
-  groupId: Output.Output<GroupSchema.GroupId>
+  groupId: Output.Output<IamIds.GroupId>
   /** The AWS-compatible access key ID (S3 credentials). */
   awsAccessKeyId: Output.Output<string>
   /** The one-time secret access key. Only available at creation time. */
@@ -128,7 +129,9 @@ export const grantBucketAccess = Effect.fn('grantBucketAccess')(function* (
   yield* unrequiring(
     Iam.AccessPermit(logicalId, {
       parentId: identity.groupId,
-      resourceId: bucketId,
+      // A permit target is polymorphic (its own nominal brand): convert the
+      // concrete bucket id explicitly instead of leaking a plain string.
+      resourceId: Output.map(bucketId, (value) => IamIds.AccessPermitResourceId.make(value)),
       role,
     }),
   )

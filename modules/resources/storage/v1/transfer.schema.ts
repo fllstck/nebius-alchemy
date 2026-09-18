@@ -1,13 +1,18 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Transfer Props (user input)
 // ---------------------------------------------------------------------------
 
 const AccessKeyCredentialsSchema = Schema.Struct({
+  /**
+   * The AWS-compatible access key ID (SID *value*, e.g. `AKIA…`) of the source
+   * or destination bucket's credentials — NOT a Nebius resource ID.
+   */
   accessKeyId: Schema.String,
   secretAccessKey: Schema.String,
 })
@@ -73,7 +78,7 @@ const StopConditionSchema = Schema.Union([
 ])
 
 export const TransferPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   source: TransferSourceSchema,
@@ -95,12 +100,9 @@ export const validateTransferProps = Validation.makeValidateProps(TransferPropsS
 // Transfer Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const TransferId = Schema.String.pipe(Schema.brand('TransferId'))
-export type TransferId = typeof TransferId.Type
-
 export const TransferAttributesSchema = Schema.Struct({
-  id: TransferId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.TransferId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   state: Schema.String,
   suspensionState: Schema.optional(Schema.String),

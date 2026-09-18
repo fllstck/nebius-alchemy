@@ -1,7 +1,9 @@
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamIds from '../../iam/v1/ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Domain-specific validations (TypeScript can't catch these)
@@ -113,6 +115,7 @@ const LifecycleConfigurationSchema = Schema.Struct({
 })
 
 const CORSRuleSchema = Schema.Struct({
+  /** Optional rule identifier. NOT branded: opaque per-rule label, not a resource ID. */
   id: Schema.optional(Schema.String),
   allowedHeaders: Schema.optional(Schema.Array(Schema.String)),
   allowedOrigins: Schema.optional(Schema.Array(Schema.String)),
@@ -128,7 +131,8 @@ const CORSConfigurationSchema = Schema.Struct({
 const BucketPolicy_RuleSchema = Schema.Struct({
   paths: Schema.Array(Schema.String),
   roles: Schema.Array(Schema.String),
-  groupId: Schema.optional(Schema.String),
+  /** IAM group granted the rule's roles. */
+  groupId: Schema.optional(IamIds.GroupId),
   anonymous: Schema.optional(
     Schema.Struct({
       read: Schema.optional(Schema.Boolean),
@@ -142,7 +146,7 @@ const BucketPolicySchema = Schema.Struct({
 })
 
 export const BucketPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   maxSizeBytes: Schema.optional(Schema.BigInt),
@@ -174,12 +178,9 @@ export type BucketProps = typeof BucketPropsSchema.Type
 
 export const validateBucketProps = Validation.makeValidateProps(BucketPropsSchema)
 
-export const BucketId = Schema.String.pipe(Schema.brand('BucketId'))
-export type BucketId = typeof BucketId.Type
-
 export const BucketAttributesSchema = Schema.Struct({
-  id: BucketId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.BucketId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   versioningPolicy: Schema.Union([Schema.Literal('DISABLED'), Schema.Literal('ENABLED'), Schema.Literal('SUSPENDED')]),

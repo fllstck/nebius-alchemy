@@ -1,7 +1,7 @@
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
-import * as ZoneSchema from './zone.schema.ts'
+import * as Ids from './ids.ts'
 
 // ---------------------------------------------------------------------------
 // Record Props (user input)
@@ -21,7 +21,7 @@ const RecordTypeSchema = Schema.Union([
 
 export const RecordPropsSchema = Schema.Struct({
   /** Parent zone ID. */
-  parentId: ZoneSchema.ZoneId,
+  parentId: Ids.ZoneId,
   /** Zone-relative name, e.g. "www" or "@" for apex. */
   relativeName: Schema.String,
   /** Record type. */
@@ -46,12 +46,9 @@ export const validateRecordProps = Validation.makeValidateProps(RecordPropsSchem
 // Record Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const RecordId = Schema.String.pipe(Schema.brand('RecordId'))
-export type RecordId = typeof RecordId.Type
-
 export const RecordAttributesSchema = Schema.Struct({
-  id: RecordId,
-  parentId: ZoneSchema.ZoneId,
+  id: Ids.RecordId,
+  parentId: Ids.ZoneId,
   name: Schema.String,
   relativeName: Schema.optional(Schema.String),
   type: RecordTypeSchema,

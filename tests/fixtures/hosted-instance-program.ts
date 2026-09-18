@@ -23,6 +23,8 @@ import * as HttpServerResponse from 'effect/unstable/http/HttpServerResponse'
 import { createHash } from 'node:crypto'
 import { S3Client } from '@bradenmacdonald/s3-lite-client'
 import { NebiusInstance } from '@fllstck/nebius-alchemy/resources/compute/v1/instance.ts'
+import { ServiceAccountId } from '@fllstck/nebius-alchemy/resources/iam/v1/ids.ts'
+import { SubnetId } from '@fllstck/nebius-alchemy/resources/vpc/v1/ids.ts'
 import { NebiusEndpoint } from '@fllstck/nebius-alchemy/resources/ai/v1/endpoint.ts'
 import {
   ChatCompletions,
@@ -164,7 +166,12 @@ export default NebiusInstance(
     )
     return {
       main: import.meta.url,
-      serviceAccountId,
+      // Branded at the boundary: these are read from the shipped env, where an
+      // empty value is the "not shipped" fallback (props are validated on the
+      // VM even though no API call is made there). `ServiceAccountId.make('')`
+      // would throw — its `serviceaccount-` refinement rejects the empty string
+      // — hence the explicit empty arm (the props schema accepts it too).
+      serviceAccountId: serviceAccountId === '' ? '' : ServiceAccountId.make(serviceAccountId),
       resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
       bootDisk: {
         attachMode: 'READ_WRITE',
@@ -182,7 +189,7 @@ export default NebiusInstance(
           },
         },
       },
-      networkInterfaces: [{ subnetId, name: 'eth0', ipAddress: { allocationId: '' } }],
+      networkInterfaces: [{ subnetId: SubnetId.make(subnetId), name: 'eth0', ipAddress: { allocationId: '' } }],
       port: 3000,
       // The shipped env file carries this — the program echoes it back so the
       // integration test can assert the env landed on the VM.

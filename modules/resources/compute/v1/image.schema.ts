@@ -1,8 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Image Props (user input)
@@ -42,7 +42,7 @@ const exactlyOneImageSource = Schema.makeFilter(
 )
 
 export const ImagePropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** Human-readable description of the image. */
@@ -79,7 +79,7 @@ export const validateImageProps = Validation.makeValidateProps(ImagePropsSchema)
 
 export const ImageAttributesSchema = Schema.Struct({
   id: Ids.ImageId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   description: Schema.optional(Schema.String),

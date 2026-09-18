@@ -4,6 +4,8 @@ import * as Path from 'effect/Path'
 import { NodeFileSystem } from '@effect/platform-node'
 import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as InstanceSchema from '../../../../modules/resources/compute/v1/instance.schema.ts'
+import { ServiceAccountId } from '../../../../modules/resources/iam/v1/ids.ts'
+import { SubnetId } from '../../../../modules/resources/vpc/v1/ids.ts'
 
 // Slow by nature: bundling the fixture through rolldown AND booting a real
 // `bun` process, then polling until it serves. ~2.7s locally, but >5s on a
@@ -13,10 +15,10 @@ import * as InstanceSchema from '../../../../modules/resources/compute/v1/instan
 // code). Same reasoning as INTEGRATION_TIMEOUT_MS in tests/helpers/gate.ts.
 test('bundle + locally boot the hosted fixture', async () => {
   const props = {
-    serviceAccountId: 'sa-x',
+    serviceAccountId: ServiceAccountId.make('serviceaccount-x'),
     resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
     bootDisk: { attachMode: 'READ_WRITE', managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 10 } } },
-    networkInterfaces: [{ subnetId: 'subnet-x', name: 'eth0' }],
+    networkInterfaces: [{ subnetId: SubnetId.make('subnet-x'), name: 'eth0' }],
     main: new URL('../../../fixtures/hosted-instance-program.ts', import.meta.url).href,
     port: 3000,
   } as InstanceSchema.InstanceProps

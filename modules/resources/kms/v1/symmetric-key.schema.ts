@@ -1,7 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // SymmetricKey Props (user input)
@@ -25,7 +26,7 @@ const isValidRotationPeriodSeconds = Schema.makeFilter(
 )
 
 export const SymmetricKeyPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   description: Schema.optional(Schema.String),
@@ -51,12 +52,9 @@ export const validateSymmetricKeyProps = Validation.makeValidateProps(SymmetricK
 // SymmetricKey Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const SymmetricKeyId = Schema.String.pipe(Schema.brand('SymmetricKeyId'))
-export type SymmetricKeyId = typeof SymmetricKeyId.Type
-
 export const SymmetricKeyAttributesSchema = Schema.Struct({
-  id: SymmetricKeyId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.SymmetricKeyId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Record(Schema.String, Schema.String),
   description: Schema.String,

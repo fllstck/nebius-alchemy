@@ -1,8 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Subnet Props (user input)
@@ -31,7 +31,7 @@ const IPv4PublicSubnetPoolsSchema = Schema.Struct({
 })
 
 export const SubnetPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   networkId: Ids.NetworkId,
@@ -59,7 +59,7 @@ const SubnetAssociatedRouteTableSchema = Schema.Struct({
 
 export const SubnetAttributesSchema = Schema.Struct({
   id: Ids.SubnetId,
-  parentId: ProjectSchema.ProjectId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   networkId: Ids.NetworkId,

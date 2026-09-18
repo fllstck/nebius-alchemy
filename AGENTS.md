@@ -67,27 +67,42 @@ An identifier that names a schema entity **MUST** be the entity's brand, never a
 - **MUST** brand every ID-valued prop **and** attribute, on the input and the output side
   of a resource. `nvlInstanceGroupId: Schema.optional(NVLInstanceGroupId)`,
   `sourceDiskId: Ids.DiskId`, `serviceAccountId: ServiceAccountSchema.ServiceAccountId`.
-- **MUST** add a brand for a new resource/entity in the service's `ids.ts`
-  (`compute/v1/ids.ts`, `vpc/v1/ids.ts`, `ai/v1/ids.ts`) before wiring its provider, so
-  parent references never type-check as plain strings.
-- A field that references a **polymorphic** entity (the permit target of `iam/v1/access-permit`,
-  the member of `iam/v1/group-membership`, a KMS key that may be symmetric *or* asymmetric)
-  **MUST** get its own nominal brand rather than an existing resource's brand — the
-  precedent is the local `KmsKeyId` in `mysterybox/v1/secret.schema.ts`.
+- **MUST** declare brands in **one `ids.ts` per service version**
+  (`compute/v1/ids.ts`, `iam/v1/ids.ts`, `vpc/v1/ids.ts`, …) — never inline in a resource
+  schema, so there is exactly one place to look. A file's own service ids import as
+  `Ids`, another service's as `<Pkg>[Vn]Ids` (`IamIds`, `IamV2Ids`, `VpcIds`, `MysteryboxIds`, …).
+- **MUST** add a brand for a new resource/entity **before** wiring its provider, so parent
+  references never type-check as plain strings.
+- A field that references a **polymorphic** entity takes its own brand — either a
+  **nominal brand** when the target set is open (the permit target of
+  `iam/v1/access-permit`, a KMS key that may be symmetric *or* asymmetric — `KmsKeyId`), or
+  a **union of the concrete brands** when the proto closes the set (the member of
+  `iam/v1/group-membership`, closed by `GroupMemberKind.Kind`). Prefer the union when it
+  applies: a nominal brand over a closed set forces an `Output.map(…)` conversion at every
+  call site for no extra safety.
+- A caller holding a concrete brand converts explicitly at the boundary:
+  `Output.map(bucket.id, (value) => AccessPermitResourceId.make(value))`.
+- `Schema.brand` refinements run in `.make()` too: a field whose **empty string is a
+  meaningful sentinel** (`compute/v1/instance.serviceAccountId`, where `''` means "no
+  service account") **MUST** be modelled as a union with `Schema.Literal('')`, otherwise the
+  realistic values (`''` from a `Config.withDefault('')`, or a real `serviceaccount-…` id)
+  cannot both decode.
 - A value that is **not** a Nebius resource identifier MUST NOT be branded: external
-  identifiers (a federated IdP subject, an AWS-format access-key SID, a CORS rule id, an
-  OpenAI-compatible completion id), guest-side names (`deviceId`), and sentinels such as
-  the `''` = auto-allocate `ipAddress.allocationId`. Leave those as `Schema.String` with a
-  doc comment saying why.
+  identifiers (a federated IdP subject, an AWS-format access-key SID such as
+  `awsAccessKeyId`/the S3 `accessKeyId` credential — *not* the `AccessKey` resource id, a
+  CORS rule id, an OpenAI-compatible completion id), guest-side names (`deviceId`), and
+  sentinels such as the `''` = auto-allocate `ipAddress.allocationId`. Leave those as
+  `Schema.String` with a doc comment saying why.
 - Consequence, accepted: branded props reject string literals in typed callers. Get IDs
-  from resource outputs; when a literal is unavoidable, cast at the call site (the codebase
-  already does: `examples/vpc.ts`, `examples/storage-async.bindings.ts`) and say where the
-  ID came from.
+  from resource outputs; when a literal is unavoidable (env-read ids, test fixtures), brand
+  it explicitly at that boundary — `.make(value)` for a literal, an explicit empty arm for a
+  possibly-empty one. The package re-exports the brands as **values**, so
+  `Nebius.iam.ServiceAccountId.make(…)` works for consumers.
 
-Audit status: 35 bare-`Schema.String` ID candidates across `iam`, `compute`, `ai`,
-`storage`, `vpc` (`bun tools/schema-conformance.ts` prints the live list). The full
-classification — apply / new brand / keep unbranded / polymorphic — is in TASKS.md
-§"ID1 — Branded IDs".
+Audit status: casing and branding conformance are both re-checkable with
+`bun tools/schema-conformance.ts` (exit 1 on a casing deviation; it also prints the
+bare-string ID candidates). 14 remain, and every one of them is an approved exception from
+the list above — the full classification lives in TASKS.md §"ID1 — Branded IDs".
 
 ### Vendored repos
 

@@ -13,8 +13,8 @@ import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as AuthPublicKeySchema from './auth-public-key.schema.ts'
-import * as ServiceAccountSchema from './service-account.schema.ts'
 import * as Factory from '../../factory.ts'
+import * as Ids from './ids.ts'
 
 // ----- RESOURCE TYPES
 
@@ -35,7 +35,7 @@ const toFriendlyAttributes = (
     rawResource: raw,
     resourceSchema: NebiusAuthPublicKeySchema.AuthPublicKey,
   })
-  const accountId = (raw.spec?.account?.serviceAccount?.id || '') as unknown as ServiceAccountSchema.ServiceAccountId
+  const accountId = (raw.spec?.account?.serviceAccount?.id || '') as unknown as Ids.ServiceAccountId
   return { ...base, accountId }
 }
 

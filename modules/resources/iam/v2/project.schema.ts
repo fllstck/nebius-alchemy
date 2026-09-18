@@ -2,9 +2,10 @@ import * as RegionsSchema from '../../regions.schema.ts'
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
 
 export const ProjectPropsSchema = Schema.Struct({
-  parentId: Schema.optional(Schema.String),
+  parentId: Schema.optional(Ids.TenantId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   region: RegionsSchema.RegionSchema,
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -18,17 +19,9 @@ export type ProjectProps = typeof ProjectPropsSchema.Type
 
 export const validateProjectProps = Validation.makeValidateProps(ProjectPropsSchema)
 
-export const ProjectId = Schema.String.check(
-  Validation.isResourceId('project-', 'Project'),
-).pipe(Schema.brand('ProjectId'))
-export type ProjectId = typeof ProjectId.Type
-
-export const TenantId = Schema.String.pipe(Schema.brand('TenantId'))
-export type TenantId = typeof TenantId.Type
-
 export const ProjectAttributesSchema = Schema.Struct({
-  id: ProjectId,
-  parentId: Schema.String,
+  id: Ids.ProjectId,
+  parentId: Ids.TenantId,
   name: Schema.String,
   region: RegionsSchema.RegionSchema,
   state: Schema.Union([

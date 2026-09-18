@@ -1,7 +1,7 @@
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../validation.ts'
-import * as SecretSchema from './secret.schema.ts'
+import * as Ids from './ids.ts'
 
 // ---------------------------------------------------------------------------
 // SecretVersion Props (user input)
@@ -14,7 +14,7 @@ const PayloadEntrySchema = Schema.Struct({
 
 export const SecretVersionPropsSchema = Schema.Struct({
   /** Parent secret ID. */
-  parentId: SecretSchema.SecretId,
+  parentId: Ids.SecretId,
   name: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   description: Schema.optional(Schema.String),
@@ -32,12 +32,9 @@ export const validateSecretVersionProps = Validation.makeValidateProps(SecretVer
 // SecretVersion Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const SecretVersionId = Schema.String.pipe(Schema.brand('SecretVersionId'))
-export type SecretVersionId = typeof SecretVersionId.Type
-
 export const SecretVersionAttributesSchema = Schema.Struct({
-  id: SecretVersionId,
-  parentId: SecretSchema.SecretId,
+  id: Ids.SecretVersionId,
+  parentId: Ids.SecretId,
   name: Schema.String,
   description: Schema.String,
   state: Schema.String,

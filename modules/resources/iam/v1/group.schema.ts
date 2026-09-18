@@ -1,14 +1,15 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Group Props (user input)
 // ---------------------------------------------------------------------------
 
 export const GroupPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 })
@@ -21,12 +22,9 @@ export const validateGroupProps = Validation.makeValidateProps(GroupPropsSchema)
 // Group Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const GroupId = Schema.String.pipe(Schema.brand('GroupId'))
-export type GroupId = typeof GroupId.Type
-
 export const GroupAttributesSchema = Schema.Struct({
-  id: GroupId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.GroupId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   state: Schema.String,
   membersCount: Schema.Number,

@@ -43,6 +43,8 @@ import {
   ChatCompletionRequest,
 } from '@fllstck/nebius-alchemy/resources/ai/v1/bindings.schema.ts'
 import { NebiusInstance } from '@fllstck/nebius-alchemy/resources/compute/v1/instance.ts'
+import { ServiceAccountId } from '@fllstck/nebius-alchemy/resources/iam/v1/ids.ts'
+import { SubnetId } from '@fllstck/nebius-alchemy/resources/vpc/v1/ids.ts'
 
 /**
  * The served model's name. vLLM rejects a request whose `model` differs from the
@@ -95,7 +97,12 @@ export default NebiusInstance(
     return {
       main: import.meta.url,
       port: 3000,
-      serviceAccountId,
+      // Branded at the boundary — read from the shipped env, where `''` is the
+      // "not shipped" fallback (props are validated here on the VM too).
+      // `ServiceAccountId.make('')` would throw (its `serviceaccount-`
+      // refinement rejects the empty string), hence the explicit empty arm —
+      // which the props schema accepts.
+      serviceAccountId: serviceAccountId === '' ? '' : ServiceAccountId.make(serviceAccountId),
       resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
       bootDisk: {
         attachMode: 'READ_WRITE' as const,
@@ -111,7 +118,7 @@ export default NebiusInstance(
           },
         },
       },
-      networkInterfaces: [{ subnetId, name: 'eth0', ipAddress: { allocationId: '' } }],
+      networkInterfaces: [{ subnetId: SubnetId.make(subnetId), name: 'eth0', ipAddress: { allocationId: '' } }],
     }
   }),
 

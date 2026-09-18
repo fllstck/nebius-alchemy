@@ -29,6 +29,7 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import { S3Client, S3Errors } from '@bradenmacdonald/s3-lite-client'
 
 import * as Iam from '../../iam/index.ts'
+import * as IamIds from '../../iam/v1/ids.ts'
 import * as Storage from '../../storage/v1/index.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
 import * as StorageGrpc from '../../../api-client/storage.ts'
@@ -315,7 +316,8 @@ export const transformInstanceProps = Effect.fn('transformInstanceProps')(functi
         yield* unrequiring(
           Iam.AccessPermit(`${id}HostedFetchAccess`, {
             parentId: fetchGroup.id,
-            resourceId: bucketId,
+            // Polymorphic permit target — see `AccessPermitResourceId`.
+            resourceId: Output.map(bucketId, (value) => IamIds.AccessPermitResourceId.make(value)),
             role: 'storage.viewer',
           }),
         )

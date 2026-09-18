@@ -13,8 +13,8 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as StaticKeySchema from './static-key.schema.ts'
 import * as Factory from '../../factory.ts'
-import * as ServiceAccountSchema from './service-account.schema.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import * as Ids from './ids.ts'
 
 // ----- RESOURCE TYPES
 
@@ -38,7 +38,7 @@ const toFriendlyAttributes = (
   })
   // Extract serviceAccountId from the nested spec.account
   const serviceAccountId =
-    (rawKey.spec?.account?.serviceAccount?.id || '') as unknown as ServiceAccountSchema.ServiceAccountId
+    (rawKey.spec?.account?.serviceAccount?.id || '') as unknown as Ids.ServiceAccountId
   // The token (secretKey) is only available from the issue response, not from get.
   if (token) {
     return {

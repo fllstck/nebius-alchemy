@@ -1,7 +1,8 @@
 import * as Schema from 'effect/Schema'
-import * as ProjectSchema from '../../iam/v2/project.schema.ts'
 
 import * as Validation from '../../validation.ts'
+import * as Ids from './ids.ts'
+import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ---------------------------------------------------------------------------
 // AsymmetricKey Props (user input)
@@ -14,7 +15,7 @@ export const AsymmetricAlgorithmSchema = Schema.Union([
 ])
 
 export const AsymmetricKeyPropsSchema = Schema.Struct({
-  parentId: Schema.optional(ProjectSchema.ProjectId),
+  parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   description: Schema.optional(Schema.String),
@@ -30,12 +31,9 @@ export const validateAsymmetricKeyProps = Validation.makeValidateProps(Asymmetri
 // AsymmetricKey Attributes (output)
 // ---------------------------------------------------------------------------
 
-export const AsymmetricKeyId = Schema.String.pipe(Schema.brand('AsymmetricKeyId'))
-export type AsymmetricKeyId = typeof AsymmetricKeyId.Type
-
 export const AsymmetricKeyAttributesSchema = Schema.Struct({
-  id: AsymmetricKeyId,
-  parentId: ProjectSchema.ProjectId,
+  id: Ids.AsymmetricKeyId,
+  parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   labels: Schema.Record(Schema.String, Schema.String),
   description: Schema.String,
