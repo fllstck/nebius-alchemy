@@ -345,3 +345,26 @@ Use `make()` from `alchemy/Test/Bun` (imported as `AlchemyTestUtilities` in this
 repo's docs), and provide `Interaction` explicitly — `alchemy/Interaction`
 offers a non-interactive layer for this. Scripted prompts beat mocking the
 service.
+
+### Test the FIRST-RUN path with an isolated `HOME`
+
+`~/.alchemy` is derived from `HOME`, so pointing `HOME` at an empty directory is
+the only cheap way to exercise a machine with **no** profiles — with a real
+`HOME`, an existing profile masks the whole path:
+
+```bash
+HOME=/tmp/freshhome bun alchemy profile edit --add Nebius -c <entrypoint> --no-input
+```
+
+`--no-input` fails at the method-selection prompt, and **reaching that prompt is
+the assertion**: it proves the provider was discovered without demanding
+credentials. (This is how the 0.7.0 bootstrap bug was caught and later fixed.)
+
+To simulate a machine that has a profile but **no credentials yet**, create an
+empty profile and select it — an unknown `--profile` name fails earlier with
+`Profile … does not exist`, which tests something else:
+
+```bash
+bun alchemy profile create fresh-probe
+HOME=/tmp/freshhome bun alchemy profile edit --add Nebius --profile fresh-probe --no-input
+```

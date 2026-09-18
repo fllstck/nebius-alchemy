@@ -277,6 +277,32 @@ reader can tell a real leak from a pending one.
 **Rule of thumb:** "the destroy call returned" means *accepted*, not *gone*.
 Verify against a state field, not against list membership alone.
 
+## Budget a test for the whole LIFECYCLE, and validate it under the FULL suite
+
+Real-infra tests are not slow because a call is slow — they are slow because a
+lifecycle has several phases and one of them **polls**. Measured for
+`Nebius.iam.v2.Project` (2026-09-18, `eu-north1`):
+
+| Phase | Time |
+| --- | --- |
+| create | ~22 s |
+| region update | ~1.3 s |
+| delete (polls, logging `Still deleting … — 30s/60s elapsed`) | ~86 s |
+| **total** | **~110 s** |
+
+Two tests ran against `{ timeout: 120_000 }`. They **passed in isolation** and
+**timed out under the full suite** — which is not flakiness: concurrency stretches
+a margin that was never there. Raising the budget for those two (300 s) while
+leaving their fast siblings (e.g. `GetGroup / ListGroups`, 3.7 s) at 120 s is the
+right call; blanket-raising the tier is not.
+
+- Budget from the measured lifecycle, then add headroom for the slowest phase.
+- Validate a marginal budget by running the **full** suite, not the single file.
+- "Passes alone, fails in the suite" ⇒ suspect the budget before the code.
+
+(Deletion dominates because it is asynchronous and polled — see the soft-delete
+behaviour in `Post-destroy leak checks must tolerate ASYNC deletion` above.)
+
 ## Mock hosts need their discriminator fields
 
 When mocking a binding host, the `Type` field is load-bearing — **not**
