@@ -32,6 +32,52 @@ describe('Nebius.compute.v1.Disk', () => {
       const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
       expect(await runDiff(svc, { name: 'my-disk', sizeGibibytes: 20, type: 'NETWORK_SSD' }, { name: 'my-disk', sizeGibibytes: 10, type: 'NETWORK_SSD' })).toBeUndefined()
     })
+
+    // Create-only spec fields (a disk's content origin and encryption can't be
+    // changed). Before this, changing one planned an update that wrote nothing.
+    test('a source change replaces (generated name ⇒ create-first)', async () => {
+      const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
+      expect(
+        await runDiff(
+          svc,
+          { sizeGibibytes: 10, type: 'NETWORK_SSD', sourceImageId: 'image-b' },
+          { sizeGibibytes: 10, type: 'NETWORK_SSD', sourceImageId: 'image-a' },
+        ),
+      ).toEqual({ action: 'replace' })
+    })
+
+    test('a source change with a pinned name is delete-first', async () => {
+      const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
+      expect(
+        await runDiff(
+          svc,
+          { name: 'data', sizeGibibytes: 10, type: 'NETWORK_SSD', sourceSnapshotId: 'disksnapshot-b' },
+          { name: 'data', sizeGibibytes: 10, type: 'NETWORK_SSD', sourceSnapshotId: 'disksnapshot-a' },
+        ),
+      ).toEqual({ action: 'replace', deleteFirst: true })
+    })
+
+    test('changing diskEncryption replaces', async () => {
+      const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
+      expect(
+        await runDiff(
+          svc,
+          { sizeGibibytes: 10, type: 'NETWORK_SSD', diskEncryption: { type: 'DISK_ENCRYPTION_MANAGED' } },
+          { sizeGibibytes: 10, type: 'NETWORK_SSD' },
+        ),
+      ).toEqual({ action: 'replace' })
+    })
+
+    test('a parent change replaces (the resource cannot move projects)', async () => {
+      const svc = await resolveProvider(DiskModule.NebiusDisk.Provider, DiskModule.NebiusDiskProvider)
+      expect(
+        await runDiff(
+          svc,
+          { parentId: 'project-2', name: 'data', sizeGibibytes: 10, type: 'NETWORK_SSD' },
+          { parentId: 'project-1', name: 'data', sizeGibibytes: 10, type: 'NETWORK_SSD' },
+        ),
+      ).toEqual({ action: 'replace' })
+    })
   })
 
   describe('validation', () => {

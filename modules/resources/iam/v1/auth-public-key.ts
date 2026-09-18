@@ -144,6 +144,6 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
     yield* AuthPublicKeySchema.validateAuthPublicKeyProps(news)
     if (news.accountId !== olds?.accountId) return Factory.replaceKeepingName(news)
     if (news.data !== olds?.data) return Factory.replaceKeepingName(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

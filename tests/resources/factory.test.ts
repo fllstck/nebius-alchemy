@@ -6,7 +6,7 @@ import * as Layer from 'effect/Layer'
 
 import type { GrpcError, GrpcDeadlineExceededError } from '../../modules/api-client/grpc-utils.ts'
 import { GrpcError as GrpcErrorCtor } from '../../modules/api-client/grpc-utils.ts'
-import { makeTenantScopedList, nameChangeRequiresReplace } from '../../modules/resources/factory.ts'
+import { identityChangeRequiresReplace, makeTenantScopedList } from '../../modules/resources/factory.ts'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -216,20 +216,40 @@ describe('isDefaultResource filtering', () => {
   })
 })
 
-describe('nameChangeRequiresReplace', () => {
+describe('identityChangeRequiresReplace', () => {
   test('returns replace when names differ', () => {
-    expect(nameChangeRequiresReplace({ name: 'foo' }, { name: 'bar' })).toEqual({ action: 'replace' })
+    expect(identityChangeRequiresReplace({ name: 'b' }, { name: 'a' })).toEqual({ action: 'replace' })
   })
 
-  test('returns undefined when names match', () => {
-    expect(nameChangeRequiresReplace({ name: 'foo' }, { name: 'foo' })).toBeUndefined()
+  test('returns undefined when names and parents match', () => {
+    expect(
+      identityChangeRequiresReplace({ name: 'a', parentId: 'project-1' }, { name: 'a', parentId: 'project-1' }),
+    ).toBeUndefined()
   })
 
-  test('returns replace when olds is undefined', () => {
-    expect(nameChangeRequiresReplace({ name: 'foo' }, undefined)).toEqual({ action: 'replace' })
+  test('returns replace when the parent changes (a resource cannot be moved)', () => {
+    expect(
+      identityChangeRequiresReplace({ name: 'a', parentId: 'project-2' }, { name: 'a', parentId: 'project-1' }),
+    ).toEqual({ action: 'replace' })
+  })
+
+  test('ignores a parent that is only stated explicitly on one side', () => {
+    // `parentId` is optional and falls back to NEBIUS_PROJECT_ID at reconcile
+    // time, so `undefined → set` usually means "now written down", not "moved".
+    expect(identityChangeRequiresReplace({ name: 'a', parentId: 'project-1' }, { name: 'a' })).toBeUndefined()
+    expect(identityChangeRequiresReplace({ name: 'a' }, { name: 'a', parentId: 'project-1' })).toBeUndefined()
+  })
+
+  test('with no olds, a pinned name plans a replace and an unnamed one does not', () => {
+    // Pre-existing semantics (the deprecated helper behaved the same): a props
+    // name with nothing persisted is a change; no name at all is not.
+    expect(identityChangeRequiresReplace({ name: 'a' }, undefined)).toEqual({ action: 'replace' })
+    expect(identityChangeRequiresReplace({}, undefined)).toBeUndefined()
+    // A parent alone is never enough — nothing pinned, nothing to compare.
+    expect(identityChangeRequiresReplace({ parentId: 'project-1' }, undefined)).toBeUndefined()
   })
 
   test('returns replace when olds has a name but news does not', () => {
-    expect(nameChangeRequiresReplace({}, { name: 'foo' })).toEqual({ action: 'replace' })
+    expect(identityChangeRequiresReplace({}, { name: 'a' })).toEqual({ action: 'replace' })
   })
 })

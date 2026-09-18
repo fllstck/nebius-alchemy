@@ -135,6 +135,6 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* FedCertSchema.validateFederationCertificateProps(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

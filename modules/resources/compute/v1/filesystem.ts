@@ -139,6 +139,6 @@ export const NebiusFilesystemProvider: Layer.Layer<
     yield* FilesystemSchema.validateFilesystemProps(news)
     // type is immutable
     if (news.type !== olds?.type) return Factory.replaceKeepingName(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

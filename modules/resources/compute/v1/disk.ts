@@ -137,6 +137,19 @@ export const NebiusDiskProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* DiskSchema.validateDiskProps(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    // Create-only spec fields: a disk's content origin and encryption cannot be
+    // changed in place, so any change REPLACES rather than planning an update
+    // that writes nothing (or that the API rejects). Same reasoning as the
+    // Instance's `gpuCluster`.
+    if (
+      news.sourceImageId !== olds?.sourceImageId ||
+      news.sourceImageFamily !== olds?.sourceImageFamily ||
+      news.sourceSnapshotId !== olds?.sourceSnapshotId ||
+      !AlchemyDiff.deepEqual(news.diskEncryption, olds?.diskEncryption)
+    ) {
+      return Factory.replaceKeepingName(news)
+    }
+
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

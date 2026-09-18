@@ -124,6 +124,6 @@ export const NebiusServiceAccountProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* ServiceAccountSchema.validateServiceAccountProps(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

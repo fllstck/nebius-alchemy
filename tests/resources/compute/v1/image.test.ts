@@ -1,9 +1,17 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Module from '../../../../modules/resources/compute/v1/image.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/image.schema.ts'
 import * as NebiusImageSchema from '../../../../schemas/nebius/compute/v1/image.ts'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import {
+  instanceIdLayer,
+  mockComputeLayer,
+  protoMetadata,
+  stackLayer,
+  testConfigLayer,
+} from '../../../helpers/mocks.ts'
+import { resolveProvider, runDiff, runEffect, runReconcile } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -40,6 +48,76 @@ describe('Nebius.compute.v1.Image', () => {
           { name: 'my-image', sourceDiskId: 'disk-abc123' },
         ),
       ).toEqual({ action: 'replace', deleteFirst: true })
+    })
+  })
+
+  describe('reconcile', () => {
+    const imageProto = (overrides: Partial<NebiusImageSchema.Image> = {}): NebiusImageSchema.Image => ({
+      metadata: protoMetadata('image-1', 'my-image', 'project-test-1'),
+      spec: NebiusImageSchema.ImageSpec.fromJSON({ type: 'NETWORK_SSD', sourceDiskId: 'disk-abc123' }),
+      ...overrides,
+    })
+
+    const layerFor = (live: NebiusImageSchema.Image, updated: Array<{ spec?: NebiusImageSchema.ImageSpec }>) =>
+      Effect.provide(
+        Layer.mergeAll(
+          mockComputeLayer({
+            image: {
+              get: () => Effect.succeed(live),
+              update: (req: { spec?: NebiusImageSchema.ImageSpec }) => {
+                updated.push(req)
+                return Effect.succeed(live)
+              },
+            },
+          }),
+          stackLayer,
+          testConfigLayer,
+          instanceIdLayer,
+        ),
+      )
+
+    const props = { name: 'my-image', sourceDiskId: 'disk-abc123', cpuArchitecture: 'AMD64' as const }
+
+    test('a cpuArchitecture change is applied (regression: it planned an update that wrote nothing)', async () => {
+      const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
+      const updated: Array<{ spec?: NebiusImageSchema.ImageSpec }> = []
+
+      const live = imageProto({
+        spec: NebiusImageSchema.ImageSpec.fromJSON({ sourceDiskId: 'disk-abc123', cpuArchitecture: 'ARM64' }),
+      })
+      await runReconcile(svc, props, { id: 'image-1' }, undefined, layerFor(live, updated))
+
+      expect(updated).toHaveLength(1)
+    })
+
+    test('a recommendedPlatforms change is applied', async () => {
+      const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
+      const updated: Array<{ spec?: NebiusImageSchema.ImageSpec }> = []
+
+      const live = imageProto({
+        spec: NebiusImageSchema.ImageSpec.fromJSON({ sourceDiskId: 'disk-abc123', recommendedPlatforms: ['gpu-h200-sxm'] }),
+      })
+      await runReconcile(
+        svc,
+        { ...props, recommendedPlatforms: ['cpu-d3'] },
+        { id: 'image-1' },
+        undefined,
+        layerFor(live, updated),
+      )
+
+      expect(updated).toHaveLength(1)
+    })
+
+    test('an unchanged image is a noop', async () => {
+      const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
+      const updated: Array<{ spec?: NebiusImageSchema.ImageSpec }> = []
+
+      const live = imageProto({
+        spec: NebiusImageSchema.ImageSpec.fromJSON({ sourceDiskId: 'disk-abc123', cpuArchitecture: 'AMD64' }),
+      })
+      await runReconcile(svc, props, { id: 'image-1' }, undefined, layerFor(live, updated))
+
+      expect(updated).toHaveLength(0)
     })
   })
 

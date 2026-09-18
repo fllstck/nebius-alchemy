@@ -196,6 +196,15 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     // Service type change requires replace (keys are immutable)
     if (news.service !== olds?.service) return Factory.replaceSameGeneratedName()
 
+    // Issue-only API: there is no update RPC (the one-time token is captured at
+    // issue time in `precreate`), so `description`/`expiresAt` can only change by
+    // REISSUING the key. Replacing makes that visible in the plan instead of
+    // silently ignoring the change; delete-first ordering (the physical name is
+    // `sk-<logicalId>`) is what keeps the swap legal.
+    if (news.description !== olds?.description || String(news.expiresAt) !== String(olds?.expiresAt)) {
+      return Factory.replaceSameGeneratedName()
+    }
+
     return undefined
   }),
 })

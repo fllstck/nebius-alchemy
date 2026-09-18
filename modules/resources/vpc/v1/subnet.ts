@@ -137,7 +137,7 @@ export const NebiusSubnetProvider: Layer.Layer<
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* SubnetSchema.validateSubnetProps(news)
 
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
     // Spec-only change (parent and name unchanged): keep the identity — see
     // Factory.replaceKeepingName.
     if (news.networkId !== olds?.networkId) return Factory.replaceKeepingName(news)

@@ -159,6 +159,6 @@ export const NebiusGpuClusterProvider: Layer.Layer<
         if (news.infinibandFabric !== olds?.infinibandFabric) return Factory.replaceKeepingName(news)
 
         // A name change is create-first: a different physical name.
-        return Factory.nameChangeRequiresReplace(news, olds)
+        return Factory.identityChangeRequiresReplace(news, olds)
       }),
     })

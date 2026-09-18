@@ -162,6 +162,6 @@ export const NebiusTransferProvider: Layer.Layer<
     if (news.source !== olds?.source) return Factory.replaceKeepingName(news)
     if (news.destination !== olds?.destination) return Factory.replaceKeepingName(news)
     if (news.overwriteStrategy !== olds?.overwriteStrategy) return Factory.replaceKeepingName(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

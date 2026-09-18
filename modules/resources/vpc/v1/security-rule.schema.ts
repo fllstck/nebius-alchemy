@@ -77,7 +77,10 @@ export const SecurityRulePropsSchema = Schema.Struct({
   type: Schema.optional(Schema.Union([Schema.Literal('STATEFUL'), Schema.Literal('STATELESS')])),
   ingress: Schema.optional(RuleIngressSchema),
   egress: Schema.optional(RuleEgressSchema),
-  description: Schema.optional(Schema.String),
+  // NOTE: no `description`. `nebius.vpc.v1.SecurityRuleSpec`/`Status` have no
+  // description field at all (verified: 0 occurrences in the generated schema),
+  // so the prop this used to declare was silently dropped on create and always
+  // `undefined` in the attributes. Removed rather than documented dead.
 }).check(securityRuleValid)
 
 export type SecurityRuleProps = typeof SecurityRulePropsSchema.Type
@@ -102,7 +105,6 @@ export const SecurityRuleAttributesSchema = Schema.Struct({
   access: Schema.Union([Schema.Literal('ALLOW'), Schema.Literal('DENY')]),
   priority: Schema.Finite,
   type: Schema.Union([Schema.Literal('STATEFUL'), Schema.Literal('STATELESS')]),
-  description: Schema.String,
   state: Schema.Union([Schema.Literal('CREATING'), Schema.Literal('READY'), Schema.Literal('DELETING')]),
   effectivePriority: Schema.Finite,
 })

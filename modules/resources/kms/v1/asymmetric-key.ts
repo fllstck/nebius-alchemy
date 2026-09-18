@@ -134,7 +134,7 @@ export const NebiusAsymmetricKeyProvider: Layer.Layer<
     yield* AsymmetricKeySchema.validateAsymmetricKeyProps(news)
 
     if (news.algorithm !== olds?.algorithm) return Factory.replaceKeepingName(news)
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
 
     return undefined
   }),

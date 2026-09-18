@@ -171,7 +171,7 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     yield* SecurityRuleSchema.validateSecurityRuleProps(news)
 
     // Name is immutable — changing it requires a replace
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
     // Can't move a rule between security groups — must recreate
     if (news.parentId !== olds?.parentId) return { action: 'replace' }
     // access is immutable after creation

@@ -78,6 +78,38 @@ describe('Nebius.iam.v1.StaticKey', () => {
       const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
       expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toBeUndefined()
     })
+
+    // Issue-only API: no update RPC exists, so these can only change by
+    // reissuing. They used to be silently ignored.
+    test('a description change reissues the key (delete-first replace)', async () => {
+      const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
+      expect(
+        await runDiff(
+          svc,
+          { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY', description: 'rotated' },
+          { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY', description: 'original' },
+        ),
+      ).toEqual(deleteFirst)
+    })
+
+    test('an expiresAt change reissues the key (delete-first replace)', async () => {
+      const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
+      expect(
+        await runDiff(
+          svc,
+          {
+            serviceAccountId: 'serviceaccount-sa1',
+            service: 'OBSERVABILITY',
+            expiresAt: '2027-01-01T00:00:00Z',
+          },
+          {
+            serviceAccountId: 'serviceaccount-sa1',
+            service: 'OBSERVABILITY',
+            expiresAt: '2026-01-01T00:00:00Z',
+          },
+        ),
+      ).toEqual(deleteFirst)
+    })
   })
 
   describe('validation', () => {

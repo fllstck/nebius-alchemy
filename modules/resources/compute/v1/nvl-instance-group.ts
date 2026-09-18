@@ -180,6 +180,6 @@ export const NebiusNVLInstanceGroupProvider: Layer.Layer<
 
         // `size` is an in-place update (reconcile sends it) — nothing to plan.
         // A name change is create-first: a different physical name.
-        return Factory.nameChangeRequiresReplace(news, olds)
+        return Factory.identityChangeRequiresReplace(news, olds)
       }),
     })

@@ -142,7 +142,7 @@ export const NebiusRouteProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* RouteSchema.validateRouteProps(news)
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
     if (news.parentId !== olds?.parentId) return { action: 'replace' }
     // defaultEgressGateway is sticky-true: once enabled, it cannot be disabled
     if (

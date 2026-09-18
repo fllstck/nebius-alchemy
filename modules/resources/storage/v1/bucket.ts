@@ -47,7 +47,12 @@ const specDrifted = (current: NebiusBucketSchema.BucketSpec, desired: NebiusBuck
   current.defaultStorageClass !== desired.defaultStorageClass ||
   current.forceStorageClass !== desired.forceStorageClass ||
   current.objectAuditLogging !== desired.objectAuditLogging ||
-  !AlchemyDiff.deepEqual(current.lifecycleConfiguration, desired.lifecycleConfiguration) ||
+  // `specDeepEqual` here is DEFENSIVE, not a fixed bug: the props schema does not
+  // expose the int64 size thresholds (`objectSizeGreaterThanBytes`/`…LessThan`),
+  // so no props change can reach this today. It still matters — a live rule that
+  // carries a threshold (set out-of-band via the CLI) must be visible to the
+  // drift check, or the difference is lost in `deepEqual`'s canonicalization.
+  !ResourceUtils.specDeepEqual(current.lifecycleConfiguration, desired.lifecycleConfiguration) ||
   !AlchemyDiff.deepEqual(current.cors, desired.cors) ||
   !AlchemyDiff.deepEqual(current.bucketPolicy, desired.bucketPolicy)
 
@@ -155,6 +160,6 @@ export const NebiusBucketProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* BucketSchema.validateBucketProps(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

@@ -180,6 +180,48 @@ describe('Nebius.compute.v1.Instance', () => {
       ).toEqual(createFirst)
     })
 
+    test('a preemptible toggle requires a replace (the API cannot convert either way)', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      // Proto: "A preemptible VM cannot be converted to a regular VM or vice versa."
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, preemptible: { onPreemption: 'STOP' } },
+          { ...validInstanceProps },
+        ),
+      ).toEqual({ action: 'replace' })
+      // ...and removing it back is the same transition.
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps },
+          { ...validInstanceProps, preemptible: { onPreemption: 'STOP' } },
+        ),
+      ).toEqual({ action: 'replace' })
+    })
+
+    test('a preemptible change with a pinned name is delete-first', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, name: 'trainer', preemptible: { onPreemption: 'STOP' } },
+          { ...validInstanceProps, name: 'trainer' },
+        ),
+      ).toEqual({ action: 'replace', deleteFirst: true })
+    })
+
+    test('a parent change requires a replace (an instance cannot move projects)', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, parentId: 'project-2' },
+          { ...validInstanceProps, parentId: 'project-1' },
+        ),
+      ).toEqual({ action: 'replace' })
+    })
+
     // ── host-mode diff rules (Task 4) ─────────────────────────────────────
 
     test('host-mode toggle ON (main added) replaces', async () => {
@@ -269,6 +311,64 @@ describe('Nebius.compute.v1.Instance', () => {
       } finally {
         await rm(entry, { force: true })
       }
+    })
+  })
+
+  describe('spec drift (the convergence contract)', () => {
+    // The engine turns ANY props change a diff ignores into an `action: "update"`
+    // (Plan.ts: `diff ?? { havePropsChanged(olds, news) ? "update" : "noop" }`), so a
+    // field missing from `instanceSpecDrifted` plans an update that writes nothing.
+    // This case is exported precisely so the contract is testable.
+    const liveSpec = (overrides: Record<string, unknown> = {}) =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        serviceAccountId: 'serviceaccount-abc123',
+        bootDisk: { attachMode: 'READ_WRITE', managedDisk: { spec: { type: 'NETWORK_SSD', sizeGibibytes: '64' } } },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+        ...overrides,
+      })
+
+    const desiredFrom = (props: Record<string, unknown>) =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        serviceAccountId: 'serviceaccount-abc123',
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        bootDisk: { attachMode: 'READ_WRITE', managedDisk: { spec: { type: 'NETWORK_SSD', sizeGibibytes: '64' } } },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+        ...props,
+      })
+
+    test('an identical spec does not drift', () => {
+      const props = { serviceAccountId: 'serviceaccount-abc123' }
+      expect(Module.instanceSpecDrifted(liveSpec(), desiredFrom(props), props as never)).toBe(false)
+    })
+
+    test('a recoveryPolicy change drifts (was silently ignored)', () => {
+      const live = liveSpec({ recoveryPolicy: 'RECOVER' })
+      const desired = desiredFrom({ recoveryPolicy: 'FAIL' })
+      expect(Module.instanceSpecDrifted(live, desired, {} as never)).toBe(true)
+    })
+
+    test('a hostname change drifts (was silently ignored)', () => {
+      const live = liveSpec({ hostname: 'a' })
+      const desired = desiredFrom({ hostname: 'b' })
+      expect(Module.instanceSpecDrifted(live, desired, {} as never)).toBe(true)
+    })
+
+    test('the int64 boot-disk size is visible (specDeepEqual, not deepEqual)', () => {
+      const live = liveSpec()
+      const desired = NebiusInstanceSchema.InstanceSpec.fromJSON({
+        serviceAccountId: 'serviceaccount-abc123',
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        bootDisk: { attachMode: 'READ_WRITE', managedDisk: { spec: { type: 'NETWORK_SSD', sizeGibibytes: '128' } } },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+      })
+      expect(Module.instanceSpecDrifted(live, desired, {} as never)).toBe(true)
+    })
+
+    test('an omitted optional message the server filled in is NOT a drift', () => {
+      // "Guarded on the news side": no loop when the platform answers a default.
+      const live = liveSpec({ localDisks: { passthroughGroup: { requested: false } } })
+      expect(Module.instanceSpecDrifted(live, desiredFrom({}), {} as never)).toBe(false)
     })
   })
 

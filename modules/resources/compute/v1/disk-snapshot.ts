@@ -129,6 +129,6 @@ export const NebiusDiskSnapshotProvider: Layer.Layer<
     yield* DiskSnapshotSchema.validateDiskSnapshotProps(news)
     // sourceDiskId is immutable
     if (news.sourceDiskId !== olds?.sourceDiskId) return Factory.replaceKeepingName(news)
-    return Factory.nameChangeRequiresReplace(news, olds)
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

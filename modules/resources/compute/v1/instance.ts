@@ -229,6 +229,46 @@ export const hostedSpecInput = (news: InstanceSchema.InstanceProps, userData: st
 const gpuClusterChanged = (news: { gpuCluster?: { id?: string } }, olds?: { gpuCluster?: { id?: string } }): boolean =>
   (news.gpuCluster?.id ?? '') !== (olds?.gpuCluster?.id ?? '')
 
+/**
+ * Which spec fields an in-place update converges.
+ *
+ * The engine plans an `action: "update"` for **any** props change a `diff`
+ * ignores (`Plan.ts`: `diff ?? { action: havePropsChanged(olds, news) ? "update" : "noop" }`),
+ * so a field missing from this list is a change that plans an update and then
+ * writes nothing — exactly how `gpuCluster` behaved before it was fixed. Search
+ * that guard: this list IS the convergence contract for the Instance.
+ *
+ * Deliberately absent: `gpuCluster` (create-only → the diff replaces) and
+ * `preemptible` (cannot be toggled → the diff replaces).
+ *
+ * Exported for unit tests. The "guarded on the news side" entries exist because
+ * the platform may answer an omitted optional message with a default —
+ * enforcing them unconditionally would loop updates.
+ */
+export const instanceSpecDrifted = (
+  live: NebiusInstanceSchema.Instance['spec'],
+  desired: NebiusInstanceSchema.InstanceSpec,
+  news: InstanceSchema.InstanceProps,
+): boolean => {
+  if (!live) return false
+  return (
+    !AlchemyDiff.deepEqual(live.resources, desired.resources) ||
+    !ResourceUtils.specDeepEqual(live.bootDisk, desired.bootDisk) ||
+    !AlchemyDiff.deepEqual(live.networkInterfaces, desired.networkInterfaces) ||
+    !ResourceUtils.specDeepEqual(live.secondaryDisks, desired.secondaryDisks) ||
+    !AlchemyDiff.deepEqual(live.filesystems, desired.filesystems) ||
+    live.nvlInstanceGroupId !== desired.nvlInstanceGroupId ||
+    (news.localDisks !== undefined && !AlchemyDiff.deepEqual(live.localDisks, desired.localDisks)) ||
+    (news.reservationPolicy !== undefined &&
+      !AlchemyDiff.deepEqual(live.reservationPolicy, desired.reservationPolicy)) ||
+    !AlchemyDiff.deepEqual(live.serviceAccountId, desired.serviceAccountId) ||
+    live.cloudInitUserData !== desired.cloudInitUserData ||
+    live.stopped !== desired.stopped ||
+    live.recoveryPolicy !== desired.recoveryPolicy ||
+    live.hostname !== desired.hostname
+  )
+}
+
 /** Map the protobuf instance-state enum to its friendly name. */
 const friendlyState = (state: unknown): string => {
   if (typeof state === 'number') return NebiusInstanceSchema.instanceStatus_InstanceStateToJSON(state)
@@ -422,27 +462,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     //    `gpuCluster` is absent from the list below BY DESIGN: it is create-only,
     //    so a difference is a `replace` (see `gpuClusterChangeRequiresReplace`),
     //    never an in-place update — the API rejects an update that tries.
-    const specDrifted = (() => {
-      if (!instance.spec) return false
-      return (
-        !AlchemyDiff.deepEqual(instance.spec.resources, desired.resources) ||
-        !ResourceUtils.specDeepEqual(instance.spec.bootDisk, desired.bootDisk) ||
-        !AlchemyDiff.deepEqual(instance.spec.networkInterfaces, desired.networkInterfaces) ||
-        !ResourceUtils.specDeepEqual(instance.spec.secondaryDisks, desired.secondaryDisks) ||
-        !AlchemyDiff.deepEqual(instance.spec.filesystems, desired.filesystems) ||
-        instance.spec.nvlInstanceGroupId !== desired.nvlInstanceGroupId ||
-        // Optional messages the platform may answer with a default: enforce them
-        // only when the prop is set, so a server-filled value cannot loop updates.
-        (news.localDisks !== undefined &&
-          !AlchemyDiff.deepEqual(instance.spec.localDisks, desired.localDisks)) ||
-        (news.reservationPolicy !== undefined &&
-          !AlchemyDiff.deepEqual(instance.spec.reservationPolicy, desired.reservationPolicy)) ||
-        !AlchemyDiff.deepEqual(instance.spec.serviceAccountId, desired.serviceAccountId) ||
-        instance.spec.cloudInitUserData !== desired.cloudInitUserData ||
-        instance.spec.stopped !== desired.stopped
-      )
-    })()
-    if (specDrifted) {
+    if (instanceSpecDrifted(instance.spec, desired, news)) {
       yield* session.note(`Updating Nebius.compute.v1.Instance (${instance.metadata!.name})`)
       // The compute API requires metadata.parentId on update (unlike VPC
       // resources) — omitting it yields `INVALID_ARGUMENT: ParentID is invalid`.
@@ -597,7 +617,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     // (Side-effect only: diff reads the raw props, not the validated defaults.)
     yield* InstanceSchema.validateInstanceProps(news)
 
-    const nameRequiresReplace = Factory.nameChangeRequiresReplace(news, olds)
+    const nameRequiresReplace = Factory.identityChangeRequiresReplace(news, olds)
 
     // Replace ordering: a NAME change is create-first (the new generation has a
     // different physical name), everything else keeps the identity — the parent
@@ -620,6 +640,14 @@ export const NebiusInstanceProvider: Layer.Layer<
     // so any change planned as "no changes" and the VM silently kept its
     // previous cluster.
     if (gpuClusterChanged(news, olds)) {
+      return Factory.replaceKeepingName(news)
+    }
+
+    // `preemptible` cannot be toggled on a live VM (proto: "A preemptible VM
+    // cannot be converted to a regular VM or vice versa. Once set, this field
+    // cannot be removed…") → replace, rather than an update the API rejects.
+    // Same both-sides comparison as above: adding OR removing it is the change.
+    if ((news.preemptible !== undefined) !== (olds?.preemptible !== undefined)) {
       return Factory.replaceKeepingName(news)
     }
 

@@ -249,17 +249,31 @@ export const makeTenantScopedList = <
 // ---------------------------------------------------------------------------
 
 /**
- * Returns `{ action: 'replace' }` if the resource name changed, since
- * Nebius resource names are immutable after creation.
+ * Returns `{ action: 'replace' }` when the resource's **identity** — its parent
+ * and its physical name — changed.
  *
- * Compose with additional checks via `??` for resources with other
- * immutable fields (algorithm, region, parentId, etc.).
+ * Both are immutable: Nebius names are unique *per parent*, and no update RPC
+ * moves a resource between parents. A change means a new resource.
+ *
+ * Create-first is correct in both cases (the replacement's identity differs), so
+ * this returns a plain replace — do not route it through
+ * {@link replaceKeepingName}.
+ *
+ * `parentId` is compared only when BOTH sides carry one: props leave it optional
+ * and fall back to `NEBIUS_PROJECT_ID` at reconcile time, so `undefined → set`
+ * usually means "now written down explicitly", not "moved". A genuine move that
+ * goes unplanned this way still surfaces loudly — reconcile sends
+ * `metadata.parentId` on every update, so the API rejects a cross-project
+ * update rather than silently keeping the resource where it was.
  */
-export const nameChangeRequiresReplace = (
-  news: { name?: string },
-  olds?: { name?: string },
+export const identityChangeRequiresReplace = (
+  news: { name?: string; parentId?: string },
+  olds?: { name?: string; parentId?: string },
 ): { action: 'replace' } | undefined =>
-  news.name !== olds?.name ? { action: 'replace' } : undefined
+  news.name !== olds?.name ||
+  (news.parentId !== undefined && olds?.parentId !== undefined && news.parentId !== olds.parentId)
+    ? { action: 'replace' }
+    : undefined
 
 // ---------------------------------------------------------------------------
 // Replace ordering — create-first vs delete-first
@@ -277,7 +291,7 @@ export const nameChangeRequiresReplace = (
 //
 //  1. `name` changed        → create-first. The new generation has a different
 //                             name, so the two coexist safely.
-//                             (`nameChangeRequiresReplace` above.)
+//                             (`identityChangeRequiresReplace` above.)
 //  2. parent changed        → create-first. Different parent, so the identity
 //                             differs even when the name is reused (Nebius
 //                             uniqueness is per-parent).

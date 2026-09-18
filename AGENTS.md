@@ -36,6 +36,44 @@ These rules are hard requirements. Violations must be corrected immediately.
   their siblings still compare. `specDeepEqual` normalizes Longs to their decimal string
   first; tests pin both behaviours in `tests/resources/utilities.test.ts`.
 
+### Convergence — every prop must be planned, reconciled, or declared
+
+A provider only applies a change if one of two places looks at the field:
+
+1. **`diff`** — decides `replace` vs in-place. (The framework picks up the rest: Plan.ts
+   turns *any* props change a diff ignores into `action: "update"` via
+   `diff ?? { action: havePropsChanged(olds, news) ? "update" : "noop" }`.)
+2. **`reconcile`'s drift list** — what an in-place update actually writes.
+
+So a prop in **neither** plans an update that writes nothing, and the change is silently
+lost (it only lands later if some unrelated change happens to send a full desired spec —
+which every update does). That is how `gpuCluster` behaved, and how
+`instance.{recoveryPolicy, hostname}`, `disk.{sourceImageId, sourceImageFamily,
+ sourceSnapshotId, diskEncryption}`, `image.{cpuArchitecture, recommendedPlatforms}`,
+`security-rule.description` and `static-key.{description, expiresAt}` each behaved before
+the 2026-09-19 sweep.
+
+Every user-facing prop **MUST** be one of:
+
+- in the `diff` comparison list (with the ordering rule above), or
+- in `reconcile`'s drift list (then a change converges in place) — prefer this whenever the
+  field was already part of `desired`: adding it to the list changes *when* an update fires,
+  not the payload, so the API (not us) decides whether it is legal; or
+- planned as a **replace** when the API cannot change it (`preemptible`, `gpuCluster`,
+  a disk's content source, `description`/`expiresAt` on the issue-only `StaticKey`); the
+  plan makes it visible instead of silent; or
+- **declared**: documented as create-time-only, with a comment saying why. `labels` is the
+  one such field today — no update path sends labels, so a labels-only change is a no-op
+  until some other change rewrites the resource.
+
+And: **a prop that is not a wire field at all MUST be removed, not documented** — the dead
+`security-rule.description` (the proto has no such field) was dropped rather than kept as a
+silent no-op.
+
+Extract the drift list into a module-level, exported function (as `instanceSpecDrifted` does)
+when the reconcile body is too heavy to test through, so the convergence contract is
+directly unit-testable.
+
 ### Naming — schema casing, verbatim
 
 The generated protobuf TypeScript under `schemas/nebius/**` is the **single source of

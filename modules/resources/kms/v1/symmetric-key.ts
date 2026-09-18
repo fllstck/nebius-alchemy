@@ -157,7 +157,7 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
 
     // Algorithm is immutable — changing requires replace
     if (news.algorithm !== olds?.algorithm) return Factory.replaceKeepingName(news)
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
 
     return undefined
   }),

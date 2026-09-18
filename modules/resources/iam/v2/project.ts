@@ -138,7 +138,7 @@ export const NebiusProjectProvider: Layer.Layer<
     yield* ProjectSchema.validateProjectProps(news)
 
     // Name is immutable per proto — changing it requires a replace
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
 
     // region changes can be done in-place via update
     return undefined

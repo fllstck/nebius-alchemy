@@ -130,7 +130,7 @@ export const NebiusQuotaAllowanceProvider: Layer.Layer<
     yield* QuotaAllowanceSchema.validateQuotaAllowanceProps(news)
 
     // Identity is (name, region) — any change requires replace
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
     if (news.region !== olds?.region) return { action: 'replace' }
 
     return undefined

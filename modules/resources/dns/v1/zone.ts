@@ -129,7 +129,7 @@ export const NebiusZoneProvider: Layer.Layer<
     // (below) is create-first: a different domain means a different resource.
     if (news.domainName !== olds?.domainName) return Factory.replaceKeepingName(news)
     // Name change requires replace
-    if (news.name !== olds?.name) return { action: 'replace' }
+    if (Factory.identityChangeRequiresReplace(news, olds)) return { action: 'replace' }
 
     return undefined
   }),

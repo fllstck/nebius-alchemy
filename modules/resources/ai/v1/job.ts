@@ -143,7 +143,7 @@ export const NebiusJobProvider: Layer.Layer<
     delete oldsWithoutLabels.labels
 
     return (
-      Factory.nameChangeRequiresReplace(news, olds) ??
+      Factory.identityChangeRequiresReplace(news, olds) ??
       (AlchemyDiff.deepEqual(newsWithoutLabels, oldsWithoutLabels) ? undefined : Factory.replaceKeepingName(news))
     )
   }),
