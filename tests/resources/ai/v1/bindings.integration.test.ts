@@ -221,11 +221,12 @@ describe('Nebius.ai.v1 bindings — runtime client', () => {
       // oxlint-disable-next-line no-explicit-any — test harness: simulate the bundler fold
       ;(globalThis as any).__ALCHEMY_RUNTIME__ = true
       try {
-        // The contract call's `Worker` requirement survives at the type level
-        // (the Self tag matches only at runtime — same reason the storage test
-        // relies on stack.deploy's loose typing). Encapsulated cast.
+        // An empty endpoint stand-in: the deploy-time branch that reads
+        // `endpoint.publicEndpoints` is skipped by the `__ALCHEMY_RUNTIME__`
+        // fold above, so no attrs are ever touched. The cast is required —
+        // the parameter is an `Input<NebiusEndpoint>` and `{}` alone is not
+        // assignable to it.
         const chat = await Effect.runPromise(
-          // oxlint-disable-next-line no-explicit-any
           (Bindings.ChatCompletions({} as unknown as NebiusEndpoint).pipe(
             Effect.provide(Bindings.ChatCompletionsHttp),
             Effect.provide(mockSelf({ Type: 'Cloudflare.Worker', LogicalId: 'MockHost' })),
@@ -235,14 +236,7 @@ describe('Nebius.ai.v1 bindings — runtime client', () => {
                 NEBIUS_ENDPOINT_AUTH_TOKEN: 'layer-token',
               }),
             ),
-            // oxlint-disable-next-line no-explicit-any
-          ) as unknown as Effect.Effect<
-            (
-              request: BindingsSchema.ChatCompletionRequest,
-            ) => Effect.Effect<Bindings.ChatCompletionsResult, Bindings.AiError, never>,
-            never,
-            never
-          >),
+          )),
         )
         const result = await Effect.runPromise(chat(simpleRequest()))
         expect(result.stream).toBe(false)
@@ -269,18 +263,10 @@ describe('Nebius.ai.v1 bindings — runtime client', () => {
       // No WorkerEnvironment provided — the instance host reads `process.env`
       // (the shipped env file populates it via systemd EnvironmentFile).
       const chat = await Effect.runPromise(
-        // oxlint-disable-next-line no-explicit-any
         (Bindings.ChatCompletions({} as unknown as NebiusEndpoint).pipe(
           Effect.provide(Bindings.ChatCompletionsHttp),
           Effect.provide(mockSelf({ Type: 'Nebius.compute.v1.Instance', LogicalId: 'MockInstance' })),
-          // oxlint-disable-next-line no-explicit-any
-        ) as unknown as Effect.Effect<
-          (
-            request: BindingsSchema.ChatCompletionRequest,
-          ) => Effect.Effect<Bindings.ChatCompletionsResult, Bindings.AiError, never>,
-          never,
-          never
-        >),
+        )),
       )
       const result = await Effect.runPromise(chat(simpleRequest()))
       expect(result.stream).toBe(false)
