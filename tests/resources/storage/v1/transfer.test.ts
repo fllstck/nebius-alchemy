@@ -34,12 +34,14 @@ describe('Nebius.storage.v1.Transfer', () => {
   describe('diff', () => {
     test('source change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusTransfer.Provider, Module.NebiusTransferProvider)
-      expect(await runDiff(svc, { ...validTransferProps, source: { nebius: { region: 'eu-west1', bucketName: 'src-b' } } }, { ...validTransferProps, source: { nebius: { region: 'eu-west1', bucketName: 'src-a' } } })).toEqual({ action: 'replace' })
+      // Pinned name (`validTransferProps.name`) ⇒ delete-first: the replacement
+      // cannot be created while the old generation holds the name.
+      expect(await runDiff(svc, { ...validTransferProps, source: { nebius: { region: 'eu-west1', bucketName: 'src-b' } } }, { ...validTransferProps, source: { nebius: { region: 'eu-west1', bucketName: 'src-a' } } })).toEqual({ action: 'replace', deleteFirst: true })
     })
 
     test('overwriteStrategy change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusTransfer.Provider, Module.NebiusTransferProvider)
-      expect(await runDiff(svc, { ...validTransferProps, overwriteStrategy: 'IF_NEWER' }, { ...validTransferProps, overwriteStrategy: 'NEVER' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { ...validTransferProps, overwriteStrategy: 'IF_NEWER' }, { ...validTransferProps, overwriteStrategy: 'NEVER' })).toEqual({ action: 'replace', deleteFirst: true })
     })
 
     test('name change requires replace', async () => {

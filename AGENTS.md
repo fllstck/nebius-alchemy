@@ -104,6 +104,33 @@ Audit status: casing and branding conformance are both re-checkable with
 bare-string ID candidates). 14 remain, and every one of them is an approved exception from
 the list above — the full classification lives in TASKS.md §"ID1 — Branded IDs".
 
+### Replace ordering — create-first vs delete-first
+
+Alchemy's default replace is **create-first** (new generation created, then Phase-2 GC
+reclaims the old one). That is safe only while the two generations can coexist, so **every
+`{ action: 'replace' }` for a spec-only change MUST go through a `Factory` helper** — never
+return a bare one. A resource's identity is `(parent, physical name)`, which gives exactly
+three cases:
+
+| change | action | why |
+| `name` changed | create-first (`nameChangeRequiresReplace`) | different physical name |
+| parent changed | create-first | different parent — Nebius uniqueness is per-parent |
+| **spec-only**, name is `props.name ?? createPhysicalName(…)` | `Factory.replaceKeepingName(news)` | generated name is minted fresh per generation (the `InstanceId` is re-minted on replace) → create-first; a **pinned** `name` is reused → `deleteFirst` |
+| **spec-only**, name derived from the logical id (`ak-<id>`, `sk-<id>`) | `Factory.replaceSameGeneratedName()` | every generation asks for the same name → always `deleteFirst` |
+
+`deleteFirst` deletes the old generation inside this resource's own node, i.e. **before its
+dependents' nodes run** (apply order is dependency-first), so old dependents still hold the
+old id at that instant. That is fine while the API tolerates the dangling reference for that
+window; a parent whose API forbids it (a group that must be empty) needs a delete pre-check
+with an actionable error instead — providers **cannot** see their dependents (the lifecycle
+input has no `downstream`), so that check has to come from the API.
+
+**Invariant: every prop holding a foreign resource id MUST participate in `diff`.** The
+framework orders teardown, but it only *cascades* through what providers report: if a
+provider ignores such a prop, a parent's replacement changes the id, the dependent is never
+planned, and GC deletes the parent underneath it — silently. `gpuCluster` on the Instance
+was exactly this hole.
+
 ### Vendored repos
 
 - **Read-only**: Do NOT edit files under `repos/`

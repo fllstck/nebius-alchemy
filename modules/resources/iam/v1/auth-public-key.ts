@@ -142,8 +142,8 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* AuthPublicKeySchema.validateAuthPublicKeyProps(news)
-    if (news.accountId !== olds?.accountId) return { action: 'replace' }
-    if (news.data !== olds?.data) return { action: 'replace' }
+    if (news.accountId !== olds?.accountId) return Factory.replaceKeepingName(news)
+    if (news.data !== olds?.data) return Factory.replaceKeepingName(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

@@ -125,7 +125,9 @@ export const NebiusSecurityGroupProvider: Layer.Layer<
     yield* SecurityGroupSchema.validateSecurityGroupProps(news)
 
     if (news.name !== olds?.name) return { action: 'replace' }
-    if (news.networkId !== olds?.networkId) return { action: 'replace' }
+    // Spec-only change (parent and name unchanged): keep the identity — see
+    // Factory.replaceKeepingName.
+    if (news.networkId !== olds?.networkId) return Factory.replaceKeepingName(news)
 
     return undefined
   }),

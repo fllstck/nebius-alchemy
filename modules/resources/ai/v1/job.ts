@@ -144,7 +144,7 @@ export const NebiusJobProvider: Layer.Layer<
 
     return (
       Factory.nameChangeRequiresReplace(news, olds) ??
-      (AlchemyDiff.deepEqual(newsWithoutLabels, oldsWithoutLabels) ? undefined : { action: 'replace' })
+      (AlchemyDiff.deepEqual(newsWithoutLabels, oldsWithoutLabels) ? undefined : Factory.replaceKeepingName(news))
     )
   }),
 })

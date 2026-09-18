@@ -215,31 +215,19 @@ export const hostedSpecInput = (news: InstanceSchema.InstanceProps, userData: st
 
 /**
  * `InstanceSpec.gpuCluster` is create-only in the proto ("GPU cluster ID for
- * InfiniBand interconnect. Only settable at creation"): the update API cannot
- * move a VM between GPU clusters, so a change in either direction is a REPLACE.
- * That is also why `gpuCluster` is deliberately absent from `reconcile`'s drift
- * list below — an update there would ask the API to do the one thing it cannot.
+ * InfiniBand interconnect. Only settable at creation"), so a change in either
+ * direction is a REPLACE — which is also why the field is deliberately absent
+ * from `reconcile`'s drift list below: an update there would ask the API to do
+ * the one thing it cannot.
  *
- * Compared on BOTH sides, unlike the house "guarded on the news side" rule for
- * in-place spec fields: adding the cluster to or dropping it from an existing
- * instance is the same create-only transition. Before this check existed the
- * field was in NO comparison list, so any change planned as "no changes" and
- * the VM silently kept its previous cluster (see the probe in the tests).
- *
- * Returns a `deleteFirst` replace, unlike a name change (which stays
- * create-first because the replacement has a different physical name): the
- * physical name is UNCHANGED here, so the new generation cannot be created
- * while the old one still holds it. Nebius answers ALREADY_EXISTS, and this
- * provider's create-failure recovery would then `getByName`-adopt the OLD
- * instance — which Phase 2 GC would delete as the "replaced" generation.
+ * Unlike the house "guarded on the news side" rule for in-place spec fields,
+ * this compares BOTH sides: adding the cluster to or dropping it from an
+ * existing instance is the same transition. The caller decides the ordering
+ * (`Factory.replaceKeepingName`) because that depends on the name, not on this
+ * field.
  */
-const gpuClusterChangeRequiresReplace = (
-  news: { gpuCluster?: { id?: string } },
-  olds?: { gpuCluster?: { id?: string } },
-): { action: 'replace'; deleteFirst: true } | undefined =>
+const gpuClusterChanged = (news: { gpuCluster?: { id?: string } }, olds?: { gpuCluster?: { id?: string } }): boolean =>
   (news.gpuCluster?.id ?? '') !== (olds?.gpuCluster?.id ?? '')
-    ? { action: 'replace', deleteFirst: true }
-    : undefined
 
 /** Map the protobuf instance-state enum to its friendly name. */
 const friendlyState = (state: unknown): string => {
@@ -611,20 +599,33 @@ export const NebiusInstanceProvider: Layer.Layer<
 
     const nameRequiresReplace = Factory.nameChangeRequiresReplace(news, olds)
 
-    // Create-only spec fields replace (and delete-first — see the helper). This
-    // is checked before the name/host-mode branch so a combined change still
-    // gets the stricter ordering.
-    const gpuClusterReplacement = gpuClusterChangeRequiresReplace(news, olds)
-    if (gpuClusterReplacement) {
-      return gpuClusterReplacement
+    // Replace ordering: a NAME change is create-first (the new generation has a
+    // different physical name), everything else keeps the identity — the parent
+    // and the physical name — so a pinned `name` cannot be created while the old
+    // generation still holds it. `Factory.replaceKeepingName` encodes that
+    // (see its doc comment); a generated name is minted fresh per generation and
+    // stays create-first, which is what keeps the old VM alive until the
+    // replacement is up.
+    if (nameRequiresReplace) {
+      return { action: 'replace' }
+    }
+
+    // `gpuCluster` is create-only (`InstanceSpec.gpuCluster` — "GPU cluster ID
+    // for InfiniBand interconnect. Only settable at creation"): neither the
+    // update API nor reconcile's drift list can move a VM between clusters, so a
+    // change in either direction is a replace. Compared on BOTH sides, unlike
+    // the house "guarded on the news side" rule for in-place spec fields:
+    // adding the cluster to or dropping it from an existing instance is the same
+    // transition. Before this check existed the field was in NO comparison list,
+    // so any change planned as "no changes" and the VM silently kept its
+    // previous cluster.
+    if (gpuClusterChanged(news, olds)) {
+      return Factory.replaceKeepingName(news)
     }
 
     // Host-mode toggle (`main` presence change) → replace (EC2 hostModeChanged).
-    // NOTE: this replace is still create-first, which is unsafe for an instance
-    // with a user-pinned `name` (same hazard class as above) — tracked in
-    // TASKS.md §"same-name replace".
-    if (nameRequiresReplace || Boolean(olds?.main) !== Boolean(news.main)) {
-      return { action: 'replace' }
+    if (Boolean(olds?.main) !== Boolean(news.main)) {
+      return Factory.replaceKeepingName(news)
     }
 
     // Hosted runtime props / user user-data changes → in-place update

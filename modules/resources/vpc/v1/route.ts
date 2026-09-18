@@ -149,7 +149,7 @@ export const NebiusRouteProvider: Layer.Layer<
       olds?.nextHop?.defaultEgressGateway === true &&
       news.nextHop?.defaultEgressGateway === false
     )
-      return { action: 'replace' }
+      return Factory.replaceKeepingName(news)
     return undefined
   }),
 })

@@ -175,12 +175,12 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     // Can't move a rule between security groups — must recreate
     if (news.parentId !== olds?.parentId) return { action: 'replace' }
     // access is immutable after creation
-    if (news.access !== olds?.access) return { action: 'replace' }
+    if (news.access !== olds?.access) return Factory.replaceKeepingName(news)
     // priority is immutable after creation
-    if (news.priority !== olds?.priority) return { action: 'replace' }
+    if (news.priority !== olds?.priority) return Factory.replaceKeepingName(news)
     // ingress source (sourceCidrs) is immutable after creation
     if (!AlchemyDiff.deepEqual(news.ingress?.sourceCidrs, olds?.ingress?.sourceCidrs))
-      return { action: 'replace' }
+      return Factory.replaceKeepingName(news)
 
     return undefined
   }),

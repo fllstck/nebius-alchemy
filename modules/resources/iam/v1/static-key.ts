@@ -190,10 +190,11 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* StaticKeySchema.validateStaticKeyProps(news)
 
-    // Static keys can't move between service accounts
-    if (news.serviceAccountId !== olds?.serviceAccountId) return { action: 'replace' }
+    // Spec-only changes: the name is `sk-<logicalId>` on EVERY generation, so
+    // there is no fresh generated name to fall back on — always delete-first.
+    if (news.serviceAccountId !== olds?.serviceAccountId) return Factory.replaceSameGeneratedName()
     // Service type change requires replace (keys are immutable)
-    if (news.service !== olds?.service) return { action: 'replace' }
+    if (news.service !== olds?.service) return Factory.replaceSameGeneratedName()
 
     return undefined
   }),

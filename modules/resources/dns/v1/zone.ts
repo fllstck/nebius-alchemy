@@ -125,8 +125,9 @@ export const NebiusZoneProvider: Layer.Layer<
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* ZoneSchema.validateZoneProps(news)
 
-    // Domain name is immutable — changing it requires replace
-    if (news.domainName !== olds?.domainName) return { action: 'replace' }
+    // Domain name is immutable — changing it requires replace. The name change
+    // (below) is create-first: a different domain means a different resource.
+    if (news.domainName !== olds?.domainName) return Factory.replaceKeepingName(news)
     // Name change requires replace
     if (news.name !== olds?.name) return { action: 'replace' }
 

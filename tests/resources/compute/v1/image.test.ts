@@ -32,13 +32,14 @@ describe('Nebius.compute.v1.Image', () => {
       // The proto marks every `oneof source` arm IMMUTABLE — an update call with a
       // different source is rejected by the API, so plan a replace instead.
       const svc = await resolveProvider(Module.NebiusImage.Provider, Module.NebiusImageProvider)
+      // Pinned name ⇒ delete-first (same identity on the next generation).
       expect(
         await runDiff(
           svc,
           { name: 'my-image', sourceStorage: { bucketName: 'b', objectName: 'o' } },
           { name: 'my-image', sourceDiskId: 'disk-abc123' },
         ),
-      ).toEqual({ action: 'replace' })
+      ).toEqual({ action: 'replace', deleteFirst: true })
     })
   })
 

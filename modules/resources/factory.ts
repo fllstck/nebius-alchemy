@@ -260,3 +260,65 @@ export const nameChangeRequiresReplace = (
   olds?: { name?: string },
 ): { action: 'replace' } | undefined =>
   news.name !== olds?.name ? { action: 'replace' } : undefined
+
+// ---------------------------------------------------------------------------
+// Replace ordering — create-first vs delete-first
+// ---------------------------------------------------------------------------
+//
+// Alchemy's default replace is **create-first**: the new generation is created,
+// then Phase-2 GC deletes the old one. That is safe only while the two
+// generations can COEXIST. The framework guarantees the *teardown* ordering for
+// references it can see (`Output.upstreamAny` walks props recursively, and GC
+// deletes dependents before dependencies — "Dependents (`downstream`) are
+// deleted before this resource", Apply.ts), so the provider's only job is to
+// pick the ordering that lets the create succeed.
+//
+// A resource's identity is (parent, physical name). Three cases:
+//
+//  1. `name` changed        → create-first. The new generation has a different
+//                             name, so the two coexist safely.
+//                             (`nameChangeRequiresReplace` above.)
+//  2. parent changed        → create-first. Different parent, so the identity
+//                             differs even when the name is reused (Nebius
+//                             uniqueness is per-parent).
+//  3. spec-only change      → the identity is REUSED:
+//       a. `props.name` absent → still create-first: `createPhysicalName`
+//          seeds its random suffix from the per-resource `InstanceId`, and a
+//          replace mints a FRESH one (Apply.ts), so a generated name differs.
+//       b. `props.name` pinned → the same name is minted again → the create
+//          hits ALREADY_EXISTS (code 6). Must be `deleteFirst`.
+//
+// `deleteFirst` deletes the old generation inside THIS resource's node, which
+// runs before its dependents' nodes (apply order is dependency-first), so old
+// dependents still reference the old id at that instant. That is fine while the
+// API merely tolerates the dangling reference for that window (Nebius ids are
+// opaque strings) — a parent whose API forbids it needs a pre-check instead
+// (see TASKS.md §"same-name replace").
+
+/**
+ * The replace action for a **spec-only** change (case 3): the identity —
+ * parent and name — is unchanged, so a pinned `name` cannot be created while
+ * the old generation still holds it.
+ *
+ * Use this for every immutable-field replace that is NOT a name or parent
+ * change. Behaviour is unchanged for resources without a pinned name (still
+ * create-first), so this only fixes the currently-broken case.
+ */
+export const replaceKeepingName = (
+  news: { name?: string },
+): { action: 'replace' } | { action: 'replace'; deleteFirst: true } =>
+  news.name === undefined ? { action: 'replace' } : { action: 'replace', deleteFirst: true }
+
+/**
+ * The replace action for a spec-only change on a resource whose physical name is
+ * **derived from its logical id** (e.g. `ak-<logicalId>`), so every generation
+ * asks for the SAME name no matter what the props say — create-first can never
+ * succeed.
+ *
+ * Only for such deterministic names. A resource whose name is
+ * `props.name ?? createPhysicalName(...)` wants `replaceKeepingName` instead.
+ */
+export const replaceSameGeneratedName = (): { action: 'replace'; deleteFirst: true } => ({
+  action: 'replace',
+  deleteFirst: true,
+})

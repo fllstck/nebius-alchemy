@@ -238,12 +238,14 @@ export const NebiusAccessKeyProvider: Layer.Layer<
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* AccessKeySchema.validateAccessKeyProps(news)
 
-    // Access keys can't move between service accounts
-    if (news.serviceAccountId !== olds?.serviceAccountId) return { action: 'replace' }
+    // Spec-only changes: the physical name is `ak-<logicalId>` on EVERY
+    // generation (deterministic), so create-first can never succeed — see
+    // Factory.replaceSameGeneratedName.
+    if (news.serviceAccountId !== olds?.serviceAccountId) return Factory.replaceSameGeneratedName()
 
     // secretDeliveryMode is immutable (defaults to INLINE when not set)
     const newsDeliveryMode = news.secretDeliveryMode ?? 'INLINE'
-    if (newsDeliveryMode !== (olds?.secretDeliveryMode ?? 'INLINE')) return { action: 'replace' }
+    if (newsDeliveryMode !== (olds?.secretDeliveryMode ?? 'INLINE')) return Factory.replaceSameGeneratedName()
 
     return undefined
   }),

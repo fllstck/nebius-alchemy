@@ -26,7 +26,8 @@ describe('Nebius.dns.v1.Zone', () => {
   describe('diff', () => {
     test('domainName change requires replace (immutable)', async () => {
       const svc = await resolveProvider(Module.NebiusZone.Provider, Module.NebiusZoneProvider)
-      expect(await runDiff(svc, { ...validZoneProps, domainName: 'other.com.' }, { ...validZoneProps, domainName: 'example.com.' })).toEqual({ action: 'replace' })
+      // Pinned name (`validZoneProps.name`) ⇒ delete-first — same identity.
+      expect(await runDiff(svc, { ...validZoneProps, domainName: 'other.com.' }, { ...validZoneProps, domainName: 'example.com.' })).toEqual({ action: 'replace', deleteFirst: true })
     })
 
     test('name change requires replace', async () => {

@@ -88,15 +88,17 @@ describe('Nebius.compute.v1.Instance', () => {
     })
 
     // ── create-only spec fields (gpuCluster is settable only at creation, so a
-    //    change must REPLACE — and delete-first, because the physical name is
-    //    unchanged; before this it planned as "no changes") ────────────────────
+    //    change must REPLACE rather than update; before this it planned as
+    //    "no changes") + replace ordering (Factory.replaceKeepingName) ────────
 
-    // A same-name replacement cannot be create-first: the new generation would
-    // ask Nebius for a name the old generation still holds (ALREADY_EXISTS),
-    // and the provider's create-recovery would adopt and then GC-delete it.
-    const gpuClusterReplace = { action: 'replace', deleteFirst: true }
+    // A *generated* name is minted fresh per generation, so the replacement can
+    // be created before the old one is deleted. A *pinned* name is reused, so
+    // the create would hit ALREADY_EXISTS and this provider's create-recovery
+    // would adopt the OLD instance for GC to delete.
+    const createFirst = { action: 'replace' }
+    const deleteFirst = { action: 'replace', deleteFirst: true }
 
-    test('GPU cluster change requires a delete-first replace (create-only field)', async () => {
+    test('GPU cluster change replaces; a generated name stays create-first', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
       expect(
         await runDiff(
@@ -104,7 +106,43 @@ describe('Nebius.compute.v1.Instance', () => {
           { ...validInstanceProps, gpuCluster: { id: 'gpucluster-new' } },
           { ...validInstanceProps, gpuCluster: { id: 'gpucluster-old' } },
         ),
-      ).toEqual(gpuClusterReplace)
+      ).toEqual(createFirst)
+    })
+
+    test('GPU cluster change with a pinned name is delete-first', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, name: 'trainer', gpuCluster: { id: 'gpucluster-new' } },
+          { ...validInstanceProps, name: 'trainer', gpuCluster: { id: 'gpucluster-old' } },
+        ),
+      ).toEqual(deleteFirst)
+    })
+
+    test('host-mode toggle with a pinned name is delete-first', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      // Same hazard class as gpuCluster: the toggle replaces while keeping the name.
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, name: 'trainer', main: '/app/entry.ts' },
+          { ...validInstanceProps, name: 'trainer' },
+        ),
+      ).toEqual(deleteFirst)
+    })
+
+    test('a name change is create-first even when gpuCluster also changed', async () => {
+      // The replacement has a different physical name, so the two can coexist —
+      // the name rule dominates and avoids an unnecessary outage.
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, name: 'new-name', gpuCluster: { id: 'gpucluster-new' } },
+          { ...validInstanceProps, name: 'old-name', gpuCluster: { id: 'gpucluster-old' } },
+        ),
+      ).toEqual(createFirst)
     })
 
     test('adding or removing a GPU cluster on an existing instance requires replace', async () => {
@@ -112,11 +150,11 @@ describe('Nebius.compute.v1.Instance', () => {
       // Added: the instance is already running without a cluster.
       expect(
         await runDiff(svc, { ...validInstanceProps, gpuCluster: { id: 'gpucluster-new' } }, { ...validInstanceProps }),
-      ).toEqual(gpuClusterReplace)
+      ).toEqual(createFirst)
       // Removed: the instance is attached to a cluster it cannot leave in place.
       expect(
         await runDiff(svc, { ...validInstanceProps }, { ...validInstanceProps, gpuCluster: { id: 'gpucluster-old' } }),
-      ).toEqual(gpuClusterReplace)
+      ).toEqual(createFirst)
     })
 
     test('an unchanged GPU cluster is a noop', async () => {
@@ -139,24 +177,12 @@ describe('Nebius.compute.v1.Instance', () => {
           },
           { ...validInstanceProps, gpuCluster: { id: 'gpucluster-old' } },
         ),
-      ).toEqual(gpuClusterReplace)
-    })
-
-    test('a GPU cluster change is delete-first even when the name also changes', async () => {
-      // The stricter ordering wins: a mixed change must not be create-first.
-      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
-      expect(
-        await runDiff(
-          svc,
-          { ...validInstanceProps, name: 'new-name', gpuCluster: { id: 'gpucluster-new' } },
-          { ...validInstanceProps, name: 'old-name', gpuCluster: { id: 'gpucluster-old' } },
-        ),
-      ).toEqual(gpuClusterReplace)
+      ).toEqual(createFirst)
     })
 
     // ── host-mode diff rules (Task 4) ─────────────────────────────────────
 
-    test('host-mode toggle ON (main added) is a replace', async () => {
+    test('host-mode toggle ON (main added) replaces', async () => {
       const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
       expect(
         await runDiff(svc, { ...validInstanceProps, main: '/app/entry.ts' }, { ...validInstanceProps }),

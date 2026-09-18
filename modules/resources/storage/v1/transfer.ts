@@ -157,9 +157,9 @@ export const NebiusTransferProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* TransferSchema.validateTransferProps(news)
-    if (news.source !== olds?.source) return { action: 'replace' }
-    if (news.destination !== olds?.destination) return { action: 'replace' }
-    if (news.overwriteStrategy !== olds?.overwriteStrategy) return { action: 'replace' }
+    if (news.source !== olds?.source) return Factory.replaceKeepingName(news)
+    if (news.destination !== olds?.destination) return Factory.replaceKeepingName(news)
+    if (news.overwriteStrategy !== olds?.overwriteStrategy) return Factory.replaceKeepingName(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

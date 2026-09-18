@@ -133,7 +133,7 @@ export const NebiusAsymmetricKeyProvider: Layer.Layer<
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* AsymmetricKeySchema.validateAsymmetricKeyProps(news)
 
-    if (news.algorithm !== olds?.algorithm) return { action: 'replace' }
+    if (news.algorithm !== olds?.algorithm) return Factory.replaceKeepingName(news)
     if (news.name !== olds?.name) return { action: 'replace' }
 
     return undefined

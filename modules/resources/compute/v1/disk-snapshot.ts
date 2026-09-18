@@ -128,7 +128,7 @@ export const NebiusDiskSnapshotProvider: Layer.Layer<
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* DiskSnapshotSchema.validateDiskSnapshotProps(news)
     // sourceDiskId is immutable
-    if (news.sourceDiskId !== olds?.sourceDiskId) return { action: 'replace' }
+    if (news.sourceDiskId !== olds?.sourceDiskId) return Factory.replaceKeepingName(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })

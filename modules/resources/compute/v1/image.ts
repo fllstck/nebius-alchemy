@@ -141,7 +141,7 @@ export const NebiusImageProvider: Layer.Layer<
       news.sourceDiskSnapshotId !== olds?.sourceDiskSnapshotId ||
       !AlchemyDiff.deepEqual(news.sourceStorage, olds?.sourceStorage)
     ) {
-      return { action: 'replace' }
+      return Factory.replaceKeepingName(news)
     }
 
     return Factory.nameChangeRequiresReplace(news, olds)

@@ -60,14 +60,18 @@ describe('Nebius.iam.v1.StaticKey', () => {
   })
 
   describe('diff', () => {
-    test('serviceAccountId change requires replace', async () => {
+    // The physical name is `sk-<logicalId>` on every generation, so a spec-only
+    // replace must be delete-first — see Factory.replaceSameGeneratedName.
+    const deleteFirst = { action: 'replace', deleteFirst: true }
+
+    test('serviceAccountId change requires a delete-first replace', async () => {
       const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa2', service: 'OBSERVABILITY' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa2', service: 'OBSERVABILITY' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toEqual(deleteFirst)
     })
 
-    test('service change requires replace', async () => {
+    test('service change requires a delete-first replace', async () => {
       const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', service: 'AI_STUDIO' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', service: 'AI_STUDIO' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toEqual(deleteFirst)
     })
 
     test('no change is a noop', async () => {
@@ -107,14 +111,18 @@ describe('Nebius.iam.v2.AccessKey', () => {
   })
 
   describe('diff', () => {
-    test('serviceAccountId change requires replace', async () => {
+    // The physical name is `ak-<logicalId>` on every generation, so a spec-only
+    // replace must be delete-first — see Factory.replaceSameGeneratedName.
+    const deleteFirst = { action: 'replace', deleteFirst: true }
+
+    test('serviceAccountId change requires a delete-first replace', async () => {
       const svc = await resolveProvider(AccessKeyModule.NebiusAccessKey.Provider, AccessKeyModule.NebiusAccessKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa2' }, { serviceAccountId: 'serviceaccount-sa1' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa2' }, { serviceAccountId: 'serviceaccount-sa1' })).toEqual(deleteFirst)
     })
 
-    test('secretDeliveryMode change requires replace (immutable)', async () => {
+    test('secretDeliveryMode change requires a delete-first replace (immutable)', async () => {
       const svc = await resolveProvider(AccessKeyModule.NebiusAccessKey.Provider, AccessKeyModule.NebiusAccessKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', secretDeliveryMode: 'INLINE' }, { serviceAccountId: 'serviceaccount-sa1', secretDeliveryMode: 'ON_DEMAND' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', secretDeliveryMode: 'INLINE' }, { serviceAccountId: 'serviceaccount-sa1', secretDeliveryMode: 'ON_DEMAND' })).toEqual(deleteFirst)
     })
 
     test('no change is a noop', async () => {

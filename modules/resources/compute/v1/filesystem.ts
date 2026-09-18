@@ -136,7 +136,7 @@ export const NebiusFilesystemProvider: Layer.Layer<
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* FilesystemSchema.validateFilesystemProps(news)
     // type is immutable
-    if (news.type !== olds?.type) return { action: 'replace' }
+    if (news.type !== olds?.type) return Factory.replaceKeepingName(news)
     return Factory.nameChangeRequiresReplace(news, olds)
   }),
 })
