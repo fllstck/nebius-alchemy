@@ -27,34 +27,7 @@ bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 @effect/platform-bun@4.0.0-rc.
 > mismatch fails at import. `alchemy@2.0.0-beta.79` requires
 > `effect@4.0.0-rc.115`.
 >
-> **Why exact rather than a range:** the `@effect/*` packages declare *caret*
-> ranges on each other, and a caret on a **prerelease resolves upward** — so a
-> newer `rc` can be pulled into your tree ahead of the `effect` you actually
-> installed:
->
-> ```jsonc
-> // @effect/platform-bun@4.0.0-rc.115 (and .../platform-node likewise)
-> "dependencies": { "@effect/platform-node-shared": "^4.0.0-rc.115" }
-> ```
->
-> Today that resolves to the matching `rc.115`, but the hazard is structural: the
-> moment a new `rc` is published, that caret pulls it in, and a package built
-> against a different `rc` fails at import with something like:
->
-> ```
-> Cannot find module 'effect/ByteSize' from
->   .../node_modules/@effect/platform-node/node_modules/@effect/platform-node-shared/dist/NodeFileSystem.js
-> ```
->
-> Installing successfully does **not** mean it works — the failure appears only at
-> import time, and `tsc` does not catch it either, because `skipLibCheck` skips
-> resolving those runtime imports. Pinning `effect` exactly is what keeps the
-> family aligned. See `agent-patterns/effect-versioning.md`.
->
-> **Both installers work with no consumer configuration** — `npm` and `bun` are
-> both verified against a clean tree in CI (`.github/smoke/consumer.sh`).
->
-> **Avoid `alchemy@next`.** The `next` dist-tag currently points at an *older*
+> **Avoid `alchemy@next`.** The `next` dist-tag currently points at an _older_
 > beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.79`).
 >
 > **Type checking with `tsc`?** This package ships raw TypeScript (bun-first, no build step). If you typecheck with `tsc`, enable `allowImportingTsExtensions` (requires `noEmit`), e.g. `"moduleResolution": "bundler", "allowImportingTsExtensions": true, "noEmit": true`.
@@ -89,11 +62,6 @@ export default Alchemy.Stack(
 bun alchemy profile edit --add Nebius
 ```
 
-> **`alchemy login` no longer exists.** It was replaced by `alchemy profile` in
-> alchemy 2.0.0-beta.77 (the CLI prints a pointer if you still call it). Related
-> commands: `alchemy profile show` (status), `alchemy profile refresh` (renew
-> credentials), `alchemy profile list` (all profiles).
-
 This opens your browser for a Nebius OAuth login, then asks you to pick a
 project — no external CLI, no API key, no environment variables. The chosen
 tenant and project are stored and used by every deploy.
@@ -123,7 +91,7 @@ Alternatively, for automation/CI:
   and in CI.
 - **`sa-key`** — a service-account key (RSA-4096 authorized key). Renewal is
   automatic via the RFC 8693 token exchange, so it needs no browser after the
-  one-time bootstrap (choose *Service Account Key* during `alchemy profile edit`).
+  one-time bootstrap (choose _Service Account Key_ during `alchemy profile edit`).
   In CI, set `NEBIUS_SA_ID`, `NEBIUS_SA_KEY_ID` and `NEBIUS_SA_PRIVATE_KEY` (or
   `NEBIUS_SA_PRIVATE_KEY_FILE`).
 
@@ -150,34 +118,28 @@ bun alchemy destroy --yes
 Every stack is namespaced by a **stage**, which selects the state directory
 (`.alchemy/state/<Stack>/<stage>/`) and is baked into generated resource names:
 
-| Command | Default stage |
-| --- | --- |
-| `alchemy deploy` / `destroy` / `plan` | `live_$USER` |
-| `alchemy dev` | `dev_$USER` |
+| Command                               | Default stage |
+| ------------------------------------- | ------------- |
+| `alchemy deploy` / `destroy` / `plan` | `live_$USER`  |
+| `alchemy dev`                         | `dev_$USER`   |
 
 Override with `--stage <name>`, or set **`ALCHEMY_STAGE`** in the environment.
 The older `$STAGE` variable is **no longer consulted**.
-
-> ⚠️ **Migrating from an older alchemy?** Deploy used to default to
-> `dev_$USER`. Since the default is now `live_$USER`, an unflagged deploy after
-> upgrading looks up a *different* state namespace and will **recreate** your
-> resources rather than adopt them. Set `ALCHEMY_STAGE=<your-old-stage>` (e.g.
-> `ALCHEMY_STAGE=dev_kay`) to keep managing what you already have.
 
 ### Peer Dependencies
 
 The package ships raw TypeScript source and requires these peer dependencies in your project.
 Versions are **pinned exactly** — alchemy and Effect move together, so a mismatched pair fails
-at import (see *Install Dependencies* above):
+at import (see _Install Dependencies_ above):
 
-| Package | Required | Pinned to |
-| --- | --- | --- |
-| `effect` | Yes | `4.0.0-rc.115` |
-| `@effect/platform-bun` | Yes | `4.0.0-rc.115` |
-| `@effect/platform-node` | Yes | `4.0.0-rc.115` — required by the Alchemy CLI |
-| `@effect/platform-node-shared` | Yes | `4.0.0-rc.115` — declared exact so npm resolves the whole `@effect/*` family consistently |
-| `typescript` | Yes | TypeScript 7 (`^7`) |
-| `alchemy` | Yes | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which points at an *older* beta |
+| Package                        | Required | Pinned to                                                                                 |
+| ------------------------------ | -------- | ----------------------------------------------------------------------------------------- |
+| `effect`                       | Yes      | `4.0.0-rc.115`                                                                            |
+| `@effect/platform-bun`         | Yes      | `4.0.0-rc.115`                                                                            |
+| `@effect/platform-node`        | Yes      | `4.0.0-rc.115` — required by the Alchemy CLI                                              |
+| `@effect/platform-node-shared` | Yes      | `4.0.0-rc.115` — declared exact so npm resolves the whole `@effect/*` family consistently |
+| `typescript`                   | Yes      | TypeScript 7 (`^7`)                                                                       |
+| `alchemy`                      | Yes      | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which points at an _older_ beta      |
 
 ### tsconfig.json
 
@@ -201,17 +163,18 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 
 ## Environment Variables
 
-| Variable | Required | Description |
-| `NEBIUS_PROJECT_ID` | with `env` / env-var `sa-key` | Project ID — not needed after `alchemy profile edit` or the SA bootstrap (picked at login) |
-| `NEBIUS_TENANT_ID` | with `env` / env-var `sa-key` | Tenant ID for project/group discovery/creation actions |
-| `NEBIUS_API_KEY` | with `env` | IAM API key for the `env` auth method. Read locally **and** in CI |
+| Variable                                                                                | Required                               | Description                                                                                                                   |
+| --------------------------------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `NEBIUS_PROJECT_ID`                                                                     | with `env` / env-var `sa-key`          | Project ID — not needed after `alchemy profile edit` or the SA bootstrap (picked at login)                                    |
+| `NEBIUS_TENANT_ID`                                                                      | with `env` / env-var `sa-key`          | Tenant ID for project/group discovery/creation actions                                                                        |
+| `NEBIUS_API_KEY`                                                                        | with `env`                             | IAM API key for the `env` auth method. Read locally **and** in CI                                                             |
 | `NEBIUS_SA_ID` / `NEBIUS_SA_KEY_ID` / `NEBIUS_SA_PRIVATE_KEY` (or `…_PRIVATE_KEY_FILE`) | with `sa-key`, **CI only** (`CI=true`) | Service-account key material for the RFC 8693 exchange. Ignored outside CI — use a stored profile or `NEBIUS_API_KEY` locally |
-| `NEBIUS_REGION` | — | Default region (defaults to `eu-north1`) |
-| `NEBIUS_OAUTH_CLIENT_ID` | OAuth login | Client id for the browser OAuth login (default: `nebius-cli`; set to a client registered with Nebius) |
+| `NEBIUS_REGION`                                                                         | —                                      | Default region (defaults to `eu-north1`)                                                                                      |
+| `NEBIUS_OAUTH_CLIENT_ID`                                                                | OAuth login                            | Client id for the browser OAuth login (default: `nebius-cli`; set to a client registered with Nebius)                         |
 
 ## Resources
 
-All resources that currently are currently implemented.
+All resources that are currently implemented.
 
 All resources use the `NEBIUS_PROJECT_ID` environment variable as default `parentId` where appropriate.
 
@@ -300,10 +263,10 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 
 ## Bindings
 
-**Bindings** are typed runtime clients you attach to **your own Cloudflare Worker** — no Nebius Function host required. One declaration derives three things at deploy time:
+**Bindings** are typed runtime clients you attach to **your own compute host** — a **Nebius Instance by default**, or a Cloudflare Worker (`Cloudflare.Worker` is the compatibility wrapper). No Nebius Function host required. One declaration derives three things at deploy time:
 
-1. **Credential minting + least-privilege grant** on Nebius (a service account added to your tenant's default `editors` group + a region-scoped access key),
-2. **env injection** into the Worker as `plain_text`/`secret_text` bindings,
+1. **Credential minting + least-privilege grant** on Nebius — a per-host service account holding an S3 access key, placed in its own `<host>BindingGroup` (not the tenant's `editors` group), plus one **bucket-scoped** `iam.AccessPermit` per capability: `storage.viewer` for reads, `storage.editor` for writes. No project-wide role is granted,
+2. **env injection** into the host's runtime env — `plain_text`/`secret_text` bindings on a Worker, the shipped `EnvironmentFile` on an Instance,
 3. a **typed runtime client** (s3-lite-client, fetch-based) reading those env values.
 
 ```ts
@@ -331,41 +294,53 @@ export const Api = Cloudflare.Worker(
 )
 ```
 
-Currently available (Cloudflare Workers):
+The host above is a Worker; the identical contract + `*Http` layer call site also
+works inside a `Nebius.compute.Instance` init Effect (see
+[`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts)).
 
-| Contract                      | Layer                             | Runtime                                        |
-| ----------------------------- | --------------------------------- | ---------------------------------------------- |
-| `Nebius.storage.GetObject`    | `Nebius.storage.GetObjectHttp`    | s3-lite-client (`GET object`)                  |
-| `Nebius.storage.PutObject`    | `Nebius.storage.PutObjectHttp`    | s3-lite-client (`PUT object`)                  |
-| `Nebius.ai.ChatCompletions`   | `Nebius.ai.ChatCompletionsHttp`   | fetch OpenAI-compatible `POST /v1/chat/completions` |
+Currently available (the `*Http` layers are host-agnostic):
+
+| Contract                    | Layer                           | Runtime                                             |
+| --------------------------- | ------------------------------- | --------------------------------------------------- |
+| `Nebius.storage.GetObject`  | `Nebius.storage.GetObjectHttp`  | s3-lite-client (`GET object`)                       |
+| `Nebius.storage.PutObject`  | `Nebius.storage.PutObjectHttp`  | s3-lite-client (`PUT object`)                       |
+| `Nebius.ai.ChatCompletions` | `Nebius.ai.ChatCompletionsHttp` | fetch OpenAI-compatible `POST /v1/chat/completions` |
 
 ### AI endpoint bindings
 
 `Nebius.ai.ChatCompletions(endpoint)` derives the endpoint's public URL and
-bearer token at deploy time and gives the Worker a typed, fetch-based
+bearer token at deploy time and gives the host a typed, fetch-based
 OpenAI-compatible client (`ChatCompletionRequest` → `ChatCompletion`, or an
 SSE stream of `ChatCompletionChunk`s with `stream: true`). The token deploys
-as a Cloudflare `secret_text` binding; auth is a bearer token, so — unlike
-the S3 bindings — there is no identity minting or IAM grant. The deploy
-fails fast with `EndpointNotRunning` when the endpoint has no public endpoint
-yet (it must be RUNNING). See [AI_BINDINGS.md](AI_BINDINGS.md) for the design
+as a Cloudflare `secret_text` binding (on an Instance host it lands in the
+shipped `EnvironmentFile`); auth is a bearer token, so — unlike the S3
+bindings — there is no identity minting or IAM grant. Env derivation is
+deliberately **lenient**: an endpoint that is not RUNNING yet yields an empty
+`NEBIUS_ENDPOINT_URL` (a fail-fast here would fire during `alchemy plan`
+against persisted output and block the deploy), so the provider waits for
+readiness and the first *call* with an empty URL fails with
+`EndpointNotRunning`. See [AI_BINDINGS.md](AI_BINDINGS.md) for the design
 and [`examples/ai.bindings.ts`](examples/ai.bindings.ts) for a full example.
 
 ### Bindings env reference
 
-Injected into the Worker at deploy time (names are stable):
+Injected into the host's runtime env at deploy time (names are stable). Secrets
+are Cloudflare `secret_text` bindings on a Worker, and plaintext in the
+`EnvironmentFile` on an Instance host:
 
-| Env var                    | Meaning                                       |
-| -------------------------- | --------------------------------------------- |
-| `NEBIUS_S3_ENDPOINT`       | `https://storage.<region>.nebius.cloud`       |
-| `NEBIUS_REGION`            | Region the access key was minted in           |
-| `NEBIUS_ACCESS_KEY_ID`     | AWS-style access key id (plain text)          |
-| `NEBIUS_SECRET_ACCESS_KEY` | Secret access key (deployed as `secret_text`) |
-| `NEBIUS_BUCKET_NAME`       | The bound bucket's name                       |
-| `NEBIUS_ENDPOINT_URL`      | The endpoint's first public URL (AI bindings) |
-| `NEBIUS_ENDPOINT_AUTH_TOKEN` | The endpoint's bearer token (`secret_text`; `''` when auth disabled) |
+| Env var                      | Meaning                                                              |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `NEBIUS_S3_ENDPOINT`         | `https://storage.<region>.nebius.cloud`                              |
+| `NEBIUS_REGION`              | Region the access key was minted in                                  |
+| `NEBIUS_ACCESS_KEY_ID`       | AWS-style access key id (plain text)                                 |
+| `NEBIUS_SECRET_ACCESS_KEY`   | Secret access key (`secret_text` on a Worker)                        |
+| `NEBIUS_BUCKET_NAME`         | The bound bucket's name                                              |
+| `NEBIUS_ENDPOINT_URL`        | The endpoint's first public URL (AI bindings)                        |
+| `NEBIUS_ENDPOINT_AUTH_TOKEN` | The endpoint's bearer token (`''` when auth disabled)                |
 
-See [`examples/storage.bindings.ts`](examples/storage.bindings.ts) for the full pattern.
+See [`examples/storage.bindings.ts`](examples/storage.bindings.ts) and
+[`examples/storage.bindings-worker.ts`](examples/storage.bindings-worker.ts)
+for the full pattern.
 
 > **Bindings on a Nebius Instance** (the native host — no Cloudflare account
 > needed): [`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts) deploys
@@ -378,18 +353,18 @@ See [`examples/storage.bindings.ts`](examples/storage.bindings.ts) for the full 
 
 ## Examples
 
-| Example                                            | What it demonstrates                                                  |
-| -------------------------------------------------- | --------------------------------------------------------------------- |
-| [`examples/storage.ts`](examples/storage.ts)       | Minimal bucket — the simplest possible stack                          |
-| [`examples/vpc.ts`](examples/vpc.ts)               | Full VPC topology: network, subnet, routes, security group, IPAM      |
-| [`examples/compute.ts`](examples/compute.ts)       | GPU instance: dynamic image lookup → disk → preemptible H200 instance |
-| [`examples/iam.ts`](examples/iam.ts)               | Service account with static key                                       |
-| [`examples/dns.ts`](examples/dns.ts)               | VPC-scoped DNS zone with A record                                     |
-| [`examples/kms.ts`](examples/kms.ts)               | Symmetric and asymmetric encryption keys                              |
-| [`examples/mysterybox.ts`](examples/mysterybox.ts) | Versioned secret with payload rotation                                |
-| [`examples/actions.ts`](examples/actions.ts)       | Read-only discovery actions for IAM, VPC, and quotas                  |
-| [`examples/storage.bindings.ts`](examples/storage.bindings.ts) | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)          |
-| [`examples/ai.bindings.ts`](examples/ai.bindings.ts)         | Nebius AI endpoint bindings for a Cloudflare Worker (ChatCompletions) |
+| Example                                                        | What it demonstrates                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`examples/storage.ts`](examples/storage.ts)                   | Minimal bucket — the simplest possible stack                                                                                                                                                                                                                                                                                                                                                                      |
+| [`examples/vpc.ts`](examples/vpc.ts)                           | Full VPC topology: network, subnet, routes, security group, IPAM                                                                                                                                                                                                                                                                                                                                                  |
+| [`examples/compute.ts`](examples/compute.ts)                   | GPU instance: dynamic image lookup → disk → preemptible H200 instance                                                                                                                                                                                                                                                                                                                                             |
+| [`examples/iam.ts`](examples/iam.ts)                           | Service account with static key                                                                                                                                                                                                                                                                                                                                                                                   |
+| [`examples/dns.ts`](examples/dns.ts)                           | VPC-scoped DNS zone with A record                                                                                                                                                                                                                                                                                                                                                                                 |
+| [`examples/kms.ts`](examples/kms.ts)                           | Symmetric and asymmetric encryption keys                                                                                                                                                                                                                                                                                                                                                                          |
+| [`examples/mysterybox.ts`](examples/mysterybox.ts)             | Versioned secret with payload rotation                                                                                                                                                                                                                                                                                                                                                                            |
+| [`examples/actions.ts`](examples/actions.ts)                   | Read-only discovery actions for IAM, VPC, and quotas                                                                                                                                                                                                                                                                                                                                                              |
+| [`examples/storage.bindings.ts`](examples/storage.bindings.ts) | Nebius S3 bindings for a Cloudflare Worker (Get/Put object)                                                                                                                                                                                                                                                                                                                                                       |
+| [`examples/ai.bindings.ts`](examples/ai.bindings.ts)           | Nebius AI endpoint bindings for a Cloudflare Worker (ChatCompletions)                                                                                                                                                                                                                                                                                                                                             |
 | [`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts) | **Hosted Nebius instance** running an Effect program: OpenAI-compatible endpoint + `ChatCompletions` binding → `curl 'http://<ip>:3000/?prompt=…'` returns a real completion (`&stream=1` streams SSE). Defaults to a cheap **CPU** endpoint (llama.cpp + 0.5B model); the GPU vLLM config is a commented alternative. The instance-host counterpart of `ai.bindings.ts` (`…-program.ts` is what the VM executes) |
 
 ## Usage
