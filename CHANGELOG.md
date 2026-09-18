@@ -1,18 +1,33 @@
-# [0.7.0](https://github.com/fllstck/nebius-alchemy/compare/v0.6.0...v0.7.0) (2026-09-10)
+# [0.7.0](https://github.com/fllstck/nebius-alchemy/compare/v0.6.0...v0.7.0) (2026-09-18)
+
+
+* feat!: migrate to alchemy 2.0.0-beta.79 / effect 4.0.0-rc.115 ([013a009](https://github.com/fllstck/nebius-alchemy/commit/013a0090f0d75022f08db44bf1593a98dde01273))
 
 
 ### Bug Fixes
 
+* **auth:** probe only environment variables whose presence implies usable credentials ([885a882](https://github.com/fllstck/nebius-alchemy/commit/885a882f804c9b403b6d3c4a487a4a7f5c9b026a))
 * **auth:** resolve profile via currentProfileName and update tests for API changes ([54335e3](https://github.com/fllstck/nebius-alchemy/commit/54335e36288614aa5bdac3ee3f2e741ba98fa544))
+* **auth:** stop NEBIUS_PROJECT_ID from shadowing the profile ([bd6adcd](https://github.com/fllstck/nebius-alchemy/commit/bd6adcd3587e6fc1f04fa344c5172cc1b6d88a1f))
+* **bundle:** annotate module-scope gRPC helpers with @__PURE__ ([d5a80fe](https://github.com/fllstck/nebius-alchemy/commit/d5a80fe417083587bd3587fc43ed37e9a87f066c))
+* **ci:** verify package imports at runtime, not just typecheck ([49580a3](https://github.com/fllstck/nebius-alchemy/commit/49580a3bfec8cab975ddc37c80f57721329529d0))
 * **compute:** enforce Nebius boot disk minimum and network interface requirements ([505557a](https://github.com/fllstck/nebius-alchemy/commit/505557a7ad8d01490b2b7b6261caed960336cc33))
 * **compute:** ensure unzip is installed before bun installer runs ([1177db8](https://github.com/fllstck/nebius-alchemy/commit/1177db8bede970d083a06d79711b974b7e5eb665))
 * **compute:** export HOME before bun install in hosted user data ([bfac2c6](https://github.com/fllstck/nebius-alchemy/commit/bfac2c6a1399b3e7de933ab58cd019e05db8475e))
+* **compute:** reject hosted instances with unwrapped entry at plan time ([81f7481](https://github.com/fllstck/nebius-alchemy/commit/81f7481eba701ad991c47390d259743329a0f166))
 * **compute:** switch hosted user-data to cloud-config multipart format ([aaf05e6](https://github.com/fllstck/nebius-alchemy/commit/aaf05e6133b6641fe0108ad3bdb4ccf75240e85d))
+* **compute:** unwrap Redacted env values and fix hosted instance diff ([3d785f9](https://github.com/fllstck/nebius-alchemy/commit/3d785f9c7b9a63dac95ab3cd15d01daa6be74d7c))
+* **spikes:** update ai-bindings-bundle to in-house cloudflare rolldown plugin ([ce7f4cf](https://github.com/fllstck/nebius-alchemy/commit/ce7f4cf116f7dd64cd0fd14bc7a157f99f81ce9c))
 * **storage:** set zero TTL on bucket delete and improve S3 cleanup resilience ([cc7ece4](https://github.com/fllstck/nebius-alchemy/commit/cc7ece43aa48bfbc8d8dd55785656f0305525e67))
 * **tests:** combine SG/rules and instance into single deploy in minimal-online test ([89bf7f7](https://github.com/fllstck/nebius-alchemy/commit/89bf7f7dfc66e51266c01c19ab7e1dbcb1474a81))
 * **tests:** tolerate async soft-deletes in post-destroy leak checks ([8992f62](https://github.com/fllstck/nebius-alchemy/commit/8992f62c49b122222bbb487c3a043cd4e2fb4f12))
 * **tests:** use per-run token for managed disk names to avoid orphan collisions ([c099b26](https://github.com/fllstck/nebius-alchemy/commit/c099b269438c850b1e83d4b75cc4e48c641d3937))
 * **vpc:** apply platform defaults to security rule spec to prevent drift ([dcf1ec4](https://github.com/fllstck/nebius-alchemy/commit/dcf1ec461fd785807beed18d3275c594b8b3168c))
+
+
+### chore
+
+* **deps:** bump effect to 4.0.0-rc.112 and alchemy to 2.0.0-beta.77 ([ed787ac](https://github.com/fllstck/nebius-alchemy/commit/ed787ac44a1be3f5f7491e6e0113b10c4abf8606))
 
 
 ### Features
@@ -28,19 +43,37 @@
 * **compute:** add hosted runtime props to instance schema ([c4b2f55](https://github.com/fllstck/nebius-alchemy/commit/c4b2f55397bdd22c257a5270d47103eb175ca5de))
 * **compute:** add hosted runtime support to Nebius Instance resource ([dd6a26f](https://github.com/fllstck/nebius-alchemy/commit/dd6a26f2f15a8249e25ec6c003551eb535e295fd))
 * **compute:** add Nebius hosted runtime support for Instance ([09b14bd](https://github.com/fllstck/nebius-alchemy/commit/09b14bd95d1515a46a7b4b39e3a92a6535e52100))
+* **compute:** expose disk snapshot source and encryption config ([614adec](https://github.com/fllstck/nebius-alchemy/commit/614adec17d223357e9941f5ff139c7fadf2404c3))
 * **compute:** require boot disk image and validate props at plan time ([de673d2](https://github.com/fllstck/nebius-alchemy/commit/de673d2cd6c4a1dbc2cd93ce4ab9e652a9346ddb))
 * **dns:** implement zone-scoped record listing for nuke support ([696e7db](https://github.com/fllstck/nebius-alchemy/commit/696e7db23d51b5b877b7bf4c34f0ddcf9b3c5c3c))
+* **examples:** default ai-chat-instance to cheap CPU endpoint ([d172288](https://github.com/fllstck/nebius-alchemy/commit/d1722886f179176cd4495e4a96ec6ca691b056ef))
+* **examples:** stream AI chat completions as SSE via `&stream=1` ([2ae9722](https://github.com/fllstck/nebius-alchemy/commit/2ae9722ccc4fe927134fc05f96dea7f64fc50728))
 * **iam:** add list support and nuke ordering for IAM sub-resources ([e26fe8d](https://github.com/fllstck/nebius-alchemy/commit/e26fe8de90b621083f8a5587c713af5168b3b3d6))
+* **resources:** expose the remaining Task 7b spec fields ([7cc2195](https://github.com/fllstck/nebius-alchemy/commit/7cc2195bb0172acf4f4601c5b26835fda8164dd3))
+* **resources:** validate props at plan time in diff handlers ([eb5688b](https://github.com/fllstck/nebius-alchemy/commit/eb5688b242297e49693b50d6b1f3b11eb9645049))
+* **resources:** validate props during plan-time read for all resources ([0576008](https://github.com/fllstck/nebius-alchemy/commit/0576008a57d0fa445dde3b99418ed9446a4a16df))
+* **spikes:** add Nebius auth-registration entrypoint for first-run bootstrap ([35f4a6a](https://github.com/fllstck/nebius-alchemy/commit/35f4a6a6c2ea93cad16833add9a84ef05c63464a))
 
 
-### ⚠️ Breaking Changes
+### Reverts
 
-* **deps:** now requires `alchemy@2.0.0-beta.77` with `effect@4.0.0-rc.112` (peer range `>=4.0.0-rc.112 <4.0.0-rc.113`). Effect and Alchemy must move together — alchemy 2.0.0-beta.70 itself calls `Schema.TaggedErrorClass`, which `effect` removed in rc.112 — so `effect@4.0.0-beta.*` is no longer supported ([bf5c210](https://github.com/fllstck/nebius-alchemy/commit/bf5c210eb))
-* **auth:** the provider is rewritten against Alchemy's new `AuthProviderImpl`. `configSchema` is now required, `configure(profileName, configureContext)` becomes `configure(profileName, currentConfig?)`, and `prettyPrint` is replaced by `details` (returning structured `ProviderDetails`). Interactive methods (`configure`/`login`/`logout`) now require the `Interaction` service. `readEnvironment` + a declared `environment` contract replace the old `ci` flag ([f66d89a](https://github.com/fllstck/nebius-alchemy/commit/f66d89a9f91aa86ef4c4a927fe9c181709e38372))
-* **auth:** `Schema.TaggedErrorClass` → `Schema.TaggedError` throughout — the former was removed upstream in `effect@4.0.0-rc.112` ([bf5c210](https://github.com/fllstck/nebius-alchemy/commit/bf5c210eb))
-* **auth:** expired or absent stored credentials now fail with `NeedsReauth` rather than `AuthError`, so callers can render "needs re-login". Anything matching on `AuthError` by tag must also handle `NeedsReauth` ([f66d89a](https://github.com/fllstck/nebius-alchemy/commit/f66d89a9f91aa86ef4c4a927fe9c181709e38372))
-* **cli:** `alchemy login` was replaced by `alchemy profile` (removed in alchemy 2.0.0-beta.77). Auth error messages now point at `alchemy profile edit` / `alchemy profile refresh` ([66f4156](https://github.com/fllstck/nebius-alchemy/commit/66f41569d))
+* **spikes:** drop the auth-registration workaround — the bug it worked around is fixed ([5c36e43](https://github.com/fllstck/nebius-alchemy/commit/5c36e43feb996a5d1ae8f529e46baaa5220e5458))
 
+
+### BREAKING CHANGES
+
+* requires alchemy@2.0.0-beta.79 and effect@4.0.0-rc.115 (exact peers). rc.112 and
+rc.115 are mutually incompatible in both directions — rc.112's `Config.string`
+does not exist in rc.115, and rc.115's `Config.String` does not exist in rc.112.
+Consumers must move both together. No consumer `overrides` block is needed for
+npm or bun.
+* **compute:** hosted-instance child resources are now namespaced under the
+instance's logical id, so their FQNs changed. An existing deployment does not
+adopt the previous children: the next deploy creates them under the new FQNs and
+destroys the old ones. This removes FQN collisions with user resources in the same
+stack.
+* **deps:** requires alchemy@2.0.0-beta.77 with effect@4.0.0-rc.112
+(peer range >=4.0.0-rc.112 <4.0.0-rc.113); Effect and Alchemy must move together.
 # [0.6.0](https://github.com/fllstck/nebius-alchemy/compare/v0.5.1...v0.6.0) (2026-08-10)
 
 
