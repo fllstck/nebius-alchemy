@@ -135,9 +135,24 @@ export type NebiusResolvedCredentials = {
 // memoizes the whole resolution).
 
 /**
- * The CI environment contract. `readEnvironment` consumes exactly these, so
- * this list is the whole of what CI must set — profiles do not exist there.
- * Names only; never values.
+ * The CI environment contract — the variables {@link readEnvironment} actually
+ * consumes. Names only; never values.
+ *
+ * ⚠️ This list is NOT documentation of every variable the *stack* reads. Alchemy
+ * uses it as the env-vs-profile precedence probe
+ * (`presentEnvironment`, `Auth/AuthProvider.ts`): it selects the environment
+ * credential source as soon as ANY entry here is present (unless a `required`
+ * one is missing). So a non-credential variable listed here silently hijacks
+ * credential resolution.
+ *
+ * That is exactly what `NEBIUS_PROJECT_ID` did: with it in the environment
+ * (e.g. from `.env`, as every example documents) and an OAuth profile stored,
+ * alchemy reported "using environment variables (NEBIUS_PROJECT_ID) instead of
+ * the profile", then failed with "Nebius CI credentials not found" — because
+ * this list claimed env credentials existed when no credential variable was
+ * set. It is consumed by the stack (via `Config.String('NEBIUS_PROJECT_ID')` and
+ * `NebiusProjectConfigProviderLive`), never by `readEnvironment`, so it must not
+ * appear here. Keep this list to credential-bearing variables only.
  */
 export const nebiusEnvironment: ReadonlyArray<EnvironmentVariable> = [
   {
@@ -168,11 +183,6 @@ export const nebiusEnvironment: ReadonlyArray<EnvironmentVariable> = [
     name: SA_PRIVATE_KEY_FILE_ENV,
     required: false,
     description: 'Path to a PEM private key file, used when the inline variable is unset.',
-  },
-  {
-    name: 'NEBIUS_PROJECT_ID',
-    required: false,
-    description: 'Project the stack deploys into. Required by most resources and by the SA bootstrap.',
   },
 ]
 

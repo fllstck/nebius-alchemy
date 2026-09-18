@@ -5,7 +5,7 @@ import * as Layer from 'effect/Layer'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Redacted from 'effect/Redacted'
 import * as PlatformNode from '@effect/platform-node'
-import { AuthProviders, getAuthProvider, AuthError, NeedsReauth } from 'alchemy/Auth/AuthProvider'
+import { AuthProviders, getAuthProvider, AuthError, NeedsReauth, presentEnvironment } from 'alchemy/Auth/AuthProvider'
 import { layerNonInteractive } from 'alchemy/Interaction'
 import * as AlchemyProfile from 'alchemy/Auth/Profile'
 import * as AlchemyCredentials from 'alchemy/Auth/Credentials'
@@ -16,6 +16,7 @@ import {
   type NebiusAuthConfig,
   NEBIUS_AUTH_PROVIDER_NAME,
   type NebiusResolvedCredentials,
+  nebiusEnvironment,
 } from '../modules/AuthProvider.ts'
 import * as SaToken from '../modules/auth/sa-token.ts'
 import * as SaBootstrap from '../modules/auth/sa-bootstrap.ts'
@@ -119,6 +120,58 @@ describe('NebiusAuth', () => {
 
       expect(providers).toBeDefined()
       expect(typeof providers).toBe('object')
+    })
+  })
+
+  describe('env-vs-profile precedence (the `environment` contract)', () => {
+    // Regression: `nebiusEnvironment` is alchemy's env-vs-profile PROBE, not a
+    // list of every variable the stack reads. It used to include
+    // `NEBIUS_PROJECT_ID`, so any `.env` with a project id made alchemy select
+    // the environment credential source — logging "using environment variables
+    // (NEBIUS_PROJECT_ID) instead of the profile" and then failing with "Nebius
+    // CI credentials not found", shadowing a perfectly good OAuth profile. Any
+    // future non-credential variable re-added here fails this test.
+    test('a non-credential environment (project id only) is NOT configured credentials', async () => {
+      const used = await Effect.runPromise(
+        presentEnvironment(nebiusEnvironment).pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_PROJECT_ID: 'project-x' }))),
+        ),
+      )
+
+      expect(used).toBeUndefined()
+    })
+
+    test('a static API key IS configured credentials', async () => {
+      const used = await Effect.runPromise(
+        presentEnvironment(nebiusEnvironment).pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_API_KEY: 'test-key' }))),
+        ),
+      )
+
+      expect(used).toEqual(['NEBIUS_API_KEY'])
+    })
+
+    test('the service-account key triple IS configured credentials', async () => {
+      const used = await Effect.runPromise(
+        presentEnvironment(nebiusEnvironment).pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                NEBIUS_SA_ID: 'sa-1',
+                NEBIUS_SA_KEY_ID: 'key-1',
+                NEBIUS_SA_PRIVATE_KEY: 'pem',
+              }),
+            ),
+          ),
+        ),
+      )
+
+      expect(used).toBeDefined()
+      expect(used).toContain('NEBIUS_SA_ID')
+    })
+
+    test('NEBIUS_PROJECT_ID is absent from the credential environment contract', () => {
+      expect(nebiusEnvironment.map((variable) => variable.name)).not.toContain('NEBIUS_PROJECT_ID')
     })
   })
 
