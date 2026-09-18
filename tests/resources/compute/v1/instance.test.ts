@@ -76,6 +76,73 @@ describe('Nebius.compute.v1.Instance', () => {
       expect(await runDiff(svc, { ...validInstanceProps, name: 'my-instance' }, { ...validInstanceProps, name: 'my-instance' })).toBeUndefined()
     })
 
+    // ── create-only spec fields (gpuCluster is settable only at creation, so a
+    //    change must REPLACE — and delete-first, because the physical name is
+    //    unchanged; before this it planned as "no changes") ────────────────────
+
+    // A same-name replacement cannot be create-first: the new generation would
+    // ask Nebius for a name the old generation still holds (ALREADY_EXISTS),
+    // and the provider's create-recovery would adopt and then GC-delete it.
+    const gpuClusterReplace = { action: 'replace', deleteFirst: true }
+
+    test('GPU cluster change requires a delete-first replace (create-only field)', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, gpuCluster: { id: 'gpucluster-new' } },
+          { ...validInstanceProps, gpuCluster: { id: 'gpucluster-old' } },
+        ),
+      ).toEqual(gpuClusterReplace)
+    })
+
+    test('adding or removing a GPU cluster on an existing instance requires replace', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      // Added: the instance is already running without a cluster.
+      expect(
+        await runDiff(svc, { ...validInstanceProps, gpuCluster: { id: 'gpucluster-new' } }, { ...validInstanceProps }),
+      ).toEqual(gpuClusterReplace)
+      // Removed: the instance is attached to a cluster it cannot leave in place.
+      expect(
+        await runDiff(svc, { ...validInstanceProps }, { ...validInstanceProps, gpuCluster: { id: 'gpucluster-old' } }),
+      ).toEqual(gpuClusterReplace)
+    })
+
+    test('an unchanged GPU cluster is a noop', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const cluster = { gpuCluster: { id: 'gpucluster-same' } }
+      expect(await runDiff(svc, { ...validInstanceProps, ...cluster }, { ...validInstanceProps, ...cluster })).toBeUndefined()
+    })
+
+    test('a GPU cluster change outranks an in-place spec change (replace, not update)', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(
+          svc,
+          {
+            ...validInstanceProps,
+            gpuCluster: { id: 'gpucluster-new' },
+            filesystems: [
+              { attachMode: 'READ_WRITE' as const, mountTag: 'data', existingFilesystem: { id: 'filesystem-abc123' } },
+            ],
+          },
+          { ...validInstanceProps, gpuCluster: { id: 'gpucluster-old' } },
+        ),
+      ).toEqual(gpuClusterReplace)
+    })
+
+    test('a GPU cluster change is delete-first even when the name also changes', async () => {
+      // The stricter ordering wins: a mixed change must not be create-first.
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      expect(
+        await runDiff(
+          svc,
+          { ...validInstanceProps, name: 'new-name', gpuCluster: { id: 'gpucluster-new' } },
+          { ...validInstanceProps, name: 'old-name', gpuCluster: { id: 'gpucluster-old' } },
+        ),
+      ).toEqual(gpuClusterReplace)
+    })
+
     // ── host-mode diff rules (Task 4) ─────────────────────────────────────
 
     test('host-mode toggle ON (main added) is a replace', async () => {
@@ -344,6 +411,7 @@ describe('Nebius.compute.v1.Instance', () => {
         localDisks: { passthroughGroup: { requested: true } },
         reservationPolicy: { policy: 'STRICT', reservationIds: ['reservation-abc123'] },
         nvlInstanceGroupId: 'nvlgroup-abc123',
+        gpuCluster: { id: 'gpucluster-abc123' },
       })
       expect(spec.filesystems[0]?.attachMode).toBe(
         NebiusInstanceSchema.AttachedFilesystemSpec_AttachMode.READ_WRITE,
@@ -353,6 +421,8 @@ describe('Nebius.compute.v1.Instance', () => {
       expect(spec.reservationPolicy?.policy).toBe(NebiusInstanceSchema.ReservationPolicy_Policy.STRICT)
       expect(spec.reservationPolicy?.reservationIds).toEqual(['reservation-abc123'])
       expect(spec.nvlInstanceGroupId).toBe('nvlgroup-abc123')
+      // Nested message: `fromJSON` is what builds `InstanceGpuClusterSpec`.
+      expect(spec.gpuCluster?.id).toBe('gpucluster-abc123')
     })
   })
 
@@ -378,9 +448,19 @@ describe('Nebius.compute.v1.Instance', () => {
       }
       // The merged bootstrap (generated first, user's after) is what the API stores.
       expect(spec.cloudInitUserData).toBe('# generated bootstrap\necho user')
-      // The spec input keeps the low-level fields.
+      // The spec input keeps the low-level fields — including the create-only
+      // `gpuCluster`, which is a real InstanceSpec field, not a hosted prop.
       expect(spec.serviceAccountId).toBe('sa-abc123')
       expect(spec.resources).toBeDefined()
+    })
+
+    test('`gpuCluster` is a low-level spec field, not a hosted prop', async () => {
+      const spec = Module.hostedSpecInput(
+        { ...validInstanceProps, gpuCluster: { id: 'gpucluster-abc123' } } as SchemaModule.InstanceProps,
+        undefined,
+      )
+      expect(spec.gpuCluster).toEqual({ id: 'gpucluster-abc123' })
+      expect(NebiusInstanceSchema.InstanceSpec.fromJSON(spec).gpuCluster?.id).toBe('gpucluster-abc123')
     })
 
     test('low-level mode keeps the user cloud-init untouched', async () => {

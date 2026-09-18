@@ -213,6 +213,34 @@ export const hostedSpecInput = (news: InstanceSchema.InstanceProps, userData: st
   return spec
 }
 
+/**
+ * `InstanceSpec.gpuCluster` is create-only in the proto ("GPU cluster ID for
+ * InfiniBand interconnect. Only settable at creation"): the update API cannot
+ * move a VM between GPU clusters, so a change in either direction is a REPLACE.
+ * That is also why `gpuCluster` is deliberately absent from `reconcile`'s drift
+ * list below — an update there would ask the API to do the one thing it cannot.
+ *
+ * Compared on BOTH sides, unlike the house "guarded on the news side" rule for
+ * in-place spec fields: adding the cluster to or dropping it from an existing
+ * instance is the same create-only transition. Before this check existed the
+ * field was in NO comparison list, so any change planned as "no changes" and
+ * the VM silently kept its previous cluster (see the probe in the tests).
+ *
+ * Returns a `deleteFirst` replace, unlike a name change (which stays
+ * create-first because the replacement has a different physical name): the
+ * physical name is UNCHANGED here, so the new generation cannot be created
+ * while the old one still holds it. Nebius answers ALREADY_EXISTS, and this
+ * provider's create-failure recovery would then `getByName`-adopt the OLD
+ * instance — which Phase 2 GC would delete as the "replaced" generation.
+ */
+const gpuClusterChangeRequiresReplace = (
+  news: { gpuCluster?: { id?: string } },
+  olds?: { gpuCluster?: { id?: string } },
+): { action: 'replace'; deleteFirst: true } | undefined =>
+  (news.gpuCluster?.id ?? '') !== (olds?.gpuCluster?.id ?? '')
+    ? { action: 'replace', deleteFirst: true }
+    : undefined
+
 /** Map the protobuf instance-state enum to its friendly name. */
 const friendlyState = (state: unknown): string => {
   if (typeof state === 'number') return NebiusInstanceSchema.instanceStatus_InstanceStateToJSON(state)
@@ -402,6 +430,10 @@ export const NebiusInstanceProvider: Layer.Layer<
     // 3. Sync — update if the spec drifted from desired (hosted merges the
     //    generated bootstrap into cloudInitUserData; user-data change = update,
     //    Deviation 2 — Nebius accepts it in place).
+    //
+    //    `gpuCluster` is absent from the list below BY DESIGN: it is create-only,
+    //    so a difference is a `replace` (see `gpuClusterChangeRequiresReplace`),
+    //    never an in-place update — the API rejects an update that tries.
     const specDrifted = (() => {
       if (!instance.spec) return false
       return (
@@ -579,7 +611,18 @@ export const NebiusInstanceProvider: Layer.Layer<
 
     const nameRequiresReplace = Factory.nameChangeRequiresReplace(news, olds)
 
+    // Create-only spec fields replace (and delete-first — see the helper). This
+    // is checked before the name/host-mode branch so a combined change still
+    // gets the stricter ordering.
+    const gpuClusterReplacement = gpuClusterChangeRequiresReplace(news, olds)
+    if (gpuClusterReplacement) {
+      return gpuClusterReplacement
+    }
+
     // Host-mode toggle (`main` presence change) → replace (EC2 hostModeChanged).
+    // NOTE: this replace is still create-first, which is unsafe for an instance
+    // with a user-pinned `name` (same hazard class as above) — tracked in
+    // TASKS.md §"same-name replace".
     if (nameRequiresReplace || Boolean(olds?.main) !== Boolean(news.main)) {
       return { action: 'replace' }
     }
