@@ -351,6 +351,12 @@ for the full pattern.
 
 > **Small-bundle variant**: the Effect-native worker bundles alchemy's runtime. If bundle size matters more than the typed contracts, use [`examples/storage-async.bindings.ts`](examples/storage-async.bindings.ts).
 
+> **Worker support is the compatibility wrapper.** The Nebius Instance is the
+> default host, and the Worker path is kept deliberately (removing it would be a
+> breaking change). It is regression-gated by the suite, which exercises the
+> Cloudflare `{ bindings: [...] }` payload against a *mock* host — there is no
+> real-Cloudflare deploy in CI, so this is the one arm with mock-level coverage only.
+
 ## Examples
 
 | Example                                                        | What it demonstrates                                                                                                                                                                                                                                                                                                                                                                                              |
