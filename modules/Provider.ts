@@ -11,6 +11,7 @@ import * as DnsGrpc from './api-client/dns.ts'
 import * as MysteryBoxGrpc from './api-client/mysterybox.ts'
 import * as KmsGrpc from './api-client/kms.ts'
 import * as QuotasGrpc from './api-client/quotas.ts'
+import * as CapacityGrpc from './api-client/capacity.ts'
 import * as AiGrpc from './api-client/ai.ts'
 import * as BucketResource from './resources/storage/v1/bucket.ts'
 import * as TransferResource from './resources/storage/v1/transfer.ts'
@@ -149,6 +150,7 @@ export const providers = () =>
     Layer.provideMerge(MysteryBoxGrpc.MysteryBoxGrpcServiceLive),
     Layer.provideMerge(KmsGrpc.KmsGrpcServiceLive),
     Layer.provideMerge(QuotasGrpc.QuotasGrpcServiceLive),
+    Layer.provideMerge(CapacityGrpc.CapacityGrpcServiceLive),
     Layer.provideMerge(AiGrpc.AiGrpcServiceLive),
   ).pipe(
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),

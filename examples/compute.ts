@@ -102,16 +102,16 @@ export default Alchemy.Stack(
 // ---------------------------------------------------------------------------
 //
 // Not wired into the stack above, because both need something the environment
-// may not have — a **physical InfiniBand fabric** for `GpuCluster` (no RPC lists
-// fabrics; take the id from the Nebius console → GPU clusters, or
-// `nebius capacity resource-advice list`) and a GB200/GB300 entitlement for
-// `NVLInstanceGroup`. Copy this into the stack's Effect to use it:
+// may not have — a **physical InfiniBand fabric** for `GpuCluster` and a
+// GB200/GB300 entitlement for `NVLInstanceGroup`. Discover a fabric with the
+// read-only capacity action, then copy this into the stack's Effect:
 //
-//   const NEBIUS_TEST_INFINIBAND_FABRIC = '<fabric-id>'
+//   const rows = yield* Nebius.capacity.action.ListResourceAdvice({ region: 'eu-north1' })
+//   const fabric = rows[0]!.fabric      // e.g. 'fabric-7'
 //
 //   // The group first — its `id` is what the members reference.
 //   const cluster = yield* Nebius.compute.GpuCluster('Cluster', {
-//     infinibandFabric: NEBIUS_TEST_INFINIBAND_FABRIC,
+//     infinibandFabric: fabric,
 //   })
 //
 //   const group = yield* Nebius.compute.NVLInstanceGroup('Rack', {

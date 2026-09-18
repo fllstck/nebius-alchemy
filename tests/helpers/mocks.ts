@@ -16,6 +16,7 @@ import * as Iam from '../../modules/api-client/iam.ts'
 import * as Quotas from '../../modules/api-client/quotas.ts'
 import * as Compute from '../../modules/api-client/compute.ts'
 import * as Storage from '../../modules/api-client/storage.ts'
+import * as Capacity from '../../modules/api-client/capacity.ts'
 import { GrpcError } from '../../modules/api-client/grpc-utils.ts'
 import { Stack } from 'alchemy/Stack'
 import { Stage } from 'alchemy/Stage'
@@ -95,6 +96,10 @@ export const mockComputeLayer = (partial: unknown) =>
 /** Build a StorageGrpcService layer with only the sub-services under test. */
 export const mockStorageLayer = (partial: unknown) =>
   Layer.succeed(Storage.StorageGrpcService, partial as Storage.StorageGrpcServiceShape)
+
+/** Build a CapacityGrpcService layer with only the sub-services under test. */
+export const mockCapacityLayer = (partial: unknown) =>
+  Layer.succeed(Capacity.CapacityGrpcService, partial as Capacity.CapacityGrpcServiceShape)
 
 /** A gRPC NOT_FOUND (code 5), as the API returns for a deleted resource. */
 export const notFoundError = () => new GrpcError({ code: 5, message: 'not found', details: '' })
