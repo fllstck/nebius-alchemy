@@ -39,7 +39,13 @@ integrationTest(
         .pipe(Effect.flip)
       expect(notFound).toBeInstanceOf(Validation.ResourceNotFoundError)
     }).pipe(safeDestroy(stack)),
-  { timeout: 120_000 },
+  // Budget for a full PROJECT lifecycle, not just the action calls: the deploy
+  // creates a real project (~22s) and `safeDestroy` waits out its deletion,
+  // which polls for ~90s (logged as "Still deleting … — 30s/60s elapsed").
+  // The calls themselves take ~4s — see `GetGroup / ListGroups` below, whose
+  // resources delete instantly. Measured 2026-09-18: 120s was below the real
+  // cost and failed under full-suite load.
+  { timeout: 300_000 },
 )
 
 integrationTest(

@@ -32,5 +32,9 @@ integrationTest(test.provider, 'Nebius.iam.v2.Project lifecycle', (stack) =>
   }).pipe(
     safeDestroy(stack),
   ),
-  { timeout: 120_000 },
+  // A full project lifecycle, measured at ~110s in isolation (create ~22s,
+  // region update ~1s, delete ~86s of polling) — so 120s left no headroom and
+  // reliably timed out under full-suite load. Project deletion is genuinely
+  // slow server-side, not hung.
+  { timeout: 300_000 },
 )
