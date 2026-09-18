@@ -26,6 +26,69 @@ These rules are hard requirements. Violations must be corrected immediately.
 - **MUST** use `SpecType.fromJSON()` instead of `fromPartial()` for specs with enum fields
 - **MUST** always provide a non-empty name in metadata, auto-generated if user didn't specify one. Use Alchemy's createPhysicalName.
 
+### Naming — schema casing, verbatim
+
+The generated protobuf TypeScript under `schemas/nebius/**` is the **single source of
+casing truth**. Never re-case a name to satisfy a style guide.
+
+- **MUST** spell resource type strings, namespace aliases, class names, prop/attribute
+  fields and any other identifier that mirrors a schema name **exactly as the schema
+  spells it** — `'Nebius.compute.v1.NVLInstanceGroup'`, `NebiusNVLInstanceGroup`,
+  `Nebius.compute.NVLInstanceGroup`.
+- **MUST** keep all-caps initialisms all-caps, because that is what the schema does:
+  `NVLInstanceGroup`, `GB200`/`GB300`, `NVLinkSpec`, `IPAddress`/`PublicIPAddress`,
+  `IPAlias`, `CORSConfiguration`/`CORSRule`, `OSInfo`, `NIDFieldSettings`, `S3*`.
+  Write `NvlInstanceGroup`/`GpuClusterId`-style re-casings only where the schema itself
+  is lowercase (`gpu_cluster` → `GpuCluster`, `ip_address` → `ipAddress`).
+- **MUST** use the schema's own field spelling for props/attributes. `snake_case` in the
+  proto is already `camelCase` in the generated schema (ts-proto does that conversion) —
+  copy it as-is; do not invent synonyms or re-case.
+- Coined identifiers (aggregate gRPC services, actions, bindings) PascalCase the schema
+  token they derive from and preserve its acronym treatment: package `mysterybox` →
+  `MysteryBoxGrpcService` (the schema spells `MysteryBox` in `EndpointSpec_MysteryBoxSecretRef`),
+  `vpc` → `VpcGrpcService`, `ai` → `AiGrpcService`.
+- A *deliberate reshape* is not a rename for style and is allowed — but it **MUST** be
+  documented at the field: the `google.protobuf.Duration` → `…Seconds` mapping and
+  `storage/v1/transfer`'s `stopCondition` union are the two existing examples.
+- File names are kebab-case for multi-word resources (`route-table.ts`,
+  `nvl-instance-group.ts`); the proto's own file name stays lowercase in `schemas/`.
+
+Audit status: `modules/resources` has **0** casing deviations today (36/36 resource type
+strings match their generated message names; 0 casing-only prop/spec field mismatches,
+nested structs included). This rule exists to keep it that way — re-check with
+`bun tools/schema-conformance.ts` (exits 1 on any deviation) and see TASKS.md
+§"Casing conformance".
+
+### Branded IDs — everywhere, inputs and outputs
+
+An identifier that names a schema entity **MUST** be the entity's brand, never a bare
+`Schema.String`.
+
+- **MUST** brand every ID-valued prop **and** attribute, on the input and the output side
+  of a resource. `nvlInstanceGroupId: Schema.optional(NVLInstanceGroupId)`,
+  `sourceDiskId: Ids.DiskId`, `serviceAccountId: ServiceAccountSchema.ServiceAccountId`.
+- **MUST** add a brand for a new resource/entity in the service's `ids.ts`
+  (`compute/v1/ids.ts`, `vpc/v1/ids.ts`, `ai/v1/ids.ts`) before wiring its provider, so
+  parent references never type-check as plain strings.
+- A field that references a **polymorphic** entity (the permit target of `iam/v1/access-permit`,
+  the member of `iam/v1/group-membership`, a KMS key that may be symmetric *or* asymmetric)
+  **MUST** get its own nominal brand rather than an existing resource's brand — the
+  precedent is the local `KmsKeyId` in `mysterybox/v1/secret.schema.ts`.
+- A value that is **not** a Nebius resource identifier MUST NOT be branded: external
+  identifiers (a federated IdP subject, an AWS-format access-key SID, a CORS rule id, an
+  OpenAI-compatible completion id), guest-side names (`deviceId`), and sentinels such as
+  the `''` = auto-allocate `ipAddress.allocationId`. Leave those as `Schema.String` with a
+  doc comment saying why.
+- Consequence, accepted: branded props reject string literals in typed callers. Get IDs
+  from resource outputs; when a literal is unavoidable, cast at the call site (the codebase
+  already does: `examples/vpc.ts`, `examples/storage-async.bindings.ts`) and say where the
+  ID came from.
+
+Audit status: 35 bare-`Schema.String` ID candidates across `iam`, `compute`, `ai`,
+`storage`, `vpc` (`bun tools/schema-conformance.ts` prints the live list). The full
+classification — apply / new brand / keep unbranded / polymorphic — is in TASKS.md
+§"ID1 — Branded IDs".
+
 ### Vendored repos
 
 - **Read-only**: Do NOT edit files under `repos/`
