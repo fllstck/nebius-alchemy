@@ -193,9 +193,15 @@ Deploy GPU-accelerated instances, disks, and managed filesystems.
 > **Fabric ids come from the capacity advisor.** `infinibandFabric` is a
 > *physical* InfiniBand fabric in the target region; read the available ones with
 > `Nebius.capacity.action.ListResourceAdvice({ region })` (see Discovery Actions
-> below; `nebius capacity resource-advice list` shows the same data). Measured
-> `eu-north1` → `fabric-2,3,4,6,7`; the API accepts these verbatim (proven: a
-> cluster created with an advice-supplied fabric round-trips it).
+> below; `nebius capacity resource-advice list` shows the same data). **Fabrics are
+> Nebius-provided infrastructure, not resources you create** — there is no Fabric
+> service in the API and no CLI command for them; you create `GpuCluster`s that
+> point at one (many per fabric), and each fabric serves exactly one platform
+> (e.g. `fabric-7` → H200 only). So the prop stays a free string rather than a
+> `Schema.Literal` union: a union of today's fabrics would go stale the moment
+> Nebius lights up another one.
+> Measured `eu-north1` → `fabric-2,3,4,6,7`; the API accepts these verbatim
+> (proven: a cluster created with an advice-supplied fabric round-trips it).
 > `Nebius.compute.NVLInstanceGroup` is **not** yet exercised against real infra —
 > it needs a GB200/GB300 entitlement; its integration test is gated on
 > `NEBIUS_TEST_NVL_GROUP=1`.
