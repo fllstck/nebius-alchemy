@@ -104,8 +104,10 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
         { description: desiredSpec.description },
       ) ||
       // Rotation is opt-in: an unset prop must not fight the server-applied default.
+      // `specDeepEqual`: `Duration` wraps its seconds in a `Long`, which
+      // `deepEqual` cannot see (see utilities.ts).
       (news.rotationPeriodSeconds != null &&
-        !AlchemyDiff.deepEqual(key.spec?.rotationPeriod, desiredSpec.rotationPeriod))
+        !ResourceUtils.specDeepEqual(key.spec?.rotationPeriod, desiredSpec.rotationPeriod))
     if (key.spec && specDrifted) {
       yield* session.note(`Updating Nebius.kms.v1.SymmetricKey (${key.metadata!.name})`)
       key = yield* grpcService.symmetricKey.update({

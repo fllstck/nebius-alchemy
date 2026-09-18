@@ -88,7 +88,9 @@ export const NebiusFilesystemProvider: Layer.Layer<
     if (news.forbidDeletion) desiredSpec.forbidDeletion = true
 
     const desired = NebiusFilesystemSchema.FilesystemSpec.fromJSON(desiredSpec)
-    if (fs.spec && !AlchemyDiff.deepEqual(fs.spec, desired)) {
+    // `specDeepEqual`, not `deepEqual`: the spec's sizes are int64s, which
+    // `deepEqual` canonicalizes to `undefined` (see utilities.ts).
+    if (fs.spec && !ResourceUtils.specDeepEqual(fs.spec, desired)) {
       yield* session.note(`Updating Nebius.compute.v1.Filesystem (${fs.metadata!.name})`)
       fs = yield* svc.filesystem.update({
         metadata: {

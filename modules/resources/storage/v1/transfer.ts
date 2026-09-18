@@ -101,7 +101,9 @@ export const NebiusTransferProvider: Layer.Layer<
     if (news.touchUnmanaged != null) desiredSpec.touchUnmanaged = news.touchUnmanaged
 
     const desired = NebiusTransferSchema.TransferSpec.fromJSON(desiredSpec)
-    if (transfer.spec && !AlchemyDiff.deepEqual(transfer.spec, desired)) {
+    // `specDeepEqual`: `interIterationInterval` is a `Duration` (Long seconds) and
+    // the limiters carry int64s — invisible to `deepEqual` (see utilities.ts).
+    if (transfer.spec && !ResourceUtils.specDeepEqual(transfer.spec, desired)) {
       yield* session.note(`Updating Nebius.storage.v1.Transfer (${transfer.metadata!.name})`)
       transfer = yield* svc.transfer.update({
         metadata: {

@@ -426,9 +426,9 @@ export const NebiusInstanceProvider: Layer.Layer<
       if (!instance.spec) return false
       return (
         !AlchemyDiff.deepEqual(instance.spec.resources, desired.resources) ||
-        !AlchemyDiff.deepEqual(instance.spec.bootDisk, desired.bootDisk) ||
+        !ResourceUtils.specDeepEqual(instance.spec.bootDisk, desired.bootDisk) ||
         !AlchemyDiff.deepEqual(instance.spec.networkInterfaces, desired.networkInterfaces) ||
-        !AlchemyDiff.deepEqual(instance.spec.secondaryDisks, desired.secondaryDisks) ||
+        !ResourceUtils.specDeepEqual(instance.spec.secondaryDisks, desired.secondaryDisks) ||
         !AlchemyDiff.deepEqual(instance.spec.filesystems, desired.filesystems) ||
         instance.spec.nvlInstanceGroupId !== desired.nvlInstanceGroupId ||
         // Optional messages the platform may answer with a default: enforce them

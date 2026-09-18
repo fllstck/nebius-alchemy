@@ -38,6 +38,12 @@ export const integrationTest = (
   name: string,
   fn: Parameters<TestBun.TestApi['test']['provider']>[1],
   opts?: Parameters<TestBun.TestApi['test']['provider']>[2],
+  /**
+   * Extra runtime precondition beyond `SLOW_TESTS` — an env-provided id, GPU
+   * quota, a paid-tier entitlement, … Skipped (not failed) when false, so the
+   * test keeps documenting the requirement while staying runnable.
+   */
+  enabled = true,
 ): void => {
-  provider.skipIf(!runIntegration())(name, fn, opts)
+  provider.skipIf(!(runIntegration() && enabled))(name, fn, opts)
 }

@@ -9,6 +9,10 @@ import * as NebiusFilesystemServiceSchema from '../../schemas/nebius/compute/v1/
 import type { Filesystem } from '../../schemas/nebius/compute/v1/filesystem.ts'
 import * as NebiusDiskSnapshotServiceSchema from '../../schemas/nebius/compute/v1/disk_snapshot_service.ts'
 import type { DiskSnapshot } from '../../schemas/nebius/compute/v1/disk_snapshot.ts'
+import * as NebiusGpuClusterServiceSchema from '../../schemas/nebius/compute/v1/gpu_cluster_service.ts'
+import type { GpuCluster } from '../../schemas/nebius/compute/v1/gpu_cluster.ts'
+import * as NebiusNVLInstanceGroupServiceSchema from '../../schemas/nebius/compute/v1/nvlinstancegroup_service.ts'
+import type { NVLInstanceGroup } from '../../schemas/nebius/compute/v1/nvlinstancegroup.ts'
 import { GetByNameRequest } from '../../schemas/nebius/common/v1/metadata.ts'
 import * as GrpcUtils from './grpc-utils.ts'
 import { NebiusGrpcTransport } from './GrpcTransport.ts'
@@ -183,6 +187,86 @@ export interface DiskSnapshotService {
 }
 
 // ---------------------------------------------------------------------------
+// GpuCluster service — simplified, operation-aware interface
+// ---------------------------------------------------------------------------
+
+export type CreateGpuClusterInput = CreateInput
+
+export type UpdateGpuClusterInput = UpdateInput
+
+export interface GpuClusterService {
+  readonly get: (id: string) => Effect.Effect.Effect<GpuCluster, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  /** List all GPU clusters in a project (paginates automatically). */
+  readonly list: (
+    parentId: string,
+  ) => Effect.Effect.Effect<ReadonlyArray<GpuCluster>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+
+  // --- Operation-aware (polling transparent, inputs simplified) ---
+
+  readonly create: (
+    req: CreateGpuClusterInput,
+  ) => Effect.Effect.Effect<
+    GpuCluster,
+    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+  >
+  /**
+   * The RPC exists (and is wrapped), but `GpuClusterSpec` currently carries a
+   * single immutable field (`infinibandFabric`), so the provider never calls it.
+   */
+  readonly update: (
+    req: UpdateGpuClusterInput,
+  ) => Effect.Effect.Effect<
+    GpuCluster,
+    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+  >
+  readonly delete: (
+    id: string,
+  ) => Effect.Effect.Effect<
+    void,
+    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+  >
+}
+
+// ---------------------------------------------------------------------------
+// NVLInstanceGroup service — simplified, operation-aware interface
+// ---------------------------------------------------------------------------
+
+export type CreateNVLInstanceGroupInput = CreateInput
+
+export type UpdateNVLInstanceGroupInput = UpdateInput
+
+export interface NVLInstanceGroupService {
+  readonly get: (
+    id: string,
+  ) => Effect.Effect.Effect<NVLInstanceGroup, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  /** List all NVLink instance groups in a project (paginates automatically). */
+  readonly list: (
+    parentId: string,
+  ) => Effect.Effect.Effect<ReadonlyArray<NVLInstanceGroup>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+
+  // --- Operation-aware (polling transparent, inputs simplified) ---
+
+  readonly create: (
+    req: CreateNVLInstanceGroupInput,
+  ) => Effect.Effect.Effect<
+    NVLInstanceGroup,
+    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+  >
+  readonly update: (
+    req: UpdateNVLInstanceGroupInput,
+  ) => Effect.Effect.Effect<
+    NVLInstanceGroup,
+    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+  >
+  readonly delete: (
+    id: string,
+  ) => Effect.Effect.Effect<
+    void,
+    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+  >
+}
+
+// ---------------------------------------------------------------------------
 // Service shape & service tag
 // ---------------------------------------------------------------------------
 
@@ -192,6 +276,8 @@ export interface ComputeGrpcServiceShape {
   readonly instance: InstanceService
   readonly filesystem: FilesystemService
   readonly diskSnapshot: DiskSnapshotService
+  readonly gpuCluster: GpuClusterService
+  readonly nvlInstanceGroup: NVLInstanceGroupService
 }
 
 export class ComputeGrpcService extends Effect.Context.Service<ComputeGrpcService, ComputeGrpcServiceShape>()(
@@ -377,6 +463,76 @@ const makeDiskSnapshotService = Effect.Effect.gen(function* () {
   return { ...polled, list } as unknown as DiskSnapshotService
 })
 
+const makeGpuClusterService = Effect.Effect.gen(function* () {
+  const raw = yield* GrpcUtils.makeGrpcService(NebiusGpuClusterServiceSchema.GpuClusterServiceClient)
+  const transport = yield* NebiusGrpcTransport
+
+  const polled = GrpcUtils.wrapWithOperationPolling(raw, {
+    serviceName: 'nebius.compute.v1.GpuClusterService',
+    polling: ['create', 'update'],
+    forget: ['delete'],
+    transport,
+    getRequest: (id) => NebiusGpuClusterServiceSchema.GetGpuClusterRequest.fromPartial({ id }),
+    mapInput: {
+      get: (id: string) => NebiusGpuClusterServiceSchema.GetGpuClusterRequest.fromPartial({ id }),
+      create: (req: CreateGpuClusterInput) => NebiusGpuClusterServiceSchema.CreateGpuClusterRequest.fromPartial(req),
+      update: (req: UpdateGpuClusterInput) => NebiusGpuClusterServiceSchema.UpdateGpuClusterRequest.fromPartial(req),
+      delete: (id: string) => NebiusGpuClusterServiceSchema.DeleteGpuClusterRequest.fromPartial({ id }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  const list = (parentId: string) =>
+    GrpcUtils.paginateAll(
+      (req) => raw.list(req),
+      (parentId, pageToken) =>
+        NebiusGpuClusterServiceSchema.ListGpuClustersRequest.fromPartial({
+          parentId,
+          pageSize: 100,
+          pageToken,
+        }),
+      parentId,
+    )
+
+  return { ...polled, list } as unknown as GpuClusterService
+})
+
+const makeNVLInstanceGroupService = Effect.Effect.gen(function* () {
+  const raw = yield* GrpcUtils.makeGrpcService(NebiusNVLInstanceGroupServiceSchema.NVLInstanceGroupServiceClient)
+  const transport = yield* NebiusGrpcTransport
+
+  const polled = GrpcUtils.wrapWithOperationPolling(raw, {
+    serviceName: 'nebius.compute.v1.NVLInstanceGroupService',
+    polling: ['create', 'update'],
+    forget: ['delete'],
+    transport,
+    getRequest: (id) => NebiusNVLInstanceGroupServiceSchema.GetNVLInstanceGroupRequest.fromPartial({ id }),
+    mapInput: {
+      get: (id: string) => NebiusNVLInstanceGroupServiceSchema.GetNVLInstanceGroupRequest.fromPartial({ id }),
+      create: (req: CreateNVLInstanceGroupInput) =>
+        NebiusNVLInstanceGroupServiceSchema.CreateNVLInstanceGroupRequest.fromPartial(req),
+      update: (req: UpdateNVLInstanceGroupInput) =>
+        NebiusNVLInstanceGroupServiceSchema.UpdateNVLInstanceGroupRequest.fromPartial(req),
+      delete: (id: string) => NebiusNVLInstanceGroupServiceSchema.DeleteNVLInstanceGroupRequest.fromPartial({ id }),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any
+
+  const list = (parentId: string) =>
+    GrpcUtils.paginateAll(
+      (req) => raw.list(req),
+      (parentId, pageToken) =>
+        NebiusNVLInstanceGroupServiceSchema.ListNVLInstanceGroupsRequest.fromPartial({
+          parentId,
+          pageSize: 100,
+          pageToken,
+        }),
+      parentId,
+    )
+
+  return { ...polled, list } as unknown as NVLInstanceGroupService
+})
+
 export const ComputeGrpcServiceLive = Effect.Layer.effect(
   ComputeGrpcService,
   Effect.Effect.gen(function* () {
@@ -385,7 +541,9 @@ export const ComputeGrpcServiceLive = Effect.Layer.effect(
     const instance = yield* makeInstanceService
     const filesystem = yield* makeFilesystemService
     const diskSnapshot = yield* makeDiskSnapshotService
+    const gpuCluster = yield* makeGpuClusterService
+    const nvlInstanceGroup = yield* makeNVLInstanceGroupService
 
-    return { disk, image, instance, filesystem, diskSnapshot }
+    return { disk, image, instance, filesystem, diskSnapshot, gpuCluster, nvlInstanceGroup }
   }),
 )

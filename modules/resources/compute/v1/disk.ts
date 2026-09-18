@@ -80,8 +80,11 @@ export const NebiusDiskProvider: Layer.Layer<
     const desired = NebiusDiskSchema.DiskSpec.fromJSON(news)
     if (
       disk.spec &&
-      (!AlchemyDiff.deepEqual(disk.spec.sizeGibibytes, desired.sizeGibibytes) ||
-        !AlchemyDiff.deepEqual(disk.spec.blockSizeBytes, desired.blockSizeBytes) ||
+      // `specDeepEqual` for the int64 sizes: `deepEqual` canonicalizes `Long`
+      // (a class instance) to `undefined`, so every size compared equal — a
+      // resize planned as "no changes" (see utilities.ts).
+      (!ResourceUtils.specDeepEqual(disk.spec.sizeGibibytes, desired.sizeGibibytes) ||
+        !ResourceUtils.specDeepEqual(disk.spec.blockSizeBytes, desired.blockSizeBytes) ||
         disk.spec.type !== desired.type ||
         disk.spec.forbidDeletion !== desired.forbidDeletion)
     ) {

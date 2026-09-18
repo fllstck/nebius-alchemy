@@ -187,6 +187,17 @@ Deploy GPU-accelerated instances, disks, and managed filesystems.
 - **`Nebius.compute.Image`** — Dynamic image lookup by family (`ubuntu-22-04-lts`, etc.)
 - **`Nebius.compute.Filesystem`** — Managed NFS filesystems
 - **`Nebius.compute.DiskSnapshot`** — Point-in-time disk snapshots
+- **`Nebius.compute.GpuCluster`** — InfiniBand GPU clusters. The spec is a single immutable field (`infinibandFabric`), so any change replaces the cluster; `instances` is read-only (membership is declared on the Instance via `gpuCluster.id`), and deleting a cluster that still has members fails with `GpuClusterNotEmpty` naming them
+- **`Nebius.compute.NVLInstanceGroup`** — NVLink instance groups (`GB200`/`GB300` racks). `type` is immutable (a change replaces); `size` is the maximum member count and adjusts in place; `instances` is read-only (membership is declared on the Instance via `nvlInstanceGroupId`), and deleting a non-empty group fails with `NVLInstanceGroupNotEmpty`
+
+> ⚠️ **`GpuCluster` needs a fabric ID you cannot discover through this SDK yet.**
+> `infinibandFabric` is a *physical* fabric in the target region, and no RPC in the
+> generated surface lists them — the only place a fabric is named is `capacity/v1`
+> resource advice, which is not implemented. Take the value from the Nebius console
+> (GPU clusters → fabrics; `nebius capacity resource-advice list` also shows it). Both
+> new resources are unit-tested and plan-time validated, but **not yet exercised against
+> real infra** — see their `*.integration.test.ts`, which skip until a fabric /
+> NVLink entitlement is available.
 
 ### AI
 

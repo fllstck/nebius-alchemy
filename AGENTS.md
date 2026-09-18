@@ -25,6 +25,16 @@ These rules are hard requirements. Violations must be corrected immediately.
 - **MUST** use `*.fromPartial()` to construct protobuf request objects — never plain objects
 - **MUST** use `SpecType.fromJSON()` instead of `fromPartial()` for specs with enum fields
 - **MUST** always provide a non-empty name in metadata, auto-generated if user didn't specify one. Use Alchemy's createPhysicalName.
+- **MUST** compare protobuf specs/resources with `specDeepEqual` from `modules/resources/utilities.ts` —
+  never `AlchemyDiff.deepEqual` directly. `deepEqual` canonicalizes **non-plain objects
+  (class instances) to `undefined`** by design (walking Effect/SDK objects is unsafe), and
+  `long`'s `Long` is one, so **every int64 compares equal to every other**:
+  `deepEqual(Long.fromNumber(2), Long.fromNumber(8)) === true` (verified). Any spec
+  comparison is therefore blind to exactly the fields users change most — disk and
+  filesystem sizes, quota limits, key rotation periods — and nested Longs (e.g. inside a
+  `google.protobuf.Duration`, or `AttachedDiskSpec.managedDisk.spec`) are invisible while
+  their siblings still compare. `specDeepEqual` normalizes Longs to their decimal string
+  first; tests pin both behaviours in `tests/resources/utilities.test.ts`.
 
 ### Naming — schema casing, verbatim
 

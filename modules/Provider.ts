@@ -28,6 +28,8 @@ import * as ImageResource from './resources/compute/v1/image.ts'
 import * as InstanceResource from './resources/compute/v1/instance.ts'
 import * as FilesystemResource from './resources/compute/v1/filesystem.ts'
 import * as DiskSnapshotResource from './resources/compute/v1/disk-snapshot.ts'
+import * as GpuClusterResource from './resources/compute/v1/gpu-cluster.ts'
+import * as NVLInstanceGroupResource from './resources/compute/v1/nvl-instance-group.ts'
 import * as ZoneResource from './resources/dns/v1/zone.ts'
 import * as RecordResource from './resources/dns/v1/record.ts'
 import * as SecretResource from './resources/mysterybox/v1/secret.ts'
@@ -73,6 +75,8 @@ const resources = AlchemyProvider.collection([
   InstanceResource.NebiusInstance,
   FilesystemResource.NebiusFilesystem,
   DiskSnapshotResource.NebiusDiskSnapshot,
+  GpuClusterResource.NebiusGpuCluster,
+  NVLInstanceGroupResource.NebiusNVLInstanceGroup,
   ZoneResource.NebiusZone,
   RecordResource.NebiusRecord,
   ServiceAccountResource.NebiusServiceAccount,
@@ -113,6 +117,8 @@ export const providers = () =>
     Layer.provideMerge(InstanceResource.NebiusInstanceProvider),
     Layer.provideMerge(FilesystemResource.NebiusFilesystemProvider),
     Layer.provideMerge(DiskSnapshotResource.NebiusDiskSnapshotProvider),
+    Layer.provideMerge(GpuClusterResource.NebiusGpuClusterProvider),
+    Layer.provideMerge(NVLInstanceGroupResource.NebiusNVLInstanceGroupProvider),
     Layer.provideMerge(ZoneResource.NebiusZoneProvider),
   ).pipe(
     Layer.provideMerge(RecordResource.NebiusRecordProvider),

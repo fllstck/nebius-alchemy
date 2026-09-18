@@ -96,3 +96,44 @@ export default Alchemy.Stack(
     }
   }),
 )
+
+// ---------------------------------------------------------------------------
+// GPU clusters and NVLink instance groups
+// ---------------------------------------------------------------------------
+//
+// Not wired into the stack above, because both need something the environment
+// may not have — a **physical InfiniBand fabric** for `GpuCluster` (no RPC lists
+// fabrics; take the id from the Nebius console → GPU clusters, or
+// `nebius capacity resource-advice list`) and a GB200/GB300 entitlement for
+// `NVLInstanceGroup`. Copy this into the stack's Effect to use it:
+//
+//   const NEBIUS_TEST_INFINIBAND_FABRIC = '<fabric-id>'
+//
+//   // The group first — its `id` is what the members reference.
+//   const cluster = yield* Nebius.compute.GpuCluster('Cluster', {
+//     infinibandFabric: NEBIUS_TEST_INFINIBAND_FABRIC,
+//   })
+//
+//   const group = yield* Nebius.compute.NVLInstanceGroup('Rack', {
+//     type: 'GB200',
+//     size: 2,                    // maximum members; adjustable in place
+//   })
+//
+//   // Membership is declared HERE, on the instance — never on the group.
+//   // Alchemy sees the Output reference and orders the deploy (group before
+//   // member) and the destroy (member before group) accordingly.
+//   const node = yield* Nebius.compute.Instance('NodeA', {
+//     serviceAccountId: Nebius.iam.ServiceAccountId.make(serviceAccountId),
+//     resources: { platform: 'gpu-h200-sxm', preset: '1gpu-16vcpu-200gb' },
+//     bootDisk: { /* … */ },
+//     networkInterfaces: [
+//       { subnetId: Nebius.vpc.SubnetId.make(subnetId), name: 'eth0', ipAddress: { allocationId: '' } },
+//     ],
+//     gpuCluster: { id: cluster.id },        // create-only: changing it replaces the VM
+//     nvlInstanceGroupId: group.id,          // changeable in place (moves the VM out of the group)
+//   })
+//
+// Deleting the group while members remain is refused with `GpuClusterNotEmpty` /
+// `NVLInstanceGroupNotEmpty` naming them — which also catches the case where a
+// *replace* of the group (pinned `name`) would have to delete it before its
+// members are recreated.

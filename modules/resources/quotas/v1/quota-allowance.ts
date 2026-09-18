@@ -81,7 +81,9 @@ export const NebiusQuotaAllowanceProvider: Layer.Layer<
       region: news.region,
       ...(news.limit ? { limit: news.limit } : {}),
     })
-    if (qa.spec && !AlchemyDiff.deepEqual(qa.spec, desired)) {
+    // `specDeepEqual`: `limit` is an int64, which `deepEqual` cannot see — a
+    // limit change would plan as "no changes" (see utilities.ts).
+    if (qa.spec && !ResourceUtils.specDeepEqual(qa.spec, desired)) {
       yield* session.note(`Updating Nebius.quotas.v1.QuotaAllowance (${qa.metadata!.name})`)
       qa = yield* grpcService.quotaAllowance.update({
         metadata: {

@@ -12,6 +12,8 @@ import * as Layer from 'effect/Layer'
 import type { Provider, ProviderService } from 'alchemy/Provider'
 import type { ResourceLike } from 'alchemy/Resource'
 
+import { fakeSession } from './mocks.ts'
+
 /**
  * Resolve the provider service from a module's exported layer + resource tag.
  *
@@ -106,4 +108,85 @@ export const runDiff = async (
 ): Promise<unknown> => {
   if (!provider.diff) throw new Error('provider has no diff lifecycle')
   return runEffect(provider.diff(diffInput(news, olds)))
+}
+
+/**
+ * Engine bookkeeping every lifecycle input carries and no Nebius lifecycle
+ * inspects. Kept in one place so lifecycle tests need no per-test casts (the
+ * provider lifecycle inputs are strictly typed — props, branded attribute ids,
+ * `ScopedPlanStatusSession` — which is exactly what tests should not reproduce).
+ */
+const bookkeeping = () => ({
+  id: 'test-id',
+  fqn: 'test',
+  instanceId: 'inst',
+  bindings: [],
+  session: fakeSession,
+})
+
+/**
+ * Run a provider's `reconcile` lifecycle (create/update) and return the
+ * attributes. `output` is the persisted state: `undefined` for a create.
+ * Fails the test if the provider defines no `reconcile`.
+ *
+ * `...layers` are applied in order — `stackLayer`, `testConfigLayer`,
+ * `instanceIdLayer` and a `mockComputeLayer`/`mockIamLayer` are typically needed.
+ */
+// oxlint-disable-next-line no-explicit-any — approved: test helper (see runDiff)
+export const runReconcile = async (
+  // oxlint-disable-next-line no-explicit-any
+  provider: { reconcile?: (input: any) => Effect.Effect<any, any, any> },
+  props: unknown,
+  output?: { id: string },
+  olds?: unknown,
+  // oxlint-disable-next-line no-explicit-any
+  ...layers: Array<(effect: Effect.Effect<any, any, any>) => Effect.Effect<any, any, any>>
+  // oxlint-disable-next-line no-explicit-any — attributes are asserted at runtime
+): Promise<any> => {
+  if (!provider.reconcile) throw new Error('provider has no reconcile lifecycle')
+  // oxlint-disable-next-line no-explicit-any
+  let effect: Effect.Effect<any, any, any> = provider.reconcile({ ...bookkeeping(), news: props, olds, output })
+  for (const provide of layers) effect = provide(effect)
+  return runEffect(effect)
+}
+
+/**
+ * Run a provider's `delete` lifecycle, expecting success. Fails the test if the
+ * provider defines no `delete`.
+ */
+// oxlint-disable-next-line no-explicit-any — approved: test helper (see runDiff)
+export const runDelete = async (
+  // oxlint-disable-next-line no-explicit-any
+  provider: { delete?: (input: any) => Effect.Effect<any, any, any> },
+  output: { id: string },
+  olds?: unknown,
+  // oxlint-disable-next-line no-explicit-any
+  ...layers: Array<(effect: Effect.Effect<any, any, any>) => Effect.Effect<any, any, any>>
+): Promise<unknown> => {
+  if (!provider.delete) throw new Error('provider has no delete lifecycle')
+  // oxlint-disable-next-line no-explicit-any
+  let effect: Effect.Effect<any, any, any> = provider.delete({ ...bookkeeping(), olds, output })
+  for (const provide of layers) effect = provide(effect)
+  return runEffect(effect)
+}
+
+/**
+ * Run a provider's `delete` lifecycle expecting a **typed failure**, and return
+ * that failure (the `Effect.flip` a refusal test wants). Fails the test if the
+ * provider defines no `delete`.
+ */
+// oxlint-disable-next-line no-explicit-any — approved: test helper (see runDiff)
+export const runDeleteExpectingError = async (
+  // oxlint-disable-next-line no-explicit-any
+  provider: { delete?: (input: any) => Effect.Effect<any, any, any> },
+  output: { id: string },
+  olds?: unknown,
+  // oxlint-disable-next-line no-explicit-any
+  ...layers: Array<(effect: Effect.Effect<any, any, any>) => Effect.Effect<any, any, any>>
+): Promise<any> => {
+  if (!provider.delete) throw new Error('provider has no delete lifecycle')
+  // oxlint-disable-next-line no-explicit-any
+  let effect: Effect.Effect<any, any, any> = provider.delete({ ...bookkeeping(), olds, output })
+  for (const provide of layers) effect = provide(effect)
+  return runEffect(Effect.flip(effect))
 }

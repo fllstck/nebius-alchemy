@@ -14,8 +14,11 @@ import Long from 'long'
 
 import * as Iam from '../../modules/api-client/iam.ts'
 import * as Quotas from '../../modules/api-client/quotas.ts'
+import * as Compute from '../../modules/api-client/compute.ts'
+import { GrpcError } from '../../modules/api-client/grpc-utils.ts'
 import { Stack } from 'alchemy/Stack'
 import { Stage } from 'alchemy/Stage'
+import { InstanceId } from 'alchemy/InstanceId'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -48,6 +51,13 @@ export const stackLayer = Layer.mergeAll(
   Layer.succeed(Stage, 'test'),
 )
 
+/**
+ * alchemy's per-resource instance id. `createPhysicalName` seeds its random
+ * suffix from it, so any lifecycle that mints a generated name needs it — the
+ * engine provides it in real runs (`Apply.ts`), tests must do so explicitly.
+ */
+export const instanceIdLayer = Layer.succeed(InstanceId, '0f1e2d3c4b5a69788796a5b4c3d2e1f0')
+
 // ---------------------------------------------------------------------------
 // Session
 // ---------------------------------------------------------------------------
@@ -73,6 +83,16 @@ export const mockIamLayer = (partial: unknown) =>
 /** Build a QuotasGrpcService layer with only the sub-services under test. */
 export const mockQuotasLayer = (partial: unknown) =>
   Layer.succeed(Quotas.QuotasGrpcService, partial as Quotas.QuotasGrpcServiceShape)
+
+/**
+ * Build a ComputeGrpcService layer with only the sub-services under test.
+ * `unknown` on purpose — see {@link mockIamLayer}.
+ */
+export const mockComputeLayer = (partial: unknown) =>
+  Layer.succeed(Compute.ComputeGrpcService, partial as Compute.ComputeGrpcServiceShape)
+
+/** A gRPC NOT_FOUND (code 5), as the API returns for a deleted resource. */
+export const notFoundError = () => new GrpcError({ code: 5, message: 'not found', details: '' })
 
 // ---------------------------------------------------------------------------
 // Proto fixtures
