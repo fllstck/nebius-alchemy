@@ -137,6 +137,10 @@ The older `$STAGE` variable is **no longer consulted**.
 ### Peer Dependencies
 
 The package ships raw TypeScript source and requires these peer dependencies in your project.
+
+`typescript` is the exception to the exact-pin rule below, and deliberately so: pinning a TypeScript
+*version* as a required peer makes a plain `npm install` fail, because npm tries to place that version
+next to alchemy's optional `typescript@^6` chain. Marked optional, npm leaves the choice to you.
 Versions are **pinned exactly** — alchemy and Effect move together, so a mismatched pair fails
 at import (see _Install Dependencies_ above):
 
@@ -146,7 +150,7 @@ at import (see _Install Dependencies_ above):
 | `@effect/platform-bun`         | Yes      | `4.0.0-rc.117`                                                                            |
 | `@effect/platform-node`        | Yes      | `4.0.0-rc.117` — required by the Alchemy CLI                                              |
 | `@effect/platform-node-shared` | Yes      | `4.0.0-rc.117` — declared exact so npm resolves the whole `@effect/*` family consistently |
-| `typescript`                   | Yes      | TypeScript 6–7 (`>=6 <8`; 6.0.3 and 7.0.2 are the tested ends) — a range, not `^7`: an exact `^7` peer makes a plain `npm install` fail with `ERESOLVE`, because alchemy's optional frontend chain peers on `typescript@^6`                                                                       |
+| `typescript`                   | Optional | TypeScript 6 or 7 (verified: 6.0.3, 7.0.2) — declared `>=6 <8` and marked **optional** so npm never tries to install a compiler version for you. Non-optional, npm auto-installs the newest match and collides with alchemy's optional `typescript@^6` chain (`ERESOLVE`). Install `typescript` in your own project. |
 | `alchemy`                      | Yes      | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which points at an _older_ beta      |
 
 ### tsconfig.json
