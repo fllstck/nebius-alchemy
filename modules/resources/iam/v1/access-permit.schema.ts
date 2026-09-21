@@ -10,7 +10,10 @@ import * as Ids from './ids.ts'
 export const AccessPermitPropsSchema = Schema.Struct({
   /** Parent group ID (the subject receiving the permit). Also serves as the identity. */
   parentId: Ids.GroupId,
-  name: Schema.optional(Schema.String),
+  // No `name` prop: the API rejects `metadata.name` on AccessPermit creates
+  // (verified live — the provider omits it from every request), so a
+  // user-chosen name has no wire field to travel in. The derived `ap-<logicalId>`
+  // is only a local label for session notes.
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /**
    * The resource ID to grant access to. Immutable after creation. Polymorphic:

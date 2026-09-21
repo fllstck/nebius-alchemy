@@ -13,10 +13,19 @@ const { describe, expect, test } = BunTest
  * (parentId, memberId).
  */
 
-const membershipProto = (id: string, name: string, parentId: string, memberId: string, labels: Record<string, string> = {}) => ({
+const membershipProto = (
+  id: string,
+  name: string,
+  parentId: string,
+  memberId: string,
+  labels: Record<string, string> = {},
+  // `revokeAt` is a TOP-LEVEL field of the resource (not in `status`).
+  revokeAt?: Date,
+) => ({
   metadata: protoMetadata(id, name, parentId, labels),
   spec: { memberId },
   status: {},
+  revokeAt,
 })
 
 describe('Nebius.iam.v1.GroupMembership', () => {
@@ -51,6 +60,16 @@ describe('Nebius.iam.v1.GroupMembership', () => {
 
     test('a falsy revokeAfterHours is not a change (the create only sends it when truthy)', async () => {
       expect(await diff({ ...base, revokeAfterHours: 0 })).toBeUndefined()
+    })
+
+    // The live case caught this: a *truthiness* comparison plans nothing for
+    // 24 → 48 (both truthy), so the change was silently lost — the very bug this
+    // check exists to prevent. Only the falsy case may be normalised away.
+    test('revokeAfterHours 24 → 48 replaces (a truthiness comparison would miss it)', async () => {
+      expect(await diff({ ...base, revokeAfterHours: 48 }, { ...base, revokeAfterHours: 24 })).toEqual({
+        action: 'replace',
+        deleteFirst: true,
+      })
     })
 
     test('labels-only change is a noop (declared exception)', async () => {
@@ -129,6 +148,39 @@ describe('Nebius.iam.v1.GroupMembership', () => {
 
       expect(output).toMatchObject({ id: 'gm-1', memberId: 'member-1' })
       expect(createCalled).toBe(false)
+    })
+
+    test('surfaces top-level `revokeAt` as an attribute (it is not in `status`)', async () => {
+      const svc = await resolveProvider(Module.NebiusGroupMembership.Provider, Module.NebiusGroupMembershipProvider)
+
+      const revokeAt = new Date('2026-10-01T00:00:00.000Z')
+      const layer = mockIamLayer({
+        groupMembership: {
+          get: () => Effect.fail({ _tag: 'GrpcError', code: 5 }),
+          listMembers: () =>
+            Effect.succeed([
+              membershipProto('gm-1', 'gm-existing', 'group-1', 'member-1', { 'alchemy::id': 'gm_test' }, revokeAt),
+            ]),
+          create: () => Effect.never,
+          delete: () => Effect.void,
+        },
+      })
+
+      const output = await runEffect(
+        svc.reconcile({
+          id: 'gm_test',
+          fqn: 'gm_test',
+          instanceId: 'inst',
+          news: { parentId: 'group-1', memberId: 'member-1', revokeAfterHours: 24 },
+          output: undefined,
+          session: fakeSession,
+        } as any).pipe(Effect.provide(layer)),
+      )
+
+      // `toFriendlyAttributes` spreads metadata/spec/status only, so this needs
+      // the explicit override — without it the attribute was always undefined,
+      // hiding the one observable of `revokeAfterHours`.
+      expect(output.revokeAt).toEqual(revokeAt)
     })
 
     test('create sends parentId + alchemy labels and NO metadata.name (API prohibits it)', async () => {

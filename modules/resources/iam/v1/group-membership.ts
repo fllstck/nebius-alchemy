@@ -34,6 +34,12 @@ const toFriendlyAttributes = (
   ResourceUtils.toFriendlyAttributes<GroupMembershipSchema.GroupMembershipAttributes>({
     rawResource: raw,
     resourceSchema: NebiusGroupMembershipSchema.GroupMembership,
+    // `revokeAt` is a TOP-LEVEL field of `GroupMembership` — a sibling of
+    // metadata/spec/status, and `GroupMembershipStatus` has no revoke field —
+    // while `toFriendlyAttributes` spreads only those three. Without this
+    // override the attribute was always `undefined`: the single observable of
+    // `revokeAfterHours` was invisible to users (found by the live N1b case).
+    overrides: { revokeAt: raw.revokeAt },
   })
 
 // ----- PROVIDER
@@ -173,11 +179,15 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     // used to do — planned an `update` that wrote nothing, silently losing the
     // change (AGENTS.md §Convergence).
     //
-    // Truthiness, not raw equality: the create sends the field only when truthy
-    // (`revokeAfterHours ? … : {}`), so an absent value and an explicit `0` are
-    // the same membership — compared raw they would plan a needless replace.
+    // Truthiness is NOT enough here: `24 → 48` is a real schedule change, and a
+    // plain boolean comparison collapses every truthy value pair (this was the
+    // bug the live N1b case caught — the plan came out `update`, which wrote
+    // nothing). Normalise only the *falsy* case, because the create sends the
+    // field only when truthy (`revokeAfterHours ? … : {}`) — so an absent value
+    // and an explicit `0` are the same membership.
     // `labels` is the declared exception and stays out of the comparison.
-    if (Boolean(news.revokeAfterHours) !== Boolean(olds?.revokeAfterHours)) {
+    const revokeSchedule = (hours: number | undefined): number | undefined => (hours ? hours : undefined)
+    if (revokeSchedule(news.revokeAfterHours) !== revokeSchedule(olds?.revokeAfterHours)) {
       // Delete-first: the same (parentId, memberId) pair can only exist once
       // server-side, and `metadata.name` is not even sent for memberships (the
       // API rejects it), so no name distinguishes the two generations.

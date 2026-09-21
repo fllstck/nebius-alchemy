@@ -154,10 +154,24 @@ export const NebiusAccessPermitProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* AccessPermitSchema.validateAccessPermitProps(news)
-    // resourceId, role, and parentId are all immutable
-    if (news.resourceId !== olds?.resourceId) return { action: 'replace' }
-    if (news.role !== olds?.role) return { action: 'replace' }
-    if (news.parentId !== olds?.parentId) return { action: 'replace' }
-    return undefined
+
+    // The service has NO Update RPC, so `resourceId` and `role` are immutable: a
+    // change can only land by replacing the permit.
+    //
+    // Delete-first is required. A permit sends no `metadata.name` (the API rejects
+    // it), so the grant's identity is server-side `(group, resource)` and a
+    // create-first replacement can hit ALREADY_EXISTS. It also keeps reconcile's
+    // `(resourceId, role)` dedup honest: that lookup runs after the delete, so it
+    // cannot adopt the stale permit it was racing with.
+    //
+    // `labels` is the declared exception and stays out of the comparison (no
+    // update path sends labels anywhere).
+    if (news.resourceId !== olds?.resourceId || news.role !== olds?.role) {
+      return Factory.replaceSameGeneratedName()
+    }
+
+    // parentId is the permit's subject — the grant is scoped to that group. A
+    // different group is a different permit, so create-first is safe.
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

@@ -30,13 +30,49 @@ describe('Nebius.iam.v1.AccessPermit', () => {
   })
 
   describe('diff', () => {
-    test('resourceId change requires replace (immutable)', async () => {
+    const base = { parentId: 'group-abc123', resourceId: 'resource-1', role: 'editor' }
+
+    const diff = async (news: unknown, olds: unknown = base) => {
       const svc = await resolveProvider(Module.NebiusAccessPermit.Provider, Module.NebiusAccessPermitProvider)
-      expect(await runDiff(svc, { parentId: 'group-abc123', resourceId: 'res-2', role: 'editor' }, { parentId: 'group-abc123', resourceId: 'res-1', role: 'editor' })).toEqual({ action: 'replace' })
-    })
+      return runDiff(svc, news, olds)
+    }
+
     test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusAccessPermit.Provider, Module.NebiusAccessPermitProvider)
-      expect(await runDiff(svc, { parentId: 'group-abc123', resourceId: 'res-1', role: 'editor' }, { parentId: 'group-abc123', resourceId: 'res-1', role: 'editor' })).toBeUndefined()
+      expect(await diff(base)).toBeUndefined()
+    })
+
+    // No Update RPC: every spec field must plan a replace, or the change is
+    // silently lost. Delete-first, because a permit sends no `metadata.name`
+    // (the API rejects it) — the grant's identity is server-side `(group,
+    // resource)`, which a create-first replacement would collide with.
+    test('role change replaces the permit (delete-first)', async () => {
+      expect(await diff({ ...base, role: 'viewer' })).toEqual({ action: 'replace', deleteFirst: true })
+    })
+
+    test('resourceId change replaces the permit (delete-first)', async () => {
+      expect(await diff({ ...base, resourceId: 'resource-2' })).toEqual({ action: 'replace', deleteFirst: true })
+    })
+
+    test('labels-only change is a noop (declared exception)', async () => {
+      expect(await diff({ ...base, labels: { a: '1' } }, { ...base, labels: { a: '2' } })).toBeUndefined()
+    })
+
+    test('parentId change requires replace but NOT delete-first (a different group)', async () => {
+      expect(await diff({ ...base, parentId: 'group-abc999' })).toEqual({ action: 'replace' })
+    })
+  })
+
+  describe('convergence guard', () => {
+    test('every prop is planned or declared — adding one must fail this test', () => {
+      // No `name` prop: the API rejects `metadata.name` on permits (verified
+      // live), so a user-chosen name has no wire field. `labels` is the one
+      // declared exception. See AGENTS.md §Convergence.
+      expect(Object.keys(SchemaModule.AccessPermitPropsSchema.fields).toSorted()).toEqual([
+        'labels',
+        'parentId',
+        'resourceId',
+        'role',
+      ])
     })
   })
 
@@ -134,16 +170,16 @@ describe('Nebius.iam.v1.AccessPermit', () => {
           id: 'ap_test',
           fqn: 'ap_test',
           instanceId: 'inst',
-          news: { parentId: 'group-1', name: 'user-chosen-name', resourceId: 'resource-1', role: 'editor' },
+          news: { parentId: 'group-1', resourceId: 'resource-1', role: 'editor' },
           output: undefined,
           session: fakeSession,
         } as any).pipe(Effect.provide(layer), Effect.provide(stackLayer)),
       )
 
       expect(createCalls).toHaveLength(1)
-      // Nebius IAM rejects metadata.name on AccessPermit creates (same rule as
-      // GroupMembership) — the provider omits it; the name is only used
-      // locally as the physical resource name.
+      // The API rejects metadata.name on AccessPermit creates (same rule as
+      // GroupMembership) and the prop no longer exists — the request must carry
+      // no name at all; `ap-<logicalId>` is a local label only.
       expect(createCalls[0]!.metadata.name).toBeUndefined()
       expect(createCalls[0]!.metadata.parentId).toBe('group-1')
     })
