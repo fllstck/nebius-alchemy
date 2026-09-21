@@ -50,6 +50,36 @@ because the pinned `rc` currently **is** the newest. Publish a newer `rc` and
 `^4.0.0-rc.115` resolves up to it again. The mitigation stays the same and it is
 cheap: pin `effect` exactly, and re-audit after every bump (snippet below).
 
+### ⚠️ It resumed — 2026-09-21 (rc.116/rc.117 published)
+
+Exactly as predicted above. Once `rc.117` existed, the consumer smoke job failed
+with:
+
+```
+@effect/platform-node-shared resolved to 4.0.0-rc.117, expected the pinned 4.0.0-rc.115
+```
+
+Reproduced and explained by installer: `@effect/platform-node@rc.115` declares
+`"@effect/platform-node-shared": "^4.0.0-rc.115"`, npm **enforces** our exact peer
+and dedupes to rc.115, but bun **ignores peer ranges** and let the caret float —
+leaving a *mixed* tree (nested `platform-node-shared@117` under `platform-node`
+and `platform-bun`, root `115`, our package resolving `115`) that still imported
+fine. Pre-failure state, not a false alarm: rc.113's rename is what makes this
+shape fatal.
+
+Two things worth remembering from the fix:
+
+- **The tempting local fix is a trap.** Pinning `@effect/platform-node-shared@115`
+in the consumer root makes the assertion pass while *both nested 117 copies stay* —
+it hides the drift. Verified: 3 copies, `platform-node`/`platform-bun` still
+resolving 117.
+- **The real fix is moving the whole constellation** (`effect`, `platform-bun`,
+`platform-node`, `platform-node-shared`) to the newest coherent `rc` — rc.117 at
+the time, accepted by `alchemy@2.0.0-beta.79` (`>=4.0.0-rc.115 || >=4.0.0`), unit
+suite unchanged at 717 tests. Verified after the bump: one copy of each, no
+nesting. Expect to repeat this after every new `rc`; check
+`npm view effect dist-tags` → `rc` first.
+
 ### ⚠️ `overrides` do NOT propagate to consumers
 
 This is the part that ships and bites. **`overrides` apply only from the ROOT
@@ -193,10 +223,10 @@ This repo pins exact versions in `peerDependencies` — no carets, no ranges:
 
 ```jsonc
 "peerDependencies": {
-  "effect": "4.0.0-rc.115",
-  "@effect/platform-bun": "4.0.0-rc.115",
-  "@effect/platform-node": "4.0.0-rc.115",
-  "@effect/platform-node-shared": "4.0.0-rc.115"
+  "effect": "4.0.0-rc.117",
+  "@effect/platform-bun": "4.0.0-rc.117",
+  "@effect/platform-node": "4.0.0-rc.117",
+  "@effect/platform-node-shared": "4.0.0-rc.117"
 }
 ```
 

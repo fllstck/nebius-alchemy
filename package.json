@@ -58,26 +58,29 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-bun": "4.0.0-rc.115",
-    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-bun": "4.0.0-rc.117",
+    "@effect/platform-node": "4.0.0-rc.117",
     "@effect/tsgo": "0.45.0",
     "@types/bun": "1.4.2",
     "conventional-changelog-cli": "^5.0.0",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.0-rc.117",
     "oxlint": "1.83.0",
     "oxlint-tsgolint": "7.0.2002",
     "typescript": "^7.0.0"
   },
   "peerDependencies": {
-    "@effect/platform-bun": "4.0.0-rc.115",
-    "@effect/platform-node": "4.0.0-rc.115",
-    "@effect/platform-node-shared": "4.0.0-rc.115",
-    "effect": "4.0.0-rc.115",
-    "typescript": "^7"
+    "@effect/platform-bun": "4.0.0-rc.117",
+    "@effect/platform-node": "4.0.0-rc.117",
+    "@effect/platform-node-shared": "4.0.0-rc.117",
+    "effect": "4.0.0-rc.117",
+    "typescript": ">=6 <8"
   },
   "dependencies": {
     "@bradenmacdonald/s3-lite-client": "1.0.0",
     "@bufbuild/protobuf": "2.13.0",
+    "@effect/sql-d1": "^0.50.0",
+    "@effect/sql-sqlite-do": "^0.30.0",
+    "@effect/vitest": "^0.30.0",
     "@grpc/grpc-js": "^1.14.5",
     "alchemy": "2.0.0-beta.79",
     "long": "5.3.2"

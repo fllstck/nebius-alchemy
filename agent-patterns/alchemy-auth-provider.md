@@ -2,7 +2,7 @@
 
 > Extracted from `node_modules/alchemy/src/Auth/AuthProvider.ts`,
 > `Auth/Profile.ts`, `Auth/Resolve.ts`, `Auth/Credentials.ts`, and
-> `Interaction.ts` at `alchemy@2.0.0-beta.79` / `effect@4.0.0-rc.115`.
+> `Interaction.ts` at `alchemy@2.0.0-beta.79` / `effect@4.0.0-rc.117`.
 > (Re-verified across `beta.77 → beta.79`: the only delta in these files is the
 > upstream `Config.string` → `Config.String` rename, so the contract below is
 > unchanged since beta.77.)

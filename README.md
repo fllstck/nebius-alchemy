@@ -19,13 +19,21 @@ mkdir my-app && cd my-app && bun init -y
 ### Install Dependencies
 
 ```bash
-bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.115 @effect/platform-bun@4.0.0-rc.115 @effect/platform-node@4.0.0-rc.115 @fllstck/nebius-alchemy
+bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.117 @effect/platform-bun@4.0.0-rc.117 @effect/platform-node@4.0.0-rc.117 @fllstck/nebius-alchemy
 ```
 
 > **Versions are pinned exactly, and that is deliberate.** Alchemy and Effect must
 > move together — alchemy pins the Effect release it compiles against, and a
 > mismatch fails at import. `alchemy@2.0.0-beta.79` requires
-> `effect@4.0.0-rc.115`.
+> `effect@4.0.0-rc.117`.
+>
+> **Why `rc.117` and not `rc.115`:** `@effect/platform-node@rc.115` declares
+> `@effect/platform-node-shared: ^4.0.0-rc.115` — a range that resolves *upward* to
+> the newest prerelease. Once rc.117 existed, bun (which ignores peer ranges)
+> resolved the shared package to rc.117 while `effect` stayed rc.115: a mixed
+> family. Pinning the whole constellation to the newest release is what keeps one
+> `@effect/*` version in the tree. A newer `rc` will reintroduce the drift, so
+> re-audit after every bump — see `agent-patterns/effect-versioning.md`.
 >
 > **Avoid `alchemy@next`.** The `next` dist-tag currently points at an _older_
 > beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.79`).
@@ -134,11 +142,11 @@ at import (see _Install Dependencies_ above):
 
 | Package                        | Required | Pinned to                                                                                 |
 | ------------------------------ | -------- | ----------------------------------------------------------------------------------------- |
-| `effect`                       | Yes      | `4.0.0-rc.115`                                                                            |
-| `@effect/platform-bun`         | Yes      | `4.0.0-rc.115`                                                                            |
-| `@effect/platform-node`        | Yes      | `4.0.0-rc.115` — required by the Alchemy CLI                                              |
-| `@effect/platform-node-shared` | Yes      | `4.0.0-rc.115` — declared exact so npm resolves the whole `@effect/*` family consistently |
-| `typescript`                   | Yes      | TypeScript 7 (`^7`)                                                                       |
+| `effect`                       | Yes      | `4.0.0-rc.117`                                                                            |
+| `@effect/platform-bun`         | Yes      | `4.0.0-rc.117`                                                                            |
+| `@effect/platform-node`        | Yes      | `4.0.0-rc.117` — required by the Alchemy CLI                                              |
+| `@effect/platform-node-shared` | Yes      | `4.0.0-rc.117` — declared exact so npm resolves the whole `@effect/*` family consistently |
+| `typescript`                   | Yes      | TypeScript 6–7 (`>=6 <8`; 6.0.3 and 7.0.2 are the tested ends) — a range, not `^7`: an exact `^7` peer makes a plain `npm install` fail with `ERESOLVE`, because alchemy's optional frontend chain peers on `typescript@^6`                                                                       |
 | `alchemy`                      | Yes      | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which points at an _older_ beta      |
 
 ### tsconfig.json
