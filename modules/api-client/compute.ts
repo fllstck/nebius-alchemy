@@ -497,6 +497,22 @@ const makeGpuClusterService = Effect.Effect.gen(function* () {
   return { ...polled, list } as unknown as GpuClusterService
 })
 
+/**
+ * Build the NVL InstanceGroup list request.
+ *
+ * Exported (and unit-tested) because this service is the odd one out: it rejects
+ * `pageSize: 100` with `3 INVALID_ARGUMENT: PageSize is invalid`, while the VPC,
+ * compute and mysterybox lists all accept it (both probed live 2026-09-21). The
+ * neighbouring services are the obvious template to copy from, which is how this
+ * bug arrived — hence a test rather than only a comment. Omitting `pageSize`
+ * uses the server's default, and paging still works through `pageToken`.
+ */
+export const nvlInstanceGroupListRequest = (parentId: string, pageToken: string) =>
+  NebiusNVLInstanceGroupServiceSchema.ListNVLInstanceGroupsRequest.fromPartial({
+    parentId,
+    pageToken,
+  })
+
 const makeNVLInstanceGroupService = Effect.Effect.gen(function* () {
   const raw = yield* GrpcUtils.makeGrpcService(NebiusNVLInstanceGroupServiceSchema.NVLInstanceGroupServiceClient)
   const transport = yield* NebiusGrpcTransport
@@ -521,12 +537,7 @@ const makeNVLInstanceGroupService = Effect.Effect.gen(function* () {
   const list = (parentId: string) =>
     GrpcUtils.paginateAll(
       (req) => raw.list(req),
-      (parentId, pageToken) =>
-        NebiusNVLInstanceGroupServiceSchema.ListNVLInstanceGroupsRequest.fromPartial({
-          parentId,
-          pageSize: 100,
-          pageToken,
-        }),
+      (parentId, pageToken) => nvlInstanceGroupListRequest(parentId, pageToken),
       parentId,
     )
 
