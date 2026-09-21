@@ -249,10 +249,17 @@ export const runDeleteWithProgress = <E, R>(options: {
       // v4 timeout combinators are data-last: `timeoutOption(duration)(self)`.
       const finished = yield* Effect.timeoutOption(stallAfter)(deleteWaitingForDependents)
       if (Option.isSome(finished)) return
-      yield* session.note(
-        `Delete of ${label} (${id}) has not completed after ${Duration.toSeconds(stallAfter)}s — ` +
-          `re-issuing (attempt ${attempt + 1}/${MAX_DELETE_ATTEMPTS})`,
-      )
+      // Only narrate a re-issue that will actually happen. The last attempt falls through
+      // to `DeleteStalledError` — which is itself the loud failure the operator needs — and
+      // announcing "re-issuing (attempt 4/3)" there was a small lie that also made the
+      // progress log end on a wrong count (found by a mutation-testing pass that read the
+      // notes instead of discarding them).
+      if (attempt < MAX_DELETE_ATTEMPTS) {
+        yield* session.note(
+          `Delete of ${label} (${id}) has not completed after ${Duration.toSeconds(stallAfter)}s — ` +
+            `re-issuing (attempt ${attempt + 1}/${MAX_DELETE_ATTEMPTS})`,
+        )
+      }
     }
     return yield* new DeleteStalledError({
       resourceName: label,

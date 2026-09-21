@@ -4,16 +4,19 @@ import * as Context from 'effect/Context'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Duration from 'effect/Duration'
 import * as Layer from 'effect/Layer'
+import { Unowned } from 'alchemy/AdoptPolicy'
+import { createInternalTags } from 'alchemy/Tags'
 
 import type { GrpcError, GrpcDeadlineExceededError } from '../../modules/api-client/grpc-utils.ts'
 import { GrpcError as GrpcErrorCtor } from '../../modules/api-client/grpc-utils.ts'
 import {
   identityChangeRequiresReplace,
   makeCrudDelete,
+  makeCrudRead,
   makeTenantScopedList,
   runDeleteWithProgress,
 } from '../../modules/resources/factory.ts'
-import { fakeSession } from '../helpers/mocks.ts'
+import { fakeSession, recordingSession, stackLayer } from '../helpers/mocks.ts'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -268,6 +271,93 @@ describe('isDefaultResource filtering', () => {
 })
 
 // ---------------------------------------------------------------------------
+// makeCrudRead — the persisted-state path
+// ---------------------------------------------------------------------------
+
+/**
+ * `plan-time-validation.test.ts` already sweeps the **greenfield** branch of `read`
+ * (no `output`) across all 38 providers. What no test exercised was the other half:
+ * `if (!output?.id)` with an id *present*. That left the branch mutant `!output?.id →
+ * true` alive — it makes every read return `undefined`, i.e. the engine would see a
+ * live resource as absent (and try to create a duplicate).
+ */
+describe('makeCrudRead', () => {
+  class ReadSvc extends Context.Service<
+    ReadSvc,
+    { get: (id: string) => Effect.Effect<TestResource, GrpcError | GrpcDeadlineExceededError> }
+  >()('ReadSvc') {}
+
+  const LOGICAL_ID = 'my-test-resource'
+
+  const readLifecycle = (
+    get: (id: string) => Effect.Effect<TestResource, GrpcError | GrpcDeadlineExceededError>,
+  ) =>
+    makeCrudRead({
+      resourceName: 'Test.Resource',
+      service: ReadSvc,
+      getById: (svc, id) => svc.get(id),
+      toAttrs: (raw: TestResource): TestAttrs => ({
+        id: raw.metadata.id,
+        name: raw.metadata.name,
+        state: 'READY',
+      }),
+    })({ id: LOGICAL_ID, olds: undefined, output: { id: 'res-1' } }).pipe(
+      Effect.provide(Layer.mergeAll(Layer.succeed(ReadSvc, ReadSvc.of({ get })), stackLayer)),
+    )
+
+  const rawResource = (labels: Record<string, string>): TestResource => ({
+    metadata: { id: 'res-1', name: 'my-resource', labels },
+    spec: { description: '' },
+  })
+
+  test('with persisted state it fetches by id and returns owned attributes', async () => {
+    // Ownership labels built by the same helper the providers use, so this cannot
+    // drift from the real `alchemy::` scheme.
+    const labels = await runPromise(createInternalTags(LOGICAL_ID).pipe(Effect.provide(stackLayer)))
+    const requested: Array<string> = []
+
+    const attrs = (await runPromise(
+      readLifecycle((id) => {
+        requested.push(id)
+        return Effect.succeed(rawResource(labels))
+      }),
+    )) as TestAttrs
+
+    expect(requested).toEqual(['res-1'])
+    expect(attrs.id).toBe('res-1')
+    expect(attrs.name).toBe('my-resource')
+    expect(Unowned.is(attrs)).toBe(false)
+  })
+
+  test("another stack's resource is reported as Unowned, not adopted silently", async () => {
+    const attrs = await runPromise(readLifecycle(() => Effect.succeed(rawResource({ 'alchemy::id': 'someone-else' }))))
+
+    expect(Unowned.is(attrs)).toBe(true)
+  })
+
+  test('a NOT_FOUND is `undefined` (create), not a failure', async () => {
+    const result = await runPromise(
+      readLifecycle(() => Effect.fail(new GrpcErrorCtor({ code: 5, message: 'not found', details: '' }))),
+    )
+
+    expect(result).toBeUndefined()
+  })
+
+  test('only code 5 means absent — any other error propagates', async () => {
+    // Swallowing every gRPC error here would read a permission failure or a deadline as
+    // "the resource does not exist", and the engine would then try to create a duplicate.
+    const error = (await runPromise(
+      Effect.flip(
+        readLifecycle(() => Effect.fail(new GrpcErrorCtor({ code: 7, message: 'permission denied', details: '' }))),
+      ),
+    )) as { _tag: string; code: number }
+
+    expect(error._tag).toBe('GrpcError')
+    expect(error.code).toBe(7)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // makeCrudDelete — stalled-operation handling
 // ---------------------------------------------------------------------------
 
@@ -375,6 +465,95 @@ describe('makeCrudDelete', () => {
 
     expect(calls).toBe(1)
   })
+
+  test('narrates each re-issue and reports the structured context of the final failure', async () => {
+    // The notes are the only progress a user sees during a long destroy, and the
+    // `DeleteStalledError` fields are what a later reader (or a retry policy) has to
+    // act on — the previous test asserted only two substrings of `message`, which left
+    // `attempt + 1` → `attempt - 1`, `stalledSeconds * attempts` → `/`, and every
+    // note string unobserved.
+    const { session, messages } = recordingSession()
+    const error = (await runPromise(
+      Effect.flip(
+        makeCrudDelete({
+          resourceName: 'Test.Resource',
+          resourceLabel: 'TestResource',
+          service: DeleteSvc,
+          deleteById: () => Effect.never,
+          stallAfter: STALL,
+        })({ output: { id: 'res-1' }, session }).pipe(
+          Effect.provide(Layer.succeed(DeleteSvc, DeleteSvc.of({ delete: () => Effect.never }))),
+        ),
+      ),
+    )) as {
+      _tag: string
+      resourceName: string
+      resourceId: string
+      attempts: number
+      stalledSeconds: number
+      message: string
+    }
+
+    const reissues = messages().filter((m) => m.includes('re-issuing'))
+    expect(reissues).toHaveLength(2)
+    expect(reissues[0]).toContain('has not completed after')
+    expect(reissues[0]).toContain('re-issuing (attempt 2/3)')
+    expect(reissues[1]).toContain('re-issuing (attempt 3/3)')
+
+    expect(error.attempts).toBe(3)
+    expect(error.resourceName).toBe('TestResource')
+    expect(error.resourceId).toBe('res-1')
+    expect(error.stalledSeconds).toBeCloseTo(3 * Duration.toSeconds(STALL))
+    expect(error.message).toContain('still pending server-side')
+    expect(error.message).toContain('~1s when this was measured')
+  })
+
+  describe('progress notes', () => {
+    const deleteWith = (
+      resourceLabel: string | undefined,
+      session: unknown,
+      deleteImpl: () => Effect.Effect<void, GrpcError> = () => Effect.void,
+    ) => {
+      const lifecycle = makeCrudDelete({
+        resourceName: 'Test.Resource',
+        resourceLabel,
+        service: DeleteSvc,
+        deleteById: () => deleteImpl(),
+        stallAfter: STALL,
+      })
+      return lifecycle({ output: { id: 'res-1' }, session }).pipe(
+        Effect.provide(Layer.succeed(DeleteSvc, DeleteSvc.of({ delete: () => deleteImpl() }))),
+      )
+    }
+
+    test('names the resource when a label is configured', async () => {
+      const { session, messages } = recordingSession()
+      await runPromise(deleteWith('Bucket', session))
+
+      expect(messages()).toEqual(['Deleting Bucket (res-1)'])
+    })
+
+    test('stays silent when no label is configured', async () => {
+      // `config.resourceLabel && output?.id` must not become `||`.
+      const { session, messages } = recordingSession()
+      await runPromise(deleteWith(undefined, session))
+
+      expect(messages()).toEqual([])
+    })
+
+    test('the fallback label keeps a label-less failure readable', async () => {
+      // No label configured, and the delete never completes: the error an operator reads
+      // must still name the resource kind rather than reporting an empty string.
+      const { session } = recordingSession()
+      const error = (await runPromise(Effect.flip(deleteWith(undefined, session, () => Effect.never)))) as {
+        _tag: string
+        resourceName: string
+      }
+
+      expect(error._tag).toBe('DeleteStalledError')
+      expect(error.resourceName).toBe('resource')
+    })
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -392,13 +571,15 @@ describe('runDeleteWithProgress — dependency still exists', () => {
   const preconditionFailure = () =>
     new GrpcErrorCtor({ code: 9, message: 'if subnets exist', details: '' })
 
-  const runEffect = (deleteOnce: Effect.Effect<void, GrpcError>) =>
+  const RETRY_DELAY = Duration.millis(5)
+
+  const runEffect = (deleteOnce: Effect.Effect<void, GrpcError>, session: unknown = fakeSession) =>
     runDeleteWithProgress({
       label: 'Test.Network',
       id: 'net-1',
       deleteOnce,
-      session: fakeSession,
-      dependentRetryDelay: Duration.millis(5),
+      session,
+      dependentRetryDelay: RETRY_DELAY,
     })
 
   const counted = (failures: number) => {
@@ -428,6 +609,38 @@ describe('runDeleteWithProgress — dependency still exists', () => {
     expect(calls()).toBe(13)
     expect(error._tag).toBe('GrpcError')
     expect(error.code).toBe(9)
+  })
+
+  test('narrates the dependency wait exactly once, however many retries it takes', async () => {
+    // Two failures = two retries, but only ONE note: the wait is explained once, and
+    // `notedDependencyWait` is what keeps a minutes-long wait from filling the log.
+    // Mutating that flag, the guard around it, or any string in the note survived until
+    // this test existed (the mock session used to discard the note entirely).
+    const { session, messages } = recordingSession()
+    const { deleteOnce } = counted(2)
+
+    await runPromise(runEffect(deleteOnce, session))
+
+    const waits = messages().filter((m) => m.includes('blocked by a resource that still exists'))
+    expect(waits).toHaveLength(1)
+    expect(waits[0]).toContain('Delete of Test.Network (net-1)')
+    expect(waits[0]).toContain(`retrying every ${Duration.toSeconds(RETRY_DELAY)}s until it goes`)
+    expect(waits[0]).toContain('expected while a VM or endpoint finishes tearing down')
+  })
+
+  test('a non-precondition failure is not narrated as a dependency wait', async () => {
+    const { session, messages } = recordingSession()
+    const error = (await runPromise(
+      Effect.flip(
+        runEffect(
+          Effect.fail(new GrpcErrorCtor({ code: 7, message: 'permission denied', details: '' })),
+          session,
+        ),
+      ),
+    )) as { _tag: string }
+
+    expect(error._tag).toBe('GrpcError')
+    expect(messages()).toEqual([])
   })
 })
 

@@ -72,6 +72,36 @@ export const fakeSession = {
   // oxlint-disable-next-line no-explicit-any — structural test mock
 } as any
 
+/**
+ * A plan-status session that **records** what a lifecycle narrated.
+ *
+ * `session.note` is a provider's only progress channel, and some factory behaviour
+ * *is* the narration: the dependency-wait note must fire exactly once, and the labels
+ * and attempt counts inside notes are user-facing. `fakeSession` discards them, which
+ * is why a mutation-testing run (`bun run mutation`, 2026-09-21) found the whole
+ * note-writing branch of `runDeleteWithProgress` and `makeCrudDelete` unobservable.
+ *
+ * Usage — pass `session` to the lifecycle under test, then assert on `messages()`:
+ *
+ *   const { session, messages } = recordingSession()
+ *   await runPromise(runDeleteWithProgress({ ...args, session }))
+ *   expect(messages()).toHaveLength(1)
+ */
+export const recordingSession = () => {
+  const messages: Array<string> = []
+  return {
+    // oxlint-disable-next-line no-explicit-any — structural test mock (see fakeSession)
+    session: {
+      note: (message: string) =>
+        Effect.sync(() => {
+          messages.push(message)
+        }),
+    } as any,
+    /** Everything narrated so far, in order. */
+    messages: (): ReadonlyArray<string> => messages,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // gRPC service mocks
 // ---------------------------------------------------------------------------

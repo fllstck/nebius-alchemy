@@ -60,6 +60,18 @@ describe('specDeepEqual (int64-blind deepEqual workaround)', () => {
     expect(specDeepEqual(withRotation, otherRotation)).toBe(false)
   })
 
+  test('a null-prototype map is walked too (not every object literal is a plain object)', () => {
+    // `normalizeLongs` skips anything that is not a plain object, because walking class
+    // instances is the very hazard `deepEqual` guards against — but a null-prototype map
+    // (`Object.create(null)`, as some JSON/decoder paths produce) is data, not a class,
+    // and its Longs must still be normalized. This is the only surviving mutant of the
+    // module: `proto !== null` → `true` in the guard.
+    const withLong = (n: number) => Object.assign(Object.create(null), { size: Long.fromNumber(n) })
+
+    expect(specDeepEqual(withLong(2), withLong(8))).toBe(false)
+    expect(specDeepEqual(withLong(8), withLong(8))).toBe(true)
+  })
+
   test('non-plain values keep the framework rule (not walked, treated as absent)', () => {
     // An Effect/Layer-like object must NOT be walked — that is the cyclic-walk
     // hazard the canonicalizer's rule exists for.
