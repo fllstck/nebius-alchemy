@@ -145,7 +145,7 @@ export const NebiusDiskProvider: Layer.Layer<
       news.sourceImageId !== olds?.sourceImageId ||
       news.sourceImageFamily !== olds?.sourceImageFamily ||
       news.sourceSnapshotId !== olds?.sourceSnapshotId ||
-      !AlchemyDiff.deepEqual(news.diskEncryption, olds?.diskEncryption)
+      !ResourceUtils.specDeepEqual(news.diskEncryption, olds?.diskEncryption)
     ) {
       return Factory.replaceKeepingName(news)
     }

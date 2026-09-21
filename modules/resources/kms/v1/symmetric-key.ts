@@ -99,7 +99,7 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
       ...rotationPeriodField(news),
     })
     const specDrifted =
-      !AlchemyDiff.deepEqual(
+      !ResourceUtils.specDeepEqual(
         { description: key.spec?.description },
         { description: desiredSpec.description },
       ) ||

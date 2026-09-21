@@ -93,7 +93,7 @@ export const NebiusFederatedCredentialsProvider: Layer.Layer<
       federatedSubjectId: news.federatedSubjectId,
       subjectId: news.subjectId,
     })
-    if (creds.spec && !AlchemyDiff.deepEqual(creds.spec, desired)) {
+    if (creds.spec && !ResourceUtils.specDeepEqual(creds.spec, desired)) {
       yield* session.note(`Updating Nebius.iam.v1.FederatedCredentials (${creds.metadata!.name})`)
       creds = yield* iam.federatedCredentials.update({
         metadata: {

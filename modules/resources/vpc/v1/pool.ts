@@ -33,7 +33,7 @@ const specDrifted = (current: NebiusPoolSchema.PoolSpec, desired: NebiusPoolSche
   current.sourcePoolId !== desired.sourcePoolId ||
   current.version !== desired.version ||
   current.visibility !== desired.visibility ||
-  !AlchemyDiff.deepEqual(current.cidrs, desired.cidrs)
+  !ResourceUtils.specDeepEqual(current.cidrs, desired.cidrs)
 
 // ----- PROVIDER
 

@@ -17,6 +17,8 @@ import * as Quotas from '../../modules/api-client/quotas.ts'
 import * as Compute from '../../modules/api-client/compute.ts'
 import * as Storage from '../../modules/api-client/storage.ts'
 import * as Capacity from '../../modules/api-client/capacity.ts'
+import * as Dns from '../../modules/api-client/dns.ts'
+import * as Vpc from '../../modules/api-client/vpc.ts'
 import { GrpcError } from '../../modules/api-client/grpc-utils.ts'
 import { Stack } from 'alchemy/Stack'
 import { Stage } from 'alchemy/Stage'
@@ -100,6 +102,14 @@ export const mockStorageLayer = (partial: unknown) =>
 /** Build a CapacityGrpcService layer with only the sub-services under test. */
 export const mockCapacityLayer = (partial: unknown) =>
   Layer.succeed(Capacity.CapacityGrpcService, partial as Capacity.CapacityGrpcServiceShape)
+
+/** Build a DnsGrpcService layer with only the sub-services under test. */
+export const mockDnsLayer = (partial: unknown) =>
+  Layer.succeed(Dns.DnsGrpcService, partial as Dns.DnsGrpcServiceShape)
+
+/** Build a VpcGrpcService layer with only the sub-services under test. */
+export const mockVpcLayer = (partial: unknown) =>
+  Layer.succeed(Vpc.VpcGrpcService, partial as Vpc.VpcGrpcServiceShape)
 
 /** A gRPC NOT_FOUND (code 5), as the API returns for a deleted resource. */
 export const notFoundError = () => new GrpcError({ code: 5, message: 'not found', details: '' })

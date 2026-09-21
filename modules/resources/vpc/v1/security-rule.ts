@@ -105,8 +105,8 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
         rule.spec.protocol !== desired.protocol ||
         rule.spec.priority !== desired.priority ||
         rule.spec.type !== desired.type ||
-        !AlchemyDiff.deepEqual(rule.spec.ingress, desired.ingress) ||
-        !AlchemyDiff.deepEqual(rule.spec.egress, desired.egress))
+        !ResourceUtils.specDeepEqual(rule.spec.ingress, desired.ingress) ||
+        !ResourceUtils.specDeepEqual(rule.spec.egress, desired.egress))
     ) {
       yield* session.note(`Updating Nebius.vpc.v1.SecurityRule (${rule.metadata!.name})`)
       rule = yield* vpcGrpcService.securityRule.update({
@@ -179,7 +179,7 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     // priority is immutable after creation
     if (news.priority !== olds?.priority) return Factory.replaceKeepingName(news)
     // ingress source (sourceCidrs) is immutable after creation
-    if (!AlchemyDiff.deepEqual(news.ingress?.sourceCidrs, olds?.ingress?.sourceCidrs))
+    if (!ResourceUtils.specDeepEqual(news.ingress?.sourceCidrs, olds?.ingress?.sourceCidrs))
       return Factory.replaceKeepingName(news)
 
     return undefined

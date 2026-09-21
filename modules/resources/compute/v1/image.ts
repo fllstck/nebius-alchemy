@@ -82,12 +82,12 @@ export const NebiusImageProvider: Layer.Layer<
     // them here, changing either planned an update that wrote nothing.
     if (
       image.spec &&
-      (!AlchemyDiff.deepEqual(image.spec.description, desired.description) ||
+      (!ResourceUtils.specDeepEqual(image.spec.description, desired.description) ||
         image.spec.imageFamily !== desired.imageFamily ||
         image.spec.version !== desired.version ||
         image.spec.imageFamilyHumanReadable !== desired.imageFamilyHumanReadable ||
         image.spec.cpuArchitecture !== desired.cpuArchitecture ||
-        !AlchemyDiff.deepEqual(image.spec.recommendedPlatforms, desired.recommendedPlatforms))
+        !ResourceUtils.specDeepEqual(image.spec.recommendedPlatforms, desired.recommendedPlatforms))
     ) {
       yield* session.note(`Updating Nebius.compute.v1.Image (${image.metadata!.name})`)
       image = yield* computeGrpcService.image.update({
@@ -143,7 +143,7 @@ export const NebiusImageProvider: Layer.Layer<
     if (
       news.sourceDiskId !== olds?.sourceDiskId ||
       news.sourceDiskSnapshotId !== olds?.sourceDiskSnapshotId ||
-      !AlchemyDiff.deepEqual(news.sourceStorage, olds?.sourceStorage)
+      !ResourceUtils.specDeepEqual(news.sourceStorage, olds?.sourceStorage)
     ) {
       return Factory.replaceKeepingName(news)
     }

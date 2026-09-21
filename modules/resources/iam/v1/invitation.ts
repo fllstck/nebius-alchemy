@@ -72,7 +72,7 @@ export const NebiusInvitationProvider: Layer.Layer<
         description: news.description || '',
         email: news.email,
       })
-      if (invitation.spec && !AlchemyDiff.deepEqual(invitation.spec, desired)) {
+      if (invitation.spec && !ResourceUtils.specDeepEqual(invitation.spec, desired)) {
         yield* session.note(`Updating Nebius.iam.v1.Invitation (${invitation.metadata!.name})`)
       invitation = yield* iam.invitation.update({
           metadata: {

@@ -191,7 +191,7 @@ export const NebiusAccessKeyProvider: Layer.Layer<
       ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
       secretDeliveryMode: news.secretDeliveryMode || 'INLINE',
     })
-    if (key.spec && !AlchemyDiff.deepEqual(key.spec, desiredSpec)) {
+    if (key.spec && !ResourceUtils.specDeepEqual(key.spec, desiredSpec)) {
       yield* iamGrpcService.accessKeyV2.update({
         metadata: {
           id: key.metadata!.id,

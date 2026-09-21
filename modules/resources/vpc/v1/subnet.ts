@@ -40,8 +40,8 @@ export const toFriendlyAttributes = (rawSubnet: NebiusSubnetSchema.Subnet): Subn
 /** Compare spec fields between desired (fromPartial) and current (from API). */
 const specDrifted = (current: NebiusSubnetSchema.SubnetSpec, desired: NebiusSubnetSchema.SubnetSpec): boolean =>
   current.networkId !== desired.networkId ||
-  !AlchemyDiff.deepEqual(current.ipv4PrivatePools, desired.ipv4PrivatePools) ||
-  !AlchemyDiff.deepEqual(current.ipv4PublicPools, desired.ipv4PublicPools) ||
+  !ResourceUtils.specDeepEqual(current.ipv4PrivatePools, desired.ipv4PrivatePools) ||
+  !ResourceUtils.specDeepEqual(current.ipv4PublicPools, desired.ipv4PublicPools) ||
   current.routeTableId !== desired.routeTableId
 
 // ----- PROVIDER

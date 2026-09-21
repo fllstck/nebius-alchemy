@@ -78,7 +78,15 @@ export const NebiusRecordProvider: Layer.Layer<
     if (
       record.spec &&
       (record.spec.data !== desired.data ||
-        !AlchemyDiff.deepEqual(record.spec.ttl, desired.ttl) ||
+        // `ttl` is an int64 (`Long`), which plain `deepEqual` canonicalizes to
+        // `undefined` — so `deepEqual(Long(60), Long(600))` is `true` and a TTL change
+        // was invisible here: it planned an update that never fired.
+        //
+        // Guarded on the news side because the prop is optional while the wire field is
+        // not: an omitted `ttl` encodes as 0, which the API reads as "use the default"
+        // (600) and answers with the real value — comparing that echo would fire on
+        // every reconcile and never converge.
+        (news.ttl !== undefined && !ResourceUtils.specDeepEqual(record.spec.ttl, desired.ttl)) ||
         record.spec.deletionProtection !== desired.deletionProtection)
     ) {
       yield* session.note(`Updating Nebius.dns.v1.Record (${record.metadata!.name})`)

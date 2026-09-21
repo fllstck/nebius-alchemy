@@ -59,7 +59,8 @@
     "nebius/no-effect-catchallcause": "error",
     "nebius/no-effect-ignore": "error",
     "nebius/no-silent-error-swallow": "warn",
-    "nebius/no-disable-validation": "error"
+    "nebius/no-disable-validation": "error",
+    "nebius/no-alchemy-deepequal": "error"
   },
   "env": {
     "builtin": true
@@ -71,7 +72,18 @@
       "rules": {
         "nebius/no-effect-ignore": "warn",
         "nebius/no-silent-error-swallow": "off",
-        "typescript/no-explicit-any": "warn"
+        "typescript/no-explicit-any": "warn",
+        // Tests pin the framework trap itself ("deepEqual reports two different
+        // Longs as equal" in tests/resources/utilities.test.ts), which needs the
+        // real helper. Provider code has no such exemption.
+        "nebius/no-alchemy-deepequal": "off"
+      }
+    },
+    // The one legitimate user: `specDeepEqual` IS the workaround.
+    {
+      "files": ["modules/resources/utilities.ts"],
+      "rules": {
+        "nebius/no-alchemy-deepequal": "off"
       }
     },
     {

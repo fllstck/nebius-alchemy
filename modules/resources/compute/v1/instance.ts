@@ -252,16 +252,16 @@ export const instanceSpecDrifted = (
 ): boolean => {
   if (!live) return false
   return (
-    !AlchemyDiff.deepEqual(live.resources, desired.resources) ||
+    !ResourceUtils.specDeepEqual(live.resources, desired.resources) ||
     !ResourceUtils.specDeepEqual(live.bootDisk, desired.bootDisk) ||
-    !AlchemyDiff.deepEqual(live.networkInterfaces, desired.networkInterfaces) ||
+    !ResourceUtils.specDeepEqual(live.networkInterfaces, desired.networkInterfaces) ||
     !ResourceUtils.specDeepEqual(live.secondaryDisks, desired.secondaryDisks) ||
-    !AlchemyDiff.deepEqual(live.filesystems, desired.filesystems) ||
+    !ResourceUtils.specDeepEqual(live.filesystems, desired.filesystems) ||
     live.nvlInstanceGroupId !== desired.nvlInstanceGroupId ||
-    (news.localDisks !== undefined && !AlchemyDiff.deepEqual(live.localDisks, desired.localDisks)) ||
+    (news.localDisks !== undefined && !ResourceUtils.specDeepEqual(live.localDisks, desired.localDisks)) ||
     (news.reservationPolicy !== undefined &&
-      !AlchemyDiff.deepEqual(live.reservationPolicy, desired.reservationPolicy)) ||
-    !AlchemyDiff.deepEqual(live.serviceAccountId, desired.serviceAccountId) ||
+      !ResourceUtils.specDeepEqual(live.reservationPolicy, desired.reservationPolicy)) ||
+    !ResourceUtils.specDeepEqual(live.serviceAccountId, desired.serviceAccountId) ||
     live.cloudInitUserData !== desired.cloudInitUserData ||
     live.stopped !== desired.stopped ||
     live.recoveryPolicy !== desired.recoveryPolicy ||
@@ -664,8 +664,8 @@ export const NebiusInstanceProvider: Layer.Layer<
       olds?.main !== news.main ||
       olds?.handler !== news.handler ||
       olds?.port !== news.port ||
-      !AlchemyDiff.deepEqual(olds?.env ?? {}, news.env ?? {}) ||
-      !AlchemyDiff.deepEqual(olds?.build ?? {}, news.build ?? {}) ||
+      !ResourceUtils.specDeepEqual(olds?.env ?? {}, news.env ?? {}) ||
+      !ResourceUtils.specDeepEqual(olds?.build ?? {}, news.build ?? {}) ||
       olds?.cloudInitUserData !== news.cloudInitUserData
     ) {
       return { action: 'update', stables: stableAttrs }
@@ -675,10 +675,10 @@ export const NebiusInstanceProvider: Layer.Layer<
     // for drift). Guarded on the news side so an omitted prop never plans work.
     if (
       (news.filesystems !== undefined &&
-        !AlchemyDiff.deepEqual(olds?.filesystems ?? [], news.filesystems)) ||
-      (news.localDisks !== undefined && !AlchemyDiff.deepEqual(olds?.localDisks, news.localDisks)) ||
+        !ResourceUtils.specDeepEqual(olds?.filesystems ?? [], news.filesystems)) ||
+      (news.localDisks !== undefined && !ResourceUtils.specDeepEqual(olds?.localDisks, news.localDisks)) ||
       (news.reservationPolicy !== undefined &&
-        !AlchemyDiff.deepEqual(olds?.reservationPolicy, news.reservationPolicy)) ||
+        !ResourceUtils.specDeepEqual(olds?.reservationPolicy, news.reservationPolicy)) ||
       (news.nvlInstanceGroupId !== undefined && olds?.nvlInstanceGroupId !== news.nvlInstanceGroupId)
     ) {
       return { action: 'update', stables: stableAttrs }

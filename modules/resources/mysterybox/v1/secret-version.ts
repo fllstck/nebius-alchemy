@@ -170,7 +170,7 @@ export const NebiusSecretVersionProvider: Layer.Layer<
     const specChanged =
       (news.description ?? '') !== (olds?.description ?? '') ||
       Boolean(news.setPrimary) !== Boolean(olds?.setPrimary) ||
-      !AlchemyDiff.deepEqual(news.payload, olds?.payload)
+      !ResourceUtils.specDeepEqual(news.payload, olds?.payload)
 
     // Identity first: a name/parent change is a DIFFERENT version, where
     // create-first is safe (the names differ, or the parent does — Nebius names

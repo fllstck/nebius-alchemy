@@ -83,7 +83,7 @@ export const NebiusAsymmetricKeyProvider: Layer.Layer<
       description: news.description || '',
       algorithm: output?.algorithm || news.algorithm || 'ECDSA_NIST_P256_SHA_256',
     })
-    if (key.spec && !AlchemyDiff.deepEqual(
+    if (key.spec && !ResourceUtils.specDeepEqual(
       { description: key.spec.description },
       { description: desiredSpec.description },
     )) {

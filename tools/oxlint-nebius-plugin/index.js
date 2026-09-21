@@ -8,6 +8,8 @@
  *   - nebius/no-effect-ignore: bans Effect.ignore (use catch + log instead)
  *   - nebius/no-silent-error-swallow: bans () => Effect.void as an error handler
  *   - nebius/no-disable-validation: bans disableValidation: true
+ *   - nebius/no-alchemy-deepequal: bans alchemy/Diff's deepEqual in provider code
+ *     (it is blind to int64s — use ResourceUtils.specDeepEqual)
  *
  * @type {import("eslint").ESLint.Plugin}
  */
@@ -222,6 +224,75 @@ const plugin = {
                 }
               }
             }
+          },
+        }
+      },
+    },
+
+    // ── no-alchemy-deepequal ──────────────────────────────────────────────
+    // Bans `deepEqual` from `alchemy/Diff` in provider code.
+    //
+    // `deepEqual` canonicalizes non-plain objects (class instances) to
+    // `undefined` on purpose — walking Effect/Layer/SDK objects is unsafe — and
+    // `long`'s `Long` is one, so every int64 compares equal to every other:
+    // `deepEqual(Long.fromNumber(2), Long.fromNumber(8)) === true` (pinned in
+    // tests/resources/utilities.test.ts). A drift check written with it is
+    // therefore blind to exactly the fields users change most — disk and
+    // filesystem sizes, TTLs, quota limits, key rotation periods — and plans an
+    // update that never fires. It also makes `deepEqual(liveLong, undefined)`
+    // true, i.e. a live-only value looks equal to an absent one.
+    //
+    // Use `ResourceUtils.specDeepEqual`, which normalizes Longs to their decimal
+    // string first and delegates the rest to `deepEqual`. See AGENTS.md
+    // §"Resource provider patterns".
+    'no-alchemy-deepequal': {
+      meta: {
+        type: 'problem',
+        docs: {
+          description:
+            'Disallow alchemy/Diff deepEqual in provider code (it is blind to int64s; use ResourceUtils.specDeepEqual)',
+          recommended: true,
+        },
+        schema: [],
+      },
+      create(context) {
+        // Bound by an `import … from 'alchemy/Diff'` in this file, so a local
+        // `deepEqual` from anywhere else is not flagged.
+        const diffNamespaces = new Set()
+        const diffFunctions = new Set()
+
+        return {
+          ImportDeclaration(node) {
+            if (node.source.value !== 'alchemy/Diff') return
+            for (const specifier of node.specifiers) {
+              if (specifier.local === undefined) continue
+              if (specifier.type === 'ImportNamespaceSpecifier' || specifier.type === 'ImportDefaultSpecifier') {
+                diffNamespaces.add(specifier.local.name)
+              } else if (
+                specifier.imported !== undefined &&
+                specifier.imported.type === 'Identifier' &&
+                specifier.imported.name === 'deepEqual'
+              ) {
+                diffFunctions.add(specifier.local.name)
+              }
+            }
+          },
+          CallExpression(node) {
+            const callee = node.callee
+            const namespaceCall =
+              callee.type === 'MemberExpression' &&
+              callee.computed !== true &&
+              callee.property.type === 'Identifier' &&
+              callee.property.name === 'deepEqual' &&
+              callee.object.type === 'Identifier' &&
+              diffNamespaces.has(callee.object.name)
+            const namedCall = callee.type === 'Identifier' && diffFunctions.has(callee.name)
+            if (!namespaceCall && !namedCall) return
+            context.report({
+              node: callee,
+              message:
+                'Do not use deepEqual from alchemy/Diff on proto values: it canonicalizes every int64 (`Long`) to `undefined`, so two different sizes/TTLs/limits compare equal and the drift check never fires. Use ResourceUtils.specDeepEqual.',
+            })
           },
         }
       },

@@ -74,7 +74,7 @@ export const NebiusAllocationProvider: Layer.Layer<
     const desired = NebiusAllocationSchema.AllocationSpec.fromJSON(news)
     if (
       allocation.spec &&
-      !AlchemyDiff.deepEqual(allocation.spec, desired)
+      !ResourceUtils.specDeepEqual(allocation.spec, desired)
     ) {
       yield* session.note(`Updating Nebius.vpc.v1.Allocation (${allocation.metadata!.name})`)
       allocation = yield* vpcGrpcService.allocation.update({

@@ -84,8 +84,8 @@ export const NebiusNetworkProvider: Layer.Layer<
     const desired = NebiusNetworkSchema.NetworkSpec.fromJSON(news)
     if (
       network.spec &&
-      (!AlchemyDiff.deepEqual(network.spec.ipv4PrivatePools, desired.ipv4PrivatePools) ||
-        !AlchemyDiff.deepEqual(network.spec.ipv4PublicPools, desired.ipv4PublicPools))
+      (!ResourceUtils.specDeepEqual(network.spec.ipv4PrivatePools, desired.ipv4PrivatePools) ||
+        !ResourceUtils.specDeepEqual(network.spec.ipv4PublicPools, desired.ipv4PublicPools))
     ) {
       yield* session.note(`Updating Nebius.vpc.v1.Network (${network.metadata!.name})`)
       network = yield* vpcGrpcService.network.update({

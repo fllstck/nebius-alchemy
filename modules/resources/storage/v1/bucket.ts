@@ -53,8 +53,8 @@ const specDrifted = (current: NebiusBucketSchema.BucketSpec, desired: NebiusBuck
   // carries a threshold (set out-of-band via the CLI) must be visible to the
   // drift check, or the difference is lost in `deepEqual`'s canonicalization.
   !ResourceUtils.specDeepEqual(current.lifecycleConfiguration, desired.lifecycleConfiguration) ||
-  !AlchemyDiff.deepEqual(current.cors, desired.cors) ||
-  !AlchemyDiff.deepEqual(current.bucketPolicy, desired.bucketPolicy)
+  !ResourceUtils.specDeepEqual(current.cors, desired.cors) ||
+  !ResourceUtils.specDeepEqual(current.bucketPolicy, desired.bucketPolicy)
 
 // ----- PROVIDER
 

@@ -308,7 +308,7 @@ export const NebiusEndpointProvider: Layer.Layer<
 
     return (
       Factory.identityChangeRequiresReplace(news, olds) ??
-      (AlchemyDiff.deepEqual(newsWithoutLabels, oldsWithoutLabels) ? undefined : Factory.replaceKeepingName(news))
+      (ResourceUtils.specDeepEqual(newsWithoutLabels, oldsWithoutLabels) ? undefined : Factory.replaceKeepingName(news))
     )
   }),
 })

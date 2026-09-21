@@ -86,7 +86,7 @@ export const NebiusFederationProvider: Layer.Layer<
         forceAuthn: news.samlSettings.forceAuthn ?? false,
       },
     })
-    if (federation.spec && !AlchemyDiff.deepEqual(federation.spec, desired)) {
+    if (federation.spec && !ResourceUtils.specDeepEqual(federation.spec, desired)) {
       yield* session.note(`Updating Nebius.iam.v1.Federation (${federation.metadata!.name})`)
       federation = yield* iam.federation.update({
         metadata: {

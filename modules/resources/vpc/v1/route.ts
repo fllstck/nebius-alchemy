@@ -34,8 +34,8 @@ const toFriendlyAttributes = (raw: NebiusRouteSchema.Route): RouteSchema.RouteAt
   })
 
 const specDrifted = (current: NebiusRouteSchema.RouteSpec, desired: NebiusRouteSchema.RouteSpec): boolean =>
-  !AlchemyDiff.deepEqual(current.destination, desired.destination) ||
-  !AlchemyDiff.deepEqual(current.nextHop, desired.nextHop) ||
+  !ResourceUtils.specDeepEqual(current.destination, desired.destination) ||
+  !ResourceUtils.specDeepEqual(current.nextHop, desired.nextHop) ||
   current.description !== desired.description
 
 // ----- PROVIDER

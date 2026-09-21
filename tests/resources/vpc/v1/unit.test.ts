@@ -1,5 +1,6 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as NetworkModule from '../../../../modules/resources/vpc/v1/network.ts'
 import * as NetworkSchema from '../../../../modules/resources/vpc/v1/network.schema.ts'
 import * as SubnetModule from '../../../../modules/resources/vpc/v1/subnet.ts'
@@ -8,6 +9,7 @@ import * as SecurityGroupModule from '../../../../modules/resources/vpc/v1/secur
 import * as SecurityGroupSchema from '../../../../modules/resources/vpc/v1/security-group.schema.ts'
 import * as SecurityRuleModule from '../../../../modules/resources/vpc/v1/security-rule.ts'
 import * as SecurityRuleSchema from '../../../../modules/resources/vpc/v1/security-rule.schema.ts'
+import * as NebiusSecurityRuleProto from '../../../../schemas/nebius/vpc/v1/security_rule.ts'
 import * as RouteTableModule from '../../../../modules/resources/vpc/v1/route-table.ts'
 import * as RouteTableSchema from '../../../../modules/resources/vpc/v1/route-table.schema.ts'
 import * as RouteModule from '../../../../modules/resources/vpc/v1/route.ts'
@@ -16,7 +18,14 @@ import * as PoolModule from '../../../../modules/resources/vpc/v1/pool.ts'
 import * as PoolSchema from '../../../../modules/resources/vpc/v1/pool.schema.ts'
 import * as AllocationModule from '../../../../modules/resources/vpc/v1/allocation.ts'
 import * as AllocationSchema from '../../../../modules/resources/vpc/v1/allocation.schema.ts'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import { resolveProvider, runDiff, runEffect, runReconcile } from '../../../helpers/provider.ts'
+import {
+  instanceIdLayer,
+  mockVpcLayer,
+  protoMetadata,
+  stackLayer,
+  testConfigLayer,
+} from '../../../helpers/mocks.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -117,6 +126,123 @@ describe('Nebius.vpc.v1.SecurityRule', () => {
     test('no change is a noop', async () => {
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
       expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } })).toBeUndefined()
+    })
+
+    // `direction` is NOT a `SecurityRuleSpec` field — the API derives it from which
+    // match block is present (`ingress` ⇒ INGRESS, `egress` ⇒ EGRESS) and reports it
+    // back in `status.direction`. So the realistic direction change is swapping one
+    // match block for the other, and that has to converge. It does: the
+    // `sourceCidrs` comparison plans a replace. (Pinned because a props-vs-module
+    // text audit flags `direction` as "never compared" — it is compared, on the wire,
+    // as the match block it selects.)
+    test('flipping direction by swapping the match block requires replace', async () => {
+      const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
+      expect(
+        await runDiff(
+          svc,
+          { parentId: 'securitygroup-abc', direction: 'EGRESS', protocol: 'TCP', access: 'ALLOW', egress: { destinationCidrs: ['0.0.0.0/0'] } },
+          { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } },
+        ),
+      ).toEqual({ action: 'replace' })
+    })
+  })
+
+  describe('direction is status-derived, not a wire field', () => {
+    test('SecurityRuleSpec silently drops `direction` — it is not part of the spec', () => {
+      // ts-proto types `fromJSON` as `(object: any)`, so this literal is accepted and the
+      // unknown key is dropped — which is exactly the point of the test.
+      const spec = NebiusSecurityRuleProto.SecurityRuleSpec.fromJSON({
+        direction: 'EGRESS',
+        protocol: 'TCP',
+        access: 'ALLOW',
+        egress: { destinationCidrs: ['0.0.0.0/0'] },
+      })
+
+      expect(Object.keys(spec)).not.toContain('direction')
+      expect(spec.egress?.destinationCidrs).toEqual(['0.0.0.0/0'])
+    })
+
+    test('SecurityRuleStatus carries the platform-computed direction', () => {
+      const status = NebiusSecurityRuleProto.SecurityRuleStatus.fromJSON({ direction: 'INGRESS', state: 'READY' })
+      expect(status.direction).toBe(NebiusSecurityRuleProto.RuleDirection.INGRESS)
+    })
+  })
+
+  describe('reconcile (direction convergence)', () => {
+    /** A rule as the API models it: no `direction`, only the match block it selects. */
+    const liveRule = (matchBlock: Record<string, unknown>, direction: 'INGRESS' | 'EGRESS'): NebiusSecurityRuleProto.SecurityRule => ({
+      metadata: protoMetadata('securityrule-1', 'rule-1', 'securitygroup-abc'),
+      spec: NebiusSecurityRuleProto.SecurityRuleSpec.fromJSON({
+        access: 'ALLOW',
+        protocol: 'TCP',
+        priority: 500,
+        type: 'STATEFUL',
+        ...matchBlock,
+      }),
+      status: {
+        state: NebiusSecurityRuleProto.SecurityRuleStatus_State.READY,
+        effectivePriority: 500,
+        direction: NebiusSecurityRuleProto.RuleDirection[direction],
+        source: undefined,
+        destination: undefined,
+      },
+    })
+
+    const layerFor = (
+      live: NebiusSecurityRuleProto.SecurityRule,
+      updated: Array<{ spec?: NebiusSecurityRuleProto.SecurityRuleSpec }>,
+    ) =>
+      Effect.provide(
+        Layer.mergeAll(
+          mockVpcLayer({
+            securityRule: {
+              get: () => Effect.succeed(live),
+              update: (req: { spec?: NebiusSecurityRuleProto.SecurityRuleSpec }) => {
+                updated.push(req)
+                return Effect.succeed(live)
+              },
+            },
+          }),
+          stackLayer,
+          testConfigLayer,
+          instanceIdLayer,
+        ),
+      )
+
+    test('swapping the match block converges: the update carries egress and drops ingress', async () => {
+      const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
+      const updated: Array<{ spec?: NebiusSecurityRuleProto.SecurityRuleSpec }> = []
+
+      await runReconcile(
+        svc,
+        { parentId: 'securitygroup-abc', direction: 'EGRESS', protocol: 'TCP', access: 'ALLOW', egress: { destinationCidrs: ['0.0.0.0/0'] } },
+        { id: 'securityrule-1' },
+        undefined,
+        layerFor(liveRule({ ingress: { sourceCidrs: ['10.0.0.0/8'] } }, 'INGRESS'), updated),
+      )
+
+      expect(updated).toHaveLength(1)
+      expect(updated[0]!.spec!.egress?.destinationCidrs).toEqual(['0.0.0.0/0'])
+      expect(updated[0]!.spec!.ingress).toBeUndefined()
+    })
+
+    test('a match-less rule has no wire change to make, so nothing is written', async () => {
+      // With neither `ingress` nor `egress` the spec is identical whatever the
+      // `direction` prop says — the API has nothing to derive a direction from, and
+      // the attributes report the platform's view (`status.direction`), not the prop.
+      const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
+      const updated: Array<{ spec?: NebiusSecurityRuleProto.SecurityRuleSpec }> = []
+
+      const attrs = await runReconcile(
+        svc,
+        { parentId: 'securitygroup-abc', direction: 'EGRESS', protocol: 'TCP', access: 'ALLOW' },
+        { id: 'securityrule-1' },
+        undefined,
+        layerFor(liveRule({}, 'INGRESS'), updated),
+      )
+
+      expect(updated).toHaveLength(0)
+      expect(attrs.direction).toBe('INGRESS')
     })
   })
 

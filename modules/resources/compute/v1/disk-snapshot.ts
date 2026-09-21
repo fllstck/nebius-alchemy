@@ -80,7 +80,7 @@ export const NebiusDiskSnapshotProvider: Layer.Layer<
       sourceDiskId: news.sourceDiskId,
       description: news.description || '',
     })
-    if (snap.spec && !AlchemyDiff.deepEqual(snap.spec, desired)) {
+    if (snap.spec && !ResourceUtils.specDeepEqual(snap.spec, desired)) {
       yield* session.note(`Updating Nebius.compute.v1.DiskSnapshot (${snap.metadata!.name})`)
       snap = yield* svc.diskSnapshot.update({
         metadata: {

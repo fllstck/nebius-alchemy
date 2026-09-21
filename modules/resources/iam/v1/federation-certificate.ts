@@ -85,7 +85,7 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
       description: news.description || '',
       data: news.data,
     })
-    if (cert.spec && !AlchemyDiff.deepEqual(cert.spec, desired)) {
+    if (cert.spec && !ResourceUtils.specDeepEqual(cert.spec, desired)) {
       cert = yield* iam.federationCertificate.update({
         metadata: {
           id: cert.metadata!.id,

@@ -74,10 +74,19 @@ export const NebiusZoneProvider: Layer.Layer<
     const desired = NebiusZoneSchema.ZoneSpec.fromJSON(news)
     if (
       zone.spec &&
-      (!AlchemyDiff.deepEqual(zone.spec.vpc, desired.vpc) ||
+      (!ResourceUtils.specDeepEqual(zone.spec.vpc, desired.vpc) ||
         // SOA is opt-in: the API answers with its own SOA when none was set, so
         // comparing an absent prop against it would update on every reconcile.
-        (news.soaSpec !== undefined && !AlchemyDiff.deepEqual(zone.spec.soaSpec, desired.soaSpec)))
+        // Same reasoning one level down for its only field: `negativeTtl` is optional
+        // in props but a non-optional int64 on the wire (an omitted value encodes as
+        // 0, which the API replaces with its own default) — the comparison is only
+        // meaningful for a TTL the user actually pinned.
+        //
+        // `negativeTtl` is a `Long`, so the comparison itself must go through
+        // `specDeepEqual`: with plain `deepEqual` two different TTLs compared equal
+        // and the change never converged.
+        (news.soaSpec?.negativeTtl !== undefined &&
+          !ResourceUtils.specDeepEqual(zone.spec.soaSpec, desired.soaSpec)))
     ) {
       yield* session.note(`Updating Nebius.dns.v1.Zone (${zone.metadata!.name})`)
       zone = yield* dnsGrpcService.zone.update({

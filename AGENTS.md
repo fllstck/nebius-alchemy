@@ -35,6 +35,25 @@ These rules are hard requirements. Violations must be corrected immediately.
   `google.protobuf.Duration`, or `AttachedDiskSpec.managedDisk.spec`) are invisible while
   their siblings still compare. `specDeepEqual` normalizes Longs to their decimal string
   first; tests pin both behaviours in `tests/resources/utilities.test.ts`.
+  **Enforced mechanically**: `nebius/no-alchemy-deepequal` (`bun run lint`, in
+  `tools/oxlint-nebius-plugin`) fails on any `deepEqual` reached from an `alchemy/Diff`
+  import under `modules/resources/**`. The only exemptions are `utilities.ts` (the
+  workaround itself) and `tests/**` (where the framework trap is pinned by calling the real
+  helper).
+
+  **Corollary — switching to `specDeepEqual` is not always enough.** `deepEqual` also
+  reports a live `Long` as equal to `undefined`, so comparing an **optional** prop against a
+  **non-optional** wire field is only safe when the news side is present:
+
+  ```ts
+  // ✅ compared only when the user actually pinned it
+  (news.ttl !== undefined && !ResourceUtils.specDeepEqual(record.spec.ttl, desired.ttl))
+  ```
+
+  An omitted optional prop encodes as the field's zero value, which the API replaces with its
+  own default and echoes back — comparing that echo fires drift on **every** reconcile and
+  the value never converges (the same hazard the drift lists dodge with
+  `news.<optional> !== undefined &&`).
 
 ### Convergence — every prop must be planned, reconciled, or declared
 
@@ -51,7 +70,10 @@ which every update does). That is how `gpuCluster` behaved, and how
 `instance.{recoveryPolicy, hostname}`, `disk.{sourceImageId, sourceImageFamily,
  sourceSnapshotId, diskEncryption}`, `image.{cpuArchitecture, recommendedPlatforms}`,
 `security-rule.description` and `static-key.{description, expiresAt}` each behaved before
-the 2026-09-19 sweep.
+the 2026-09-19 sweep. The same silent loss happens *inside* a drift list when the comparison
+itself is blind: `record.ttl` and `zone.soaSpec.negativeTtl` were compared with
+`AlchemyDiff.deepEqual`, so their int64s compared equal and both branches were dead code until
+2026-09-21.
 
 Every user-facing prop **MUST** be one of:
 
@@ -64,7 +86,16 @@ Every user-facing prop **MUST** be one of:
   plan makes it visible instead of silent; or
 - **declared**: documented as create-time-only, with a comment saying why. `labels` is the
   one such field today — no update path sends labels, so a labels-only change is a no-op
-  until some other change rewrites the resource.
+  until some other change rewrites the resource; or
+- a **selector of a sibling field**: a props-only field that has *no* wire field, because the
+  API derives it from which sibling message is present and reports it back through `status`.
+  `security-rule.direction` is the one such prop — `SecurityRuleSpec` has no `direction` at
+  all (the API infers INGRESS/EGRESS from `ingress` vs `egress` and returns it in
+  `status.direction`). It converges **through that sibling**, so it MUST NOT appear in the
+  drift list; pin the sibling's plan and the status echo instead
+  (`tests/resources/vpc/v1/unit.test.ts`). A props-vs-provider text audit flags it as
+  "never compared" — a false positive, like the ones recorded in TASKS.md §"What could not
+  be automated".
 
 **A resource with no `Update` RPC MUST ship a prop-set guard test.** That is the only shape in
 which the silent-no-op class can survive. With an update RPC, `reconcile` sends the full

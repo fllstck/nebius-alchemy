@@ -96,7 +96,7 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
       data: news.data,
       ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
     })
-    if (key.spec && !AlchemyDiff.deepEqual(key.spec, desired)) {
+    if (key.spec && !ResourceUtils.specDeepEqual(key.spec, desired)) {
       yield* session.note(`Updating Nebius.iam.v1.AuthPublicKey (${key.metadata!.name})`)
       key = yield* iam.authPublicKey.update({
         metadata: {

@@ -78,7 +78,7 @@ export const NebiusServiceAccountProvider: Layer.Layer<
     const desiredSpec = NebiusServiceAccountSchema.ServiceAccountSpec.fromPartial({
       description: news.description || '',
     })
-    if (sa.spec && !AlchemyDiff.deepEqual(sa.spec, desiredSpec)) {
+    if (sa.spec && !ResourceUtils.specDeepEqual(sa.spec, desiredSpec)) {
       yield* session.note(`Updating Nebius.iam.v1.ServiceAccount (${sa.metadata!.name})`)
       sa = yield* iamGrpcService.serviceAccount.update({
         metadata: {
