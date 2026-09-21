@@ -1,3 +1,23 @@
+## [0.8.1](https://github.com/fllstck/nebius-alchemy/compare/v0.8.0...v0.8.1) (2026-09-21)
+
+
+### ⚠️ Upgrade notes
+
+* **Move the `@effect/*` constellation together.** The peers are now `4.0.0-rc.117` (was
+  `rc.115`) for `effect`, `@effect/platform-bun`, `@effect/platform-node` and
+  `@effect/platform-node-shared`. They are exact on purpose: `@effect/platform-node@rc.115`
+  range-depends on the shared package, and bun resolves that caret *upward*, so a consumer left
+  on rc.115 ends up with a mixed family (verified: nested `rc.117` copies alongside a root one).
+* **`typescript` is now a range (`>=6 <8`) instead of `^7`.** With an exact `^7` peer, a plain
+  `npm install @fllstck/nebius-alchemy` fails with `ERESOLVE` — alchemy's optional frontend
+  chain peers on `typescript@^6`. **0.8.0 could not be installed with npm at all**; upgrade to
+  0.8.1, or add `--legacy-peer-deps` while staying on 0.8.0. Bun consumers were unaffected.
+* Everything else in this patch is internal: the dependency pins and the consumer smoke test.
+
+### Bug Fixes
+
+* **ci:** install exactly the documented dependency set in the consumer smoke test ([eeec399](https://github.com/fllstck/nebius-alchemy/commit/eeec3997cc6066510cc734d00ef275e1375432d7))
+* **deps:** pin the Effect constellation to 4.0.0-rc.117 and widen the typescript peer ([87fbb65](https://github.com/fllstck/nebius-alchemy/commit/87fbb6535288db63387ff770ac1dc2f080ba87af))
 # [0.8.0](https://github.com/fllstck/nebius-alchemy/compare/v0.7.0...v0.8.0) (2026-09-21)
 
 
