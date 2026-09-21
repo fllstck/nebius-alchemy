@@ -42,12 +42,13 @@ export const GroupMembershipAttributesSchema = Schema.Struct({
   /**
    * When the membership is revoked.
    *
-   * ⚠️ Never observed populated by the API: `revokeAfterHours` IS accepted on
-   * create (it goes over as an int64 `Long`) and `revokeAt` is a real top-level
-   * field of the resource, but both the create response and an immediate `get`
-   * returned it undefined (probed live 2026-09-21) — possibly because IAM
-   * materialises the schedule asynchronously. The provider maps it explicitly
-   * (see `toFriendlyAttributes`); it is not in `status`.
+   * ⚠️ **The API never populates this.** `revokeAfterHours` IS accepted on create
+   * (it goes over as an int64 `Long`) and `revokeAt` is a real top-level field of
+   * the resource — but it was `undefined` in the create response and in `get` /
+   * `listMembers` at 0s, 60s and 120s after creation (probed live 2026-09-21, so
+   * not IAM replication lag; `GroupMembershipStatus` carries no revoke field
+   * either). The provider maps it explicitly so it appears if the server ever
+   * starts sending it — see `toFriendlyAttributes`. Do not build on it today.
    */
   revokeAt: Schema.optional(Schema.DateFromString),
 })
