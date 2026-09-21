@@ -19,6 +19,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as InstanceSchema from './instance.schema.ts'
 import * as Factory from '../../factory.ts'
+import { tryPromiseRaw } from '../../../effect-utils.ts'
 
 /**
  * Raised when a hosted instance would ship an UNWRAPPED bundle — `main` set
@@ -356,7 +357,9 @@ const readBackRunningHash = Effect.fn('readBackRunningHash')(function* ({
     .find((address) => address)
   if (!publicIp || shippedHash === undefined) return shippedHash
 
-  const probeUp = Effect.tryPromise(() =>
+  // `tryPromiseRaw`: the failure is only used as a boolean below, but keeping
+  // the raw rejection means a future retry/classification here still works.
+  const probeUp = tryPromiseRaw(() =>
     fetch(`http://${publicIp}:${port}/`, { signal: AbortSignal.timeout(5_000) }),
   )
   const up = yield* probeUp.pipe(

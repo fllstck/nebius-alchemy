@@ -336,8 +336,13 @@ describe('NebiusAuth', () => {
       expect(error).toBeInstanceOf(NeedsReauth)
       if (error instanceof NeedsReauth) {
         expect(error.message).toContain('expired')
-        // An expired token is a *refresh* case, not a reconfigure one.
-        expect(error.message).toContain('alchemy profile refresh')
+        // NOT `alchemy profile refresh`. Nebius user-account credentials carry no
+        // refresh token, and `profile refresh` also needs an entrypoint exporting
+        // the provider — so it cannot recover this (verified live 2026-09-21: it
+        // answers "Provider 'Nebius' is not connected or registered"). The 12 h
+        // token is re-issued by re-running the profile setup.
+        expect(error.message).toContain('alchemy profile edit')
+        expect(error.message).not.toContain('alchemy profile refresh')
       }
     })
 

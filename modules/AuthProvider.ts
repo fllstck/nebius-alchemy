@@ -6,7 +6,6 @@ import {
   AuthError,
   NeedsReauth,
   reconfigureHint,
-  refreshHint,
   type ConfigureMethod,
   type EnvironmentVariable,
   type ProviderDetails,
@@ -18,6 +17,8 @@ import { displayRedacted } from 'alchemy/Auth/Credentials'
 import * as Result from 'effect/Result'
 import * as Schema from 'effect/Schema'
 import { readFile } from 'node:fs/promises'
+
+import { tryPromiseRaw } from './effect-utils.ts'
 
 import * as SaToken from './auth/sa-token.ts'
 import * as SaBootstrap from './auth/sa-bootstrap.ts'
@@ -233,9 +234,14 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       let privateKey: string
       if (privateKeyFile != null) {
         const filePath = Redacted.value(privateKeyFile)
-        privateKey = yield* Effect.tryPromise(() => readFile(filePath, 'utf8')).pipe(
+        privateKey = yield* tryPromiseRaw(() => readFile(filePath, 'utf8')).pipe(
           Effect.mapError(
-            () => new AuthError({ message: `Could not read private key file ${filePath}` }),
+            // Name the cause: ENOENT (wrong path) and EACCES (mode) need
+            // different fixes, and the previous mapping threw it away.
+            (cause) =>
+              new AuthError({
+                message: `Could not read private key file ${filePath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+              }),
           ),
         )
       } else if (privateKeyValue != null) {
@@ -761,7 +767,13 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
                     profile: profileName,
                     message:
                       'Nebius OAuth token expired. ' +
-                      refreshHint(NEBIUS_AUTH_PROVIDER_NAME, profileName),
+                      // NOT `refreshHint`: Nebius user-account credentials carry no
+                      // refresh token (see `NebiusOAuthCredentialsSchema`), and
+                      // `alchemy profile refresh` also needs an entrypoint that
+                      // exports the provider — so it can never succeed here. The
+                      // token is re-issued by re-running `profile edit`, which is
+                      // what `reconfigureHint` names.
+                      reconfigureHint(NEBIUS_AUTH_PROVIDER_NAME, profileName),
                   })
                 }
                 return {

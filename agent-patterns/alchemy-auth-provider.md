@@ -329,6 +329,17 @@ Pick by *intent*, not by whichever feels closest: an expired token is a
 **refresh**, a missing/mismatched config is a **reconfigure**. Getting this
 backwards sends users to a heavier flow than they need.
 
+> ⚠️ **Unless the provider's credentials are not refreshable at all.** Nebius
+> user-account OAuth is exactly that case: the stored credential has **no refresh
+> token**, so `refreshHint` names a command that can never succeed (it also needs
+> an entrypoint exporting the provider, which the profile CLI cannot find in a
+> repo without `alchemy.run.ts` — verified live 2026-09-21: *"Provider 'Nebius'
+> is not connected or registered"*). There, an expired token is a **reconfigure**:
+> the 12 h token is re-issued by re-running `profile edit`. This provider used
+> `refreshHint` at that branch and sent users into a dead end; it now uses
+> `reconfigureHint`, pinned by `tests/AuthProvider.test.ts`
+> (`not.toContain('alchemy profile refresh')`).
+
 `AuthProviderImpl.configureWith` + `configureMethods` are the machine-readable
 half of this — they are what let `alchemy profile edit --method … --set …`
 validate and document a provider's flags without prompting.

@@ -36,6 +36,7 @@ import * as StorageGrpc from '../../../api-client/storage.ts'
 import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import { hostIdentity, grantBucketAccess } from '../../shared/host-identity.ts'
 import { asArrayBufferBacked } from '../../shared/s3-payload.ts'
+import { tryPromiseRaw } from '../../../effect-utils.ts'
 import type { ResourceBinding } from 'alchemy'
 import type { Region } from '../../regions.schema.ts'
 
@@ -202,8 +203,13 @@ const messageOf = (error: unknown): string => {
  * Transient S3 failures worth retrying: IAM grants are eventually-consistent
  * on Nebius (AccessDenied on a just-granted key is common in the same deploy),
  * plus 5xx and network errors. 4xx (except 403) are permanent.
+ *
+ * Exported for tests — the classification is only *reachable* because the S3
+ * calls use `tryPromiseRaw`: under the thunk form the error arriving here was
+ * Effect's `UnknownError`, the `instanceof` was always false, and every failure
+ * (a permanent 404 included) looked retryable.
  */
-const isTransientS3Error = (error: unknown): boolean => {
+export const isTransientS3Error = (error: unknown): boolean => {
   if (error instanceof S3Errors.ServerError) {
     return error.statusCode === 403 || error.statusCode >= 500
   }
@@ -866,7 +872,11 @@ export const uploadHostedArtifacts = Effect.fn('uploadHostedArtifacts')(function
   }
 
   const put = (key: string, data: string | Uint8Array<ArrayBufferLike>) =>
-    Effect.tryPromise(() => client.putObject(key, toBytes(data), { bucketName })).pipe(
+    // `tryPromiseRaw`: the retry predicate below classifies the rejection
+    // (`error instanceof S3Errors.ServerError`). Under the thunk form the error
+    // was Effect's `UnknownError`, so that test was always false and the policy
+    // degraded to "retry everything" — permanent 4xx included.
+    tryPromiseRaw(() => client.putObject(key, toBytes(data), { bucketName })).pipe(
       // The upload grant (AccessPermit) is eventually-consistent — retry
       // transient 403/5xx/network failures with a bounded backoff.
       Effect.retry({
@@ -1164,7 +1174,7 @@ export const cleanupHostedRuntime = Effect.fn('cleanupHostedRuntime')(function* 
       output.hostedAccessKeyId,
       output.hostedSecretAccessKey,
     )
-    yield* Effect.tryPromise(async () => {
+    yield* tryPromiseRaw(async () => {
       // Collect the object keys under the prefix first — the generator can't
       // be driven from an Effect context.
       const keys: Array<string> = []
@@ -1180,7 +1190,7 @@ export const cleanupHostedRuntime = Effect.fn('cleanupHostedRuntime')(function* 
         Effect.forEach(
           keys,
           (key) =>
-            Effect.tryPromise(() => client.deleteObject(key, { bucketName: output.hostedBucketName })).pipe(
+            tryPromiseRaw(() => client.deleteObject(key, { bucketName: output.hostedBucketName })).pipe(
               // Bounded retry on transient 403/5xx/network — the grant may
               // still be propagating; a silent leak (BucketNotEmpty) is worse
               // than a wait.

@@ -1,5 +1,6 @@
 import * as BunTest from 'bun:test'
 import * as Redacted from 'effect/Redacted'
+import { S3Errors } from '@bradenmacdonald/s3-lite-client'
 import {
   renderEnvFile,
   quoteEnvValue,
@@ -7,9 +8,36 @@ import {
   mergeUserData,
   planHostedUploads,
   hostedEnv,
+  isTransientS3Error,
 } from '../../../../modules/resources/compute/v1/hosted.ts'
 
 const { describe, expect, test } = BunTest
+
+describe('hosted isTransientS3Error', () => {
+  // Only reachable because the S3 calls use `tryPromiseRaw`: under the thunk form
+  // the error arriving here was Effect's `UnknownError`, so
+  // `error instanceof ServerError` was always false and every failure — a
+  // permanent 404 included — looked retryable.
+  const serverError = (statusCode: number) =>
+    new S3Errors.ServerError(statusCode, 'AccessDenied', 'Access Denied', { bucketName: 'bucket' })
+
+  test('retries 403 (eventually-consistent IAM grants) and 5xx', () => {
+    expect(isTransientS3Error(serverError(403))).toBe(true)
+    expect(isTransientS3Error(serverError(500))).toBe(true)
+    expect(isTransientS3Error(serverError(503))).toBe(true)
+  })
+
+  test('does NOT retry permanent 4xx', () => {
+    expect(isTransientS3Error(serverError(400))).toBe(false)
+    expect(isTransientS3Error(serverError(401))).toBe(false)
+    expect(isTransientS3Error(serverError(404))).toBe(false)
+  })
+
+  test('retries non-server failures (network errors, unknown throwables)', () => {
+    expect(isTransientS3Error(new Error('socket hang up'))).toBe(true)
+    expect(isTransientS3Error(undefined)).toBe(true)
+  })
+})
 
 describe('hosted renderEnvFile', () => {
   test('sorts keys deterministically', () => {

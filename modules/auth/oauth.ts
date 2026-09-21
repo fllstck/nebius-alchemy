@@ -16,6 +16,7 @@
  */
 import * as Effect from 'effect/Effect'
 import * as Deferred from 'effect/Deferred'
+import { tryPromiseRaw } from '../effect-utils.ts'
 import * as Schema from 'effect/Schema'
 import { AUTH_SUCCESS_URL, AUTH_ERROR_URL } from 'alchemy/Auth/AuthProvider'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -124,7 +125,7 @@ export const startCallbackServer = (
       }),
     )
 
-    const port = yield* Effect.tryPromise(
+    const port = yield* tryPromiseRaw(
       () =>
         new Promise<number>((resolve, reject) => {
           server.once('error', reject)
@@ -166,7 +167,11 @@ export const exchangeCode = (
   /** Defaults to {@link OAUTH_CLIENT_ID} — must match the authorize request. */
   clientId: string = OAUTH_CLIENT_ID,
 ): Effect.Effect<OAuthCredentials, OAuthError> =>
-  Effect.tryPromise(() =>
+  // `tryPromiseRaw`: the token endpoint rejects with an explanatory `Error`
+  // (e.g. "token endpoint returned 401: invalid_client") that the thunk form
+  // would replace with Effect's `UnknownError` — the one message an operator
+  // needs when an OAuth client id is rejected.
+  tryPromiseRaw(() =>
     fetch(OAUTH_TOKEN_ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
