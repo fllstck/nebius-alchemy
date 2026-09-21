@@ -155,6 +155,14 @@ export const NebiusRecordProvider: Layer.Layer<
     if (news.parentId !== olds?.parentId) return { action: 'replace' }
     // Type change requires replace
     if (news.type !== olds?.type) return { action: 'replace' }
+    // `relativeName` is the record's identity: the physical resource name is derived from
+    // `${relativeName}-${type}` at create time, and a Nebius name is immutable. So a change
+    // cannot be applied in place — sending it as spec drift would either be rejected by the
+    // API on every reconcile or leave `metadata.name` contradicting the spec. Replace is the
+    // coherent plan, exactly as for `type` (the two generations carry different names, so
+    // create-first is safe). Found by the convergence sweep: it was in neither `diff` nor the
+    // drift list, so the change was silently dropped.
+    if (news.relativeName !== olds?.relativeName) return { action: 'replace' }
 
     return undefined
   }),

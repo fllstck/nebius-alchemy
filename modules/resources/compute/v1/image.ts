@@ -86,7 +86,10 @@ export const NebiusImageProvider: Layer.Layer<
         image.spec.imageFamily !== desired.imageFamily ||
         image.spec.version !== desired.version ||
         image.spec.imageFamilyHumanReadable !== desired.imageFamilyHumanReadable ||
-        image.spec.cpuArchitecture !== desired.cpuArchitecture ||
+        // Guarded on the news side: the platform substitutes its own default (AMD64) when
+        // the prop is omitted, and an omitted enum decodes to UNSPECIFIED — comparing the two
+        // would re-issue an update on every reconcile (found by the convergence sweep, §C1).
+        (news.cpuArchitecture !== undefined && image.spec.cpuArchitecture !== desired.cpuArchitecture) ||
         !ResourceUtils.specDeepEqual(image.spec.recommendedPlatforms, desired.recommendedPlatforms))
     ) {
       yield* session.note(`Updating Nebius.compute.v1.Image (${image.metadata!.name})`)

@@ -38,11 +38,19 @@ export const toFriendlyAttributes = (rawSubnet: NebiusSubnetSchema.Subnet): Subn
   })
 
 /** Compare spec fields between desired (fromPartial) and current (from API). */
-const specDrifted = (current: NebiusSubnetSchema.SubnetSpec, desired: NebiusSubnetSchema.SubnetSpec): boolean =>
+const specDrifted = (
+  current: NebiusSubnetSchema.SubnetSpec,
+  desired: NebiusSubnetSchema.SubnetSpec,
+  props: SubnetSchema.SubnetProps,
+): boolean =>
   current.networkId !== desired.networkId ||
   !ResourceUtils.specDeepEqual(current.ipv4PrivatePools, desired.ipv4PrivatePools) ||
   !ResourceUtils.specDeepEqual(current.ipv4PublicPools, desired.ipv4PublicPools) ||
-  current.routeTableId !== desired.routeTableId
+  // The API assigns a default route table when none is requested, so an omitted
+  // `routeTableId` encodes as `''` and would look like drift against the assigned one —
+  // re-issuing an update on every reconcile (found by the convergence sweep, §C1). Only
+  // compare it when the user pinned it.
+  (props.routeTableId !== undefined && current.routeTableId !== desired.routeTableId)
 
 // ----- PROVIDER
 
@@ -89,7 +97,7 @@ export const NebiusSubnetProvider: Layer.Layer<
     // 3. Sync — update if spec drifted from desired
     // fromJSON handles the Schema.Struct readonly → mutable conversion for us.
     const desired = NebiusSubnetSchema.SubnetSpec.fromJSON(news)
-    if (subnet.spec && specDrifted(subnet.spec, desired)) {
+    if (subnet.spec && specDrifted(subnet.spec, desired, news)) {
       yield* session.note(`Updating Nebius.vpc.v1.Subnet (${subnet.metadata!.name})`)
       subnet = yield* vpcGrpcService.subnet.update({
         metadata: {

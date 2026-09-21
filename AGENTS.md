@@ -97,6 +97,25 @@ Every user-facing prop **MUST** be one of:
   "never compared" — a false positive, like the ones recorded in TASKS.md §"What could not
   be automated".
 
+**Enforced by the convergence sweep** — `tests/convergence.test.ts` (per-prop tables),
+`tests/convergence-whole-spec.test.ts` (the by-construction resources) and
+`tests/convergence-coverage.test.ts`, with the harness in `tests/helpers/convergence.ts`.
+Every resource sits in **exactly one** bucket:
+
+- a **table** that probes every prop (a change must be planned by `diff` or written by a mocked
+  `reconcile`), plus an anti-loop row for optional props (`omits`: omitting one must write
+  nothing) and a `declared` list with a reason per non-converging prop;
+- **by construction** — the resource compares its whole desired spec, asserted against the
+  module source so a rewrite to field-by-field comparison cannot silently drop coverage;
+- a **prop-set guard** — the resources with no update RPC (above).
+
+The coverage test discovers all 38 providers and fails when one is in none or more than one
+bucket, so a new resource (or a new prop, via the table's own completeness check) cannot slip
+in unclassified. It also caught three providers comparing an *optional* prop against the
+platform's own default — `subnet.routeTableId`, `disk.{sizeGibibytes,blockSizeBytes}`,
+`image.cpuArchitecture` — each of which re-issued an update on **every** reconcile. The
+`news.<field> !== undefined` guard is therefore part of the rule, not a style choice.
+
 **A resource with no `Update` RPC MUST ship a prop-set guard test.** That is the only shape in
 which the silent-no-op class can survive. With an update RPC, `reconcile` sends the full
 `desired` spec, so any prop change is written and the API adjudicates legality — a new prop is

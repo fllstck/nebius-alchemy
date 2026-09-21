@@ -19,6 +19,8 @@ import * as Storage from '../../modules/api-client/storage.ts'
 import * as Capacity from '../../modules/api-client/capacity.ts'
 import * as Dns from '../../modules/api-client/dns.ts'
 import * as Vpc from '../../modules/api-client/vpc.ts'
+import * as Kms from '../../modules/api-client/kms.ts'
+import * as Mysterybox from '../../modules/api-client/mysterybox.ts'
 import { GrpcError } from '../../modules/api-client/grpc-utils.ts'
 import { Stack } from 'alchemy/Stack'
 import { Stage } from 'alchemy/Stage'
@@ -140,6 +142,14 @@ export const mockDnsLayer = (partial: unknown) =>
 /** Build a VpcGrpcService layer with only the sub-services under test. */
 export const mockVpcLayer = (partial: unknown) =>
   Layer.succeed(Vpc.VpcGrpcService, partial as Vpc.VpcGrpcServiceShape)
+
+/** Build a KmsGrpcService layer with only the sub-services under test. */
+export const mockKmsLayer = (partial: unknown) =>
+  Layer.succeed(Kms.KmsGrpcService, partial as Kms.KmsGrpcServiceShape)
+
+/** Build a MysteryBoxGrpcService layer with only the sub-services under test. */
+export const mockMysteryboxLayer = (partial: unknown) =>
+  Layer.succeed(Mysterybox.MysteryBoxGrpcService, partial as Mysterybox.MysteryBoxGrpcServiceShape)
 
 /** A gRPC NOT_FOUND (code 5), as the API returns for a deleted resource. */
 export const notFoundError = () => new GrpcError({ code: 5, message: 'not found', details: '' })

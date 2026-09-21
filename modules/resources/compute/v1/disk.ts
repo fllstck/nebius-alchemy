@@ -83,8 +83,16 @@ export const NebiusDiskProvider: Layer.Layer<
       // `specDeepEqual` for the int64 sizes: `deepEqual` canonicalizes `Long`
       // (a class instance) to `undefined`, so every size compared equal — a
       // resize planned as "no changes" (see utilities.ts).
-      (!ResourceUtils.specDeepEqual(disk.spec.sizeGibibytes, desired.sizeGibibytes) ||
-        !ResourceUtils.specDeepEqual(disk.spec.blockSizeBytes, desired.blockSizeBytes) ||
+      //
+      // Each size is guarded on the news side because both are optional props over
+      // non-optional wire fields: an omitted `sizeGibibytes` decodes as `undefined` and an
+      // omitted `blockSizeBytes` as 0 ("use the platform default"). Comparing either against
+      // the value the disk already holds looks like drift on every reconcile and never
+      // converges — found by the convergence sweep (§C1).
+      ((news.sizeGibibytes !== undefined &&
+        !ResourceUtils.specDeepEqual(disk.spec.sizeGibibytes, desired.sizeGibibytes)) ||
+        (news.blockSizeBytes !== undefined &&
+          !ResourceUtils.specDeepEqual(disk.spec.blockSizeBytes, desired.blockSizeBytes)) ||
         disk.spec.type !== desired.type ||
         disk.spec.forbidDeletion !== desired.forbidDeletion)
     ) {
