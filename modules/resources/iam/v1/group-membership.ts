@@ -166,10 +166,30 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* GroupMembershipSchema.validateGroupMembershipProps(news)
-    // memberId is immutable
+
+    // The service has NO Update RPC (Create/Get/ListMembers/Delete), so nothing
+    // can be rewritten in place: a change to `revokeAfterHours` can only land by
+    // replacing the membership. Comparing only memberId/parentId — all this diff
+    // used to do — planned an `update` that wrote nothing, silently losing the
+    // change (AGENTS.md §Convergence).
+    //
+    // Truthiness, not raw equality: the create sends the field only when truthy
+    // (`revokeAfterHours ? … : {}`), so an absent value and an explicit `0` are
+    // the same membership — compared raw they would plan a needless replace.
+    // `labels` is the declared exception and stays out of the comparison.
+    if (Boolean(news.revokeAfterHours) !== Boolean(olds?.revokeAfterHours)) {
+      // Delete-first: the same (parentId, memberId) pair can only exist once
+      // server-side, and `metadata.name` is not even sent for memberships (the
+      // API rejects it), so no name distinguishes the two generations.
+      return Factory.replaceSameGeneratedName()
+    }
+
+    // memberId is the membership's subject — immutable, and NOT covered by
+    // `identityChangeRequiresReplace` (that helper knows name/parent only).
+    // A different member is a different membership, so create-first is safe.
     if (news.memberId !== olds?.memberId) return { action: 'replace' }
-    // parentId is immutable (membership can't move groups)
-    if (news.parentId !== olds?.parentId) return { action: 'replace' }
-    return undefined
+
+    // parentId is immutable (a membership can't move groups).
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

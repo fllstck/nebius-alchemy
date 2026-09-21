@@ -17,14 +17,76 @@ describe('Nebius.mysterybox.v1.SecretVersion', () => {
   })
 
   describe('diff', () => {
-    test('parentId change requires replace (version can\'t move secrets)', async () => {
+    // Payload entries use the schema's own field name (`stringValue`): the diff
+    // validates `news` before comparing, and an unknown key like `value` is
+    // stripped by the decoder — so a change only exists if a REAL field varies.
+    const base = { parentId: 'secret-abc111', payload: [{ key: 'k', stringValue: 'v' }] }
+
+    const diff = async (news: unknown, olds: unknown = base) => {
       const svc = await resolveProvider(Module.NebiusSecretVersion.Provider, Module.NebiusSecretVersionProvider)
-      expect(await runDiff(svc, { parentId: 'secret-abc222', payload: [{ key: 'k', value: 'v' }] }, { parentId: 'secret-abc111', payload: [{ key: 'k', value: 'v' }] })).toEqual({ action: 'replace' })
-    })
+      return runDiff(svc, news, olds)
+    }
 
     test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusSecretVersion.Provider, Module.NebiusSecretVersionProvider)
-      expect(await runDiff(svc, { parentId: 'secret-abc111', payload: [{ key: 'k', value: 'v' }] }, { parentId: 'secret-abc111', payload: [{ key: 'k', value: 'v' }] })).toBeUndefined()
+      expect(await diff(base)).toBeUndefined()
+    })
+
+    // The service has NO Update RPC: every spec field must plan a replace, or the
+    // change is silently lost (an `update` that writes nothing). These four cases
+    // pin exactly the bug this diff had — and they assert `deleteFirst`, because
+    // the generated name is `sv-<logicalId>` on every generation.
+    test('description change replaces the version (delete-first)', async () => {
+      expect(await diff({ ...base, description: 'changed' }, { ...base, description: 'original' })).toEqual({
+        action: 'replace',
+        deleteFirst: true,
+      })
+    })
+
+    test('payload change replaces the version (delete-first)', async () => {
+      expect(await diff({ ...base, payload: [{ key: 'k', stringValue: 'new' }] })).toEqual({
+        action: 'replace',
+        deleteFirst: true,
+      })
+    })
+
+    test('setPrimary change replaces the version (delete-first)', async () => {
+      expect(await diff({ ...base, setPrimary: true })).toEqual({ action: 'replace', deleteFirst: true })
+    })
+
+    test('an absent prop and its falsy default are the same version (no spurious replace)', async () => {
+      expect(
+        await diff({ ...base, description: '', setPrimary: false }, { ...base, description: undefined }),
+      ).toBeUndefined()
+    })
+
+    test('labels-only change is a noop (declared exception — no update path sends labels)', async () => {
+      expect(await diff({ ...base, labels: { a: '1' } }, { ...base, labels: { a: '2' } })).toBeUndefined()
+    })
+
+    test('name change requires replace but NOT delete-first (a different physical name)', async () => {
+      expect(await diff({ ...base, name: 'v2' }, { ...base, name: 'v1' })).toEqual({ action: 'replace' })
+    })
+
+    test("parentId change requires replace (version can't move secrets)", async () => {
+      expect(await diff({ ...base, parentId: 'secret-abc222' })).toEqual({ action: 'replace' })
+    })
+  })
+
+  describe('convergence guard', () => {
+    test('every prop is planned or declared — adding one must fail this test', () => {
+      // `labels` is the one declared exception (no update path sends labels
+      // anywhere); every other prop has to be compared by `diff`, because the
+      // engine turns any unplanned props change into an `update` that writes
+      // nothing. A new prop without a convergence decision fails here on purpose —
+      // see AGENTS.md §Convergence.
+      expect(Object.keys(SchemaModule.SecretVersionPropsSchema.fields).toSorted()).toEqual([
+        'description',
+        'labels',
+        'name',
+        'parentId',
+        'payload',
+        'setPrimary',
+      ])
     })
   })
 

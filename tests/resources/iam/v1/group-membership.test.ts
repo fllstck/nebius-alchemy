@@ -30,13 +30,52 @@ describe('Nebius.iam.v1.GroupMembership', () => {
   })
 
   describe('diff', () => {
-    test('memberId change requires replace (immutable)', async () => {
+    const base = { parentId: 'group-1', memberId: 'member-1' }
+
+    const diff = async (news: unknown, olds: unknown = base) => {
       const svc = await resolveProvider(Module.NebiusGroupMembership.Provider, Module.NebiusGroupMembershipProvider)
-      expect(await runDiff(svc, { parentId: 'group-1', memberId: 'member-2' }, { parentId: 'group-1', memberId: 'member-1' })).toEqual({ action: 'replace' })
-    })
+      return runDiff(svc, news, olds)
+    }
+
     test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusGroupMembership.Provider, Module.NebiusGroupMembershipProvider)
-      expect(await runDiff(svc, { parentId: 'group-1', memberId: 'member-1' }, { parentId: 'group-1', memberId: 'member-1' })).toBeUndefined()
+      expect(await diff(base)).toBeUndefined()
+    })
+
+    // The service has NO Update RPC, so `revokeAfterHours` is create-only: it must
+    // plan a replace or the change is silently lost. Delete-first, because the same
+    // (parentId, memberId) pair cannot exist twice and memberships send no
+    // `metadata.name` to distinguish two generations.
+    test('revokeAfterHours change replaces the membership (delete-first)', async () => {
+      expect(await diff({ ...base, revokeAfterHours: 24 })).toEqual({ action: 'replace', deleteFirst: true })
+    })
+
+    test('a falsy revokeAfterHours is not a change (the create only sends it when truthy)', async () => {
+      expect(await diff({ ...base, revokeAfterHours: 0 })).toBeUndefined()
+    })
+
+    test('labels-only change is a noop (declared exception)', async () => {
+      expect(await diff({ ...base, labels: { a: '1' } }, { ...base, labels: { a: '2' } })).toBeUndefined()
+    })
+
+    test('memberId change requires replace (a different membership — create-first is safe)', async () => {
+      expect(await diff({ ...base, memberId: 'member-2' })).toEqual({ action: 'replace' })
+    })
+
+    test("parentId change requires replace (a membership can't move groups)", async () => {
+      expect(await diff({ ...base, parentId: 'group-2' })).toEqual({ action: 'replace' })
+    })
+  })
+
+  describe('convergence guard', () => {
+    test('every prop is planned or declared — adding one must fail this test', () => {
+      // No `name` prop by design: the API rejects `metadata.name` on memberships,
+      // so a user-chosen name has no wire field to travel in (see the schema).
+      expect(Object.keys(SchemaModule.GroupMembershipPropsSchema.fields).toSorted()).toEqual([
+        'labels',
+        'memberId',
+        'parentId',
+        'revokeAfterHours',
+      ])
     })
   })
 

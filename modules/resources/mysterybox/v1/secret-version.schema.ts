@@ -15,6 +15,10 @@ const PayloadEntrySchema = Schema.Struct({
 export const SecretVersionPropsSchema = Schema.Struct({
   /** Parent secret ID. */
   parentId: Ids.SecretId,
+  /**
+   * Physical name (`metadata.name`). Immutable — the service has no Update RPC,
+   * so a change replaces the version. Defaults to `sv-<logicalId>`.
+   */
   name: Schema.optional(Schema.String),
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   description: Schema.optional(Schema.String),

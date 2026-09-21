@@ -238,7 +238,7 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 - **`Nebius.iam.Federation`** — SAML/OIDC identity federation
 - **`Nebius.iam.FederationCertificate`** — X.509 certificates for federations
 - **`Nebius.iam.Group`** — Access groups
-- **`Nebius.iam.GroupMembership`** — Group member assignments
+- **`Nebius.iam.GroupMembership`** — Group member assignments. There is no `Update` RPC, so `revokeAfterHours` is create-only: changing it replaces the membership. No `name` prop — the API rejects `metadata.name` here
 - **`Nebius.iam.AccessPermit`** — Resource-level role grants (group-scoped)
 - **`Nebius.iam.Invitation`** — User invitations with resend support
 - **`Nebius.iam.AuthPublicKey`** — SSH public keys for authentication
@@ -262,7 +262,7 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 ### Secrets (MysteryBox)
 
 - **`Nebius.mysterybox.Secret`** — Versioned secret storage with KMS encryption and inline payloads
-- **`Nebius.mysterybox.SecretVersion`** — Secret versions with primary-version promotion
+- **`Nebius.mysterybox.SecretVersion`** — Secret versions with primary-version promotion. The service has no `Update` RPC, so `description`, `payload` and `setPrimary` are immutable: a change replaces the version, delete-first (the physical name is `sv-<logicalId>` on every generation). `name` is the version's immutable `metadata.name` and defaults to `sv-<logicalId>`
 
 ### Quotas
 

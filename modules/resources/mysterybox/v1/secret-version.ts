@@ -13,6 +13,7 @@ import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecretVersionSchema from './secret-version.schema.ts'
+import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
@@ -65,7 +66,12 @@ export const NebiusSecretVersionProvider: Layer.Layer<
     }
 
     if (!version) {
-      const name = `sv-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
+      // `metadata.name` is immutable — the service has no Update RPC (see
+      // `diff`) — so it is part of the version's identity. The fallback is
+      // deterministic (`sv-<logicalId>`, no random suffix), which is why a
+      // spec-only replace must be delete-first: every generation asks for the
+      // same name.
+      const name = news.name ?? `sv-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
       const internalLabels = yield* AlchemyTags.createInternalTags(id)
       const labels = { ...internalLabels, ...news.labels }
 
@@ -149,8 +155,31 @@ export const NebiusSecretVersionProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* SecretVersionSchema.validateSecretVersionProps(news)
-    // parentId is immutable (version can't move secrets)
-    if (news.parentId !== olds?.parentId) return { action: 'replace' }
-    return undefined
+
+    // The service has NO Update RPC (Create/Get/List/Delete/Undelete), so
+    // `description`, `payload` and `setPrimary` are immutable: a change can only
+    // land by replacing the version. Comparing just the identity — all this diff
+    // used to do — planned an `update` that wrote nothing, silently losing the
+    // change (AGENTS.md §Convergence).
+    //
+    // Normalised the same way `reconcile` sends the spec (`description || ''`,
+    // `setPrimary` only when truthy), so an absent prop and its falsy default are
+    // the same version — compared raw they would plan a destructive replace for a
+    // no-op refactor. `labels` is the one declared exception and stays out of the
+    // comparison (no update path sends labels anywhere).
+    const specChanged =
+      (news.description ?? '') !== (olds?.description ?? '') ||
+      Boolean(news.setPrimary) !== Boolean(olds?.setPrimary) ||
+      !AlchemyDiff.deepEqual(news.payload, olds?.payload)
+
+    // Identity first: a name/parent change is a DIFFERENT version, where
+    // create-first is safe (the names differ, or the parent does — Nebius names
+    // are unique per parent). A spec-only change reuses the name —
+    // `sv-<logicalId>`, or a pinned `news.name`, on every generation — so it must
+    // be delete-first or the create hits ALREADY_EXISTS.
+    return (
+      Factory.identityChangeRequiresReplace(news, olds) ??
+      (specChanged ? Factory.replaceSameGeneratedName() : undefined)
+    )
   }),
 })
