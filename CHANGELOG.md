@@ -1,3 +1,26 @@
+## [0.8.3](https://github.com/fllstck/nebius-alchemy/compare/v0.8.2...v0.8.3) (2026-09-21)
+
+
+### ⚠️ Upgrade notes
+
+* **A failed `delete` no longer looks like a delete that never finishes.** The delete lifecycles
+  raced the real call against a "Still deleting …" progress ticker using `Effect.race`, which
+  completes on the first *success* — so a delete that **failed** waited on the ticker, and a
+  `destroy` could sit for 30+ minutes reporting progress while the actual error was hidden. It was
+  never a stalled server operation. Failures now surface immediately, and a genuinely stalled
+  attempt is re-issued (bounded) before failing with a `DeleteStalledError`.
+* **A delete blocked by a resource that still exists now waits for it.** `9 FAILED_PRECONDITION`
+  ("Can't delete network … if subnets exist", "Subnet … is used in network interfaces: …") is
+  routine mid-destroy: a VM tears down for minutes after its own delete returns. Deletes retry
+  every 20s (bounded) instead of failing the destroy outright.
+  Verified on a real VM: the hosted-instance e2e teardown went from a 30-minute timeout to green
+  in 517 s, with the wait engaging twice (subnet, then network).
+* No props, types or wire behaviour changed — nothing to migrate.
+
+### Bug Fixes
+
+* **resources:** surface failed deletes and re-issue genuinely stalled ones ([2682c46](https://github.com/fllstck/nebius-alchemy/commit/2682c464cda61c91a6fc59817b404a605472d523))
+* **resources:** wait out a live dependency instead of failing the delete ([8604c5b](https://github.com/fllstck/nebius-alchemy/commit/8604c5ba2300003fee429340ac1eff3017497e5c))
 ## [0.8.2](https://github.com/fllstck/nebius-alchemy/compare/v0.8.1...v0.8.2) (2026-09-21)
 
 
