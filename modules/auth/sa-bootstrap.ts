@@ -100,26 +100,89 @@ const tokenTransport = (token: Redacted.Redacted<string>) => ({
     Endpoints.endpointFor(service).pipe(Effect.map((endpoint) => makeChannel(endpoint, token))),
 })
 
+/**
+ * Render a rejection from a `@grpc/grpc-js` unary call as `STATUS (code): details`.
+ *
+ * The **thunk** form of `Effect.tryPromise` routes every rejection through
+ * Effect's `UnknownError`, whose message is the generic "An error occurred in
+ * Effect.tryPromise" — so the gRPC status and details were swallowed exactly
+ * when a failed bootstrap needed to be diagnosable (that string named neither
+ * the call nor the reason). Hence the object form in {@link callUnary} plus this
+ * renderer.
+ */
+const describeCallFailure = (cause: unknown): string => {
+  if (typeof cause === 'object' && cause !== null) {
+    const { code, details, message } = cause as { code?: unknown; details?: unknown; message?: unknown }
+    const numericCode = typeof code === 'number' ? code : undefined
+    const statusName = numericCode === undefined ? undefined : grpc.status[numericCode]
+    const status =
+      numericCode === undefined
+        ? undefined
+        : typeof statusName === 'string' && statusName.length > 0
+          ? `${statusName} (${numericCode})`
+          : String(numericCode)
+    // `details` is the server's own text; `message` normally repeats it.
+    const text =
+      typeof details === 'string' && details.length > 0
+        ? details
+        : typeof message === 'string' && message.length > 0
+          ? message
+          : undefined
+    const rendered = [status, text].filter((part) => part !== undefined).join(': ')
+    if (rendered.length > 0) return rendered
+  }
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
+/**
+ * The two bootstrap failures users actually hit need different fixes, so name
+ * the fix rather than leaving a bare status code: the bootstrap credential must
+ * be able to create IAM resources and grant roles, so a key without tenant-level
+ * admin authenticates fine and still fails here.
+ */
+const bootstrapHint = (cause: unknown): string => {
+  const code = typeof cause === 'object' && cause !== null ? (cause as { code?: unknown }).code : undefined
+  if (code === grpc.status.PERMISSION_DENIED) {
+    return (
+      ' The bootstrap credential needs IAM write access on the tenant — create service accounts and groups,' +
+      ' grant roles. A service-account key outside a tenant-admin group authenticates but cannot bootstrap' +
+      ' another service account: use a user OAuth login, or a key from a tenant admin.'
+    )
+  }
+  if (code === grpc.status.UNAUTHENTICATED) {
+    return ' The bootstrap credential was rejected — it may be expired or truncated; paste it again.'
+  }
+  return ''
+}
+
+/**
+ * The message {@link callUnary} raises for a failed IAM call.
+ *
+ * Exported so the rendering is unit-testable without a live gRPC failure — the
+ * regression it guards is a *message* one: the gRPC status and details must
+ * survive into the error, because the bootstrap is the one flow a user cannot
+ * debug by re-reading their own props.
+ */
+export const describeIamCallFailure = (cause: unknown): string =>
+  `Nebius IAM bootstrap call failed: ${describeCallFailure(cause)}.${bootstrapHint(cause)}`
+
 const callUnary = <T>(
   client: grpc.Client,
   invoke: (callback: (error: grpc.ServiceError | null, response: T) => void) => grpc.ClientUnaryCall,
 ): Effect.Effect<T, SaBootstrapError> =>
-  Effect.tryPromise(
-    () =>
+  Effect.tryPromise({
+    try: () =>
       new Promise<T>((resolve, reject) => {
         invoke((error, response) => {
           if (error) reject(error)
           else resolve(response)
         })
       }),
-  ).pipe(
-    Effect.mapError(
-      (e) =>
-        new SaBootstrapError({
-          message: `Nebius IAM bootstrap call failed: ${e instanceof Error ? e.message : String(e)}`,
-        }),
-    ),
-  )
+    // Object form ON PURPOSE: the thunk form hands `catch` Effect's
+    // `UnknownError` wrapper instead of the gRPC failure — see
+    // `describeCallFailure`.
+    catch: (cause) => new SaBootstrapError({ message: describeIamCallFailure(cause) }),
+  })
 
 /**
  * Create a resource through its long-running operation, poll it to
