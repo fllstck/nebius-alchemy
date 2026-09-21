@@ -1,7 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Config from 'effect/Config'
-import * as Clock from 'effect/Clock'
 import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
 import * as Alchemy from 'alchemy'
@@ -554,24 +553,23 @@ export const NebiusInstanceProvider: Layer.Layer<
     if (output?.id) {
       yield* session.note(`Deleting Instance (${output.id})`)
       const computeGrpcService = yield* ComputeGrpc.ComputeGrpcService
-      const started = yield* Clock.currentTimeMillis
-      yield* Effect.race(
-        // Idempotent delete: NOT_FOUND means the resource is already gone
-        // (e.g. cascaded away) — treat it as success.
-        computeGrpcService.instance.delete(output.id).pipe(
+      // Same helper the CRUD factory uses: a bounded attempt loop with a progress
+      // ticker, raced with `raceFirst`. With `Effect.race` a *failing* delete
+      // waited for the ticker forever — the failure was reported as an
+      // interminable delete (see `Factory.runDeleteWithProgress`).
+      yield* Factory.runDeleteWithProgress({
+        label: 'Instance',
+        id: output.id,
+        deleteOnce: computeGrpcService.instance.delete(output.id).pipe(
+          // Idempotent delete: NOT_FOUND means the resource is already gone
+          // (e.g. cascaded away) — treat it as success.
           Effect.catchIf(
             (e: unknown): e is GrpcUtils.GrpcError => e instanceof GrpcUtils.GrpcError && e.code === 5,
             () => Effect.void,
           ),
         ),
-        Effect.gen(function* () {
-          for (;;) {
-            yield* Effect.sleep(30_000)
-            const elapsedSec = Math.round(((yield* Clock.currentTimeMillis) - started) / 1000)
-            yield* session.note(`Still deleting Instance (${output.id}) — ${elapsedSec}s elapsed`)
-          }
-        }),
-      )
+        session,
+      })
     }
   }),
 

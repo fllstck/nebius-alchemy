@@ -100,3 +100,46 @@ matches on. And check *how* the consumer inspects failures before assuming a
 - `effect-versioning.md` Rule 4 — runtime verification of API existence
 - `alchemy-bindings.md` — the D8 bundle guard, which is graph reduction for a
   different purpose
+
+## `Effect.race` completes on the first SUCCESS — a failure waits for the loser
+
+`Effect.race(a, b)` does **not** mean "whichever finishes first". It completes when
+one side *succeeds*; if a side *fails*, the race keeps waiting for the other. With
+`Effect.never` (or an infinite progress ticker) as the other side, a failure is
+indistinguishable from a hang — the caller sees nothing, forever.
+
+Found 2026-09-21 by bisecting a 5-second test timeout that should have been a
+sub-second failure:
+
+```ts
+// hangs — the failure is swallowed and the race waits on `never`
+await Effect.runPromise(Effect.race(Effect.fail(new Error('boom')), Effect.never))
+// returns the failure immediately
+await Effect.runPromise(Effect.raceFirst(Effect.fail(new Error('boom')), Effect.never))
+```
+
+**Where it bit:** the resource `delete` lifecycles raced the real delete against a
+30-second "Still deleting …" progress ticker. A delete that *failed* therefore
+looked like a delete that never finished — the 28 minutes of
+`Still deleting Subnet …` that we attributed to a stalled server operation was
+the ticker narrating a failure nobody could see. Two fixes, both applied:
+
+- `Effect.raceFirst` wherever a real operation is raced against a ticker
+  (`modules/resources/factory.ts`'s `runDeleteWithProgress`, used by
+  `makeCrudDelete` *and* the Instance's custom delete).
+- A bounded re-issue of a genuinely stalled delete (`timeoutOption` per attempt,
+  then `DeleteStalledError`) — a real stall exists, but it was never the cause here.
+
+**Generalised:** before racing, ask which side is *supposed* to fail, and pick the
+combinator accordingly (`race` = first success, `raceFirst` = first completion,
+`raceAll`/`raceAllFirst` for collections). A progress ticker is the worst thing to
+race with `race`, because it never fails and never returns.
+
+Two related v4 API notes, both discovered the same way:
+
+- Timeout combinators are **data-last**: `Effect.timeoutOption(duration)(self)`,
+  not `timeoutOption(self, duration)`. The wrong order type-checks as "duration"
+  in some positions and silently never times out.
+- `runDeleteWithProgress`-style helpers with a generic `E`/`R` need one cast:
+  `Effect.gen` infers `unknown` for both when the surrounding function is generic.
+

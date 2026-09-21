@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Context from 'effect/Context'
 import * as ConfigProvider from 'effect/ConfigProvider'
+import * as Duration from 'effect/Duration'
 import * as Layer from 'effect/Layer'
 
 import type { GrpcError, GrpcDeadlineExceededError } from '../../modules/api-client/grpc-utils.ts'
 import { GrpcError as GrpcErrorCtor } from '../../modules/api-client/grpc-utils.ts'
-import { identityChangeRequiresReplace, makeTenantScopedList } from '../../modules/resources/factory.ts'
+import { identityChangeRequiresReplace, makeCrudDelete, makeTenantScopedList } from '../../modules/resources/factory.ts'
+import { fakeSession } from '../helpers/mocks.ts'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -213,6 +215,116 @@ describe('isDefaultResource filtering', () => {
     // Resources from proj-ok should still be returned
     expect(result).toHaveLength(1)
     expect(result[0]!.name).toBe('my-resource')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// makeCrudDelete — stalled-operation handling
+// ---------------------------------------------------------------------------
+
+/**
+ * A delete operation can sit pending indefinitely server-side (measured: 28
+ * minutes on a VPC subnet) while an *identical* re-issue completes in ~1s. The
+ * factory therefore bounds each attempt and re-issues it, once per attempt,
+ * instead of polling forever — and fails loudly if that never converges.
+ */
+describe('makeCrudDelete', () => {
+  class DeleteSvc extends Context.Service<
+    DeleteSvc,
+    { delete: (id: string) => Effect.Effect<void, GrpcError | GrpcDeadlineExceededError> }
+  >()('DeleteSvc') {}
+
+  const STALL = Duration.millis(20)
+
+  const deleteEffect = (
+    deleteImpl: (id: string) => Effect.Effect<void, GrpcError | GrpcDeadlineExceededError>,
+  ) => {
+    const lifecycle = makeCrudDelete({
+      resourceName: 'Test.Resource',
+      resourceLabel: 'TestResource',
+      service: DeleteSvc,
+      deleteById: (svc, id) => svc.delete(id),
+      stallAfter: STALL,
+    })
+    return lifecycle({ output: { id: 'res-1' }, session: fakeSession }).pipe(
+      Effect.provide(Layer.succeed(DeleteSvc, DeleteSvc.of({ delete: deleteImpl }))),
+    )
+  }
+
+  test('re-issues a stalled delete and succeeds on the next attempt', async () => {
+    let calls = 0
+    await runPromise(
+      // Counted at RUN time (`flatMap`), not when the effect is built — the
+      // factory builds the delete effect once and runs it per attempt.
+      deleteEffect(() =>
+        Effect.flatMap(
+          Effect.sync(() => {
+            calls += 1
+            return calls
+          }),
+          (n) => (n === 1 ? Effect.never : Effect.void),
+        ),
+      ),
+    )
+
+    expect(calls).toBe(2)
+  })
+
+  test('fails loudly with DeleteStalledError when every attempt stalls', async () => {
+    let calls = 0
+    const error = (await runPromise(
+      Effect.flip(
+        deleteEffect(() =>
+          Effect.flatMap(
+            Effect.sync(() => {
+              calls += 1
+            }),
+            () => Effect.never,
+          ),
+        ),
+      ),
+    )) as { _tag: string; message: string }
+
+    expect(error._tag).toBe('DeleteStalledError')
+    expect(calls).toBe(3)
+    expect(error.message).toContain('never completed')
+    // The message must give the operator something to do, not just a status.
+    expect(error.message).toContain('re-running the destroy usually settles it')
+  })
+
+  test('a real failure fails on the first attempt (never re-issued)', async () => {
+    let calls = 0
+    const error = (await runPromise(
+      Effect.flip(
+        deleteEffect(() =>
+          Effect.flatMap(
+            Effect.sync(() => {
+              calls += 1
+            }),
+            () => Effect.fail(new GrpcErrorCtor({ code: 7, message: 'permission denied', details: '' })),
+          ),
+        ),
+      ),
+    )) as { _tag: string }
+
+    expect(calls).toBe(1)
+    expect(error._tag).toBe('GrpcError')
+  })
+
+  test('NOT_FOUND is success — a server-side cascade already removed it', async () => {
+    let calls = 0
+    await runPromise(
+      deleteEffect(() =>
+        Effect.flatMap(
+          Effect.sync(() => {
+            calls += 1
+          }),
+          () => Effect.fail(new GrpcErrorCtor({ code: 5, message: 'not found', details: '' })),
+        ),
+      ),
+    )
+
+    expect(calls).toBe(1)
   })
 })
 

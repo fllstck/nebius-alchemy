@@ -1,6 +1,9 @@
 import * as Effect from 'effect/Effect'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
+import * as Duration from 'effect/Duration'
+import * as Option from 'effect/Option'
+import * as Schema from 'effect/Schema'
 import * as Alchemy from 'alchemy'
 import * as AlchemyTags from 'alchemy/Tags'
 import type { GrpcError, GrpcDeadlineExceededError } from '../api-client/grpc-utils.ts'
@@ -136,6 +139,105 @@ export const makeCrudRead = <STag extends Context.Service<any, any>, Raw extends
 // ---------------------------------------------------------------------------
 
 /**
+ * Raised when a delete operation never completes, even after re-issuing it.
+ *
+ * Loud on purpose: the alternative (reporting success) would leak the resource
+ * silently, and a destroy that did not destroy is worse than a failed destroy.
+ */
+export class DeleteStalledError extends Schema.TaggedError<DeleteStalledError>()('DeleteStalledError', {
+  resourceName: Schema.String,
+  resourceId: Schema.String,
+  attempts: Schema.Finite,
+  stalledSeconds: Schema.Finite,
+  message: Schema.String,
+}) {}
+
+/**
+ * How long ONE delete attempt may run before it is re-issued.
+ *
+ * A stalled delete operation can sit pending indefinitely — measured 28 minutes
+ * on a VPC subnet — while the *identical* re-issue completes in about a second:
+ * the server needs the nudge, and polling harder is not a fix. Deletes are
+ * idempotent and NOT_FOUND is already treated as success, so re-issuing is safe
+ * in a way re-issuing a *create* would not be (a create must never be repeated
+ * like this).
+ */
+const DEFAULT_DELETE_STALL_AFTER = Duration.minutes(5)
+const MAX_DELETE_ATTEMPTS = 3
+
+/**
+ * Run a delete, narrating progress, and re-issuing a stalled attempt.
+ *
+ * Two failure modes are handled here, both learned the hard way:
+ *
+ * 1. **A failed delete must surface.** These used to be wrapped in `Effect.race`
+ *    against an infinite progress ticker. `Effect.race` completes on the first
+ *    *success* — a failure waits for the loser, i.e. forever — so a delete that
+ *    errored was reported as a delete that never finished: 28 minutes of
+ *    `Still deleting Subnet …` was the ticker narrating a failure nobody saw.
+ *    `raceFirst` is the correct combinator (first to complete, failure included).
+ * 2. **A stalled operation needs re-issuing.** A single attempt is bounded by
+ *    `stallAfter`; when it expires the delete is issued again (the server can
+ *    leave an operation pending while an identical re-issue completes in ~1s).
+ *    After {@link MAX_DELETE_ATTEMPTS} it fails with {@link DeleteStalledError}
+ *    rather than pretending success.
+ *
+ * Re-issuing is safe for a *delete* (idempotent, and NOT_FOUND is success at the
+ * call site) and must never be done for a create.
+ */
+export const runDeleteWithProgress = <E, R>(options: {
+  label: string
+  id: string
+  deleteOnce: Effect.Effect<void, E, R>
+  // oxlint-disable-next-line no-explicit-any — approved: the Alchemy session type is not exported
+  session: any
+  stallAfter?: Duration.Duration
+}): Effect.Effect<void, E | DeleteStalledError, R> => {
+  const { label, id, deleteOnce, session } = options
+  const stallAfter = options.stallAfter ?? DEFAULT_DELETE_STALL_AFTER
+
+  // No annotation here: with a generic `E`/`R` from the caller, `Effect.gen`
+  // infers `unknown` for both. The cast on the return states what actually flows:
+  // the only error sources are `deleteOnce`'s `E` and our own `DeleteStalledError`.
+  const reissuingStalls = Effect.gen(function* () {
+    for (let attempt = 1; attempt <= MAX_DELETE_ATTEMPTS; attempt++) {
+      // v4 timeout combinators are data-last: `timeoutOption(duration)(self)`.
+      const finished = yield* Effect.timeoutOption(stallAfter)(deleteOnce)
+      if (Option.isSome(finished)) return
+      yield* session.note(
+        `Delete of ${label} (${id}) has not completed after ${Duration.toSeconds(stallAfter)}s — ` +
+          `re-issuing (attempt ${attempt + 1}/${MAX_DELETE_ATTEMPTS})`,
+      )
+    }
+    return yield* new DeleteStalledError({
+      resourceName: label,
+      resourceId: id,
+      attempts: MAX_DELETE_ATTEMPTS,
+      stalledSeconds: Duration.toSeconds(stallAfter) * MAX_DELETE_ATTEMPTS,
+      message:
+        `Delete of ${label} (${id}) never completed: ${MAX_DELETE_ATTEMPTS} attempts, ` +
+        `${Duration.toSeconds(stallAfter)}s each. The operation is still pending server-side; ` +
+        `re-running the destroy usually settles it (a re-issued delete of the same id succeeded ` +
+        `in ~1s when this was measured).`,
+    })
+  })
+
+  // The ticker reports progress so a slow delete does not fall silent — raced
+  // with `raceFirst` so the delete's own failure wins immediately.
+  return Effect.raceFirst(
+    reissuingStalls,
+    Effect.gen(function* () {
+      const started = yield* Clock.currentTimeMillis
+      for (;;) {
+        yield* Effect.sleep(30_000)
+        const elapsedSec = Math.round(((yield* Clock.currentTimeMillis) - started) / 1000)
+        yield* session.note(`Still deleting ${label} (${id}) — ${elapsedSec}s elapsed`)
+      }
+    }),
+  ) as unknown as Effect.Effect<void, E | DeleteStalledError, R>
+}
+
+/**
  * Create a standard `delete` lifecycle operation.
  *
  * Deletes the resource by physical ID. Designed to be idempotent —
@@ -144,6 +246,10 @@ export const makeCrudRead = <STag extends Context.Service<any, any>, Raw extends
  *
  * `service` is the gRPC service tag — the factory yields it and
  * passes the resolved instance to `deleteById`.
+ *
+ * A single attempt is bounded by `stallAfter` (default five minutes); if it
+ * expires the delete is re-issued, up to {@link MAX_DELETE_ATTEMPTS} times, then
+ * fails with {@link DeleteStalledError}. See {@link DEFAULT_DELETE_STALL_AFTER}.
  */
 // oxlint-disable-next-line typescript/no-explicit-any — approved: Context.Service wildcard generics
 export const makeCrudDelete = <STag extends Context.Service<any, any>, E>(config: {
@@ -154,6 +260,8 @@ export const makeCrudDelete = <STag extends Context.Service<any, any>, E>(config
   deleteById: (svc: ServiceOf<STag>, id: string) => Effect.Effect<void, E>
   /** Human-readable resource label for progress notes (e.g. "Bucket", "Instance"). */
   resourceLabel?: string
+  /** How long one attempt may run before it is re-issued (default 5 minutes). */
+  stallAfter?: Duration.Duration
 }) =>
   // oxlint-disable-next-line typescript/no-explicit-any — approved: Alchemy Session type not exported
   Effect.fn(`${config.resourceName}.delete`)(function* ({ output, session }: { output: { id: string }; session: any }) {
@@ -161,31 +269,25 @@ export const makeCrudDelete = <STag extends Context.Service<any, any>, E>(config
       yield* session.note(`Deleting ${config.resourceLabel} (${output.id})`)
     }
     const svc = yield* config.service
-    const started = yield* Clock.currentTimeMillis
-    // The delete operation (e.g. tearing down a VM-backed endpoint) is polled
-    // to completion and can take minutes — race it with a progress ticker so
-    // the session shows the deploy is still working instead of falling silent.
-    // The first tick is at 30s, so fast deletes emit nothing extra; the ticker
-    // is interrupted when the delete finishes (or fails).
-    yield* Effect.race(
+
+    const deleteOnce = config.deleteById(svc, output.id).pipe(
       // Idempotent delete: NOT_FOUND means the resource is already gone (it may
       // have been cascaded away by the server, e.g. deleting a service account
       // removes its group memberships and access keys) — treat it as success.
-      config.deleteById(svc, output.id).pipe(
-        Effect.catchIf(
-          // oxlint-disable-next-line no-explicit-any — error type is generic over E
-          (e: any): e is GrpcError => e instanceof GrpcErrorCtor && e.code === 5,
-          () => Effect.void,
-        ),
+      Effect.catchIf(
+        // oxlint-disable-next-line no-explicit-any — error type is generic over E
+        (e: any): e is GrpcError => e instanceof GrpcErrorCtor && e.code === 5,
+        () => Effect.void,
       ),
-      Effect.gen(function* () {
-        for (;;) {
-          yield* Effect.sleep(30_000)
-          const elapsedSec = Math.round(((yield* Clock.currentTimeMillis) - started) / 1000)
-          yield* session.note(`Still deleting ${config.resourceLabel ?? 'resource'} (${output.id}) — ${elapsedSec}s elapsed`)
-        }
-      }),
     )
+
+    yield* runDeleteWithProgress({
+      label: config.resourceLabel ?? 'resource',
+      id: output.id,
+      deleteOnce,
+      session,
+      stallAfter: config.stallAfter,
+    })
   })
 
 // ---------------------------------------------------------------------------
