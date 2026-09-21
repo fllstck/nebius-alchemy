@@ -29,6 +29,11 @@ TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
 # Pins are read from package.json rather than hardcoded, so a version bump can
 # never leave this job asserting a stale version.
 PIN="$(node -p "require('$ROOT/package.json').peerDependencies.effect")"
+# The README's install line names alchemy explicitly. Omitting it from this test
+# is what hid a real npm failure: as a *root* dependency alchemy's optional
+# frontend chain competes with our typescript peer, while as a transitive one it
+# is skipped - so the two commands resolve differently.
+ALCHEMY_PIN="$(node -p "require('$ROOT/package.json').dependencies.alchemy")"
 BUN_PEER="$(node -p "require('$ROOT/package.json').peerDependencies['@effect/platform-bun']")"
 NODE_PEER="$(node -p "require('$ROOT/package.json').peerDependencies['@effect/platform-node']")"
 TS_PEER="$(node -p "require('$ROOT/package.json').peerDependencies.typescript")"
@@ -45,14 +50,14 @@ if [ "$INSTALLER" = "npm" ]; then
   # `typescript@…` argument is what used to hide a real `npm install` failure —
   # a root pin satisfies the tooling peer and masks the ERESOLVE against
   # alchemy's optional `typescript@^6` chain.
-  npm install "$TARBALL" "effect@$PIN" "@effect/platform-bun@$BUN_PEER" \
-    "@effect/platform-node@$NODE_PEER"
+  npm install "$TARBALL" "alchemy@$ALCHEMY_PIN" "effect@$PIN" \
+    "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER"
 else
   # bun does not enforce peer ranges, so the peers the README's `bun add` line
   # lists explicitly are what actually put them in the tree. No `overrides`:
   # if a drift ever returns, that is exactly what this assertion must catch.
-  bun add "$TARBALL" "effect@$PIN" "@effect/platform-bun@$BUN_PEER" \
-    "@effect/platform-node@$NODE_PEER"
+  bun add "$TARBALL" "alchemy@$ALCHEMY_PIN" "effect@$PIN" \
+    "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER"
 fi
 echo "::endgroup::"
 
