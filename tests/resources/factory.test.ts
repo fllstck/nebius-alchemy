@@ -38,6 +38,8 @@ class TestIam extends Context.Service<TestIam, {
 
 interface TestResource {
   metadata: { id: string; name: string; labels: Record<string, string> }
+  /** Only `status.default` is read, and only to detect platform-provisioned resources. */
+  status?: { default?: boolean }
   spec: { description: string }
 }
 
@@ -114,11 +116,53 @@ describe('isDefaultResource filtering', () => {
     expect(result[0]!.name).toBe('my-network')
   })
 
-  test('excludes resources with status.default: true', async () => {
-    // We need to test the isDefaultResource function directly since
-    // the mock TestResource doesn't have a status field by default.
-    // Import the internals or test via the name prefix (already covered above).
-    // This is a smoke test that the status.default check compiles and runs.
+  /** Run the tenant-scoped list over one project's resources. */
+  const listWith = (resources: ReadonlyArray<TestResource>) =>
+    runPromise(
+      tenantScopedList().pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            makeTestIam([{ metadata: { id: 'proj-1', name: 'my-project' } }]),
+            makeTestSvc(new Map([['proj-1', [...resources]]])),
+          ).pipe(
+            Layer.provideMerge(ConfigProvider.layer(ConfigProvider.fromUnknown({ NEBIUS_TENANT_ID: 'tenant-1' }))),
+          ),
+        ),
+      ),
+    )
+
+  test('each default signal is sufficient on its own', async () => {
+    // Every resource that must be filtered below carries **non-empty, non-Alchemy**
+    // labels, so the name/known-name/status rules are the only reason it is excluded.
+    // With empty labels they would be filtered by the "no labels ⇒ system resource"
+    // rule anyway — which is exactly how these branches went unobserved: mutating
+    // `name?.startsWith('default-')` seven ways all survived the `bun run mutation`
+    // baseline (2026-09-21), and the `status.default` case had an empty test body.
+    const owned = { owner: 'platform' }
+    const result = await listWith([
+      { metadata: { id: 'r-prefix', name: 'default-network', labels: owned }, spec: { description: '' } },
+      { metadata: { id: 'r-known', name: 'mlflow-sa', labels: owned }, spec: { description: '' } },
+      {
+        metadata: { id: 'r-status', name: 'external-thing', labels: owned },
+        status: { default: true },
+        spec: { description: '' },
+      },
+      { metadata: { id: 'r-nolabels', name: 'unlabelled-thing', labels: {} }, spec: { description: '' } },
+      // Kept: Alchemy-owned, and a third-party-labelled resource that is not a default.
+      { metadata: { id: 'r-ours', name: 'my-network', labels: { 'alchemy::id': 'my-network' } }, spec: { description: '' } },
+      { metadata: { id: 'r-team', name: 'team-network', labels: { team: 'sre' } }, spec: { description: '' } },
+    ])
+
+    expect(result.map((r) => r.name).toSorted()).toEqual(['my-network', 'team-network'])
+  })
+
+  test('a record with no metadata is a system default, not a crash', async () => {
+    // A sparse API response must not throw: `isDefaultResource` reads
+    // `metadata?.labels` / `metadata?.name`, and an object with neither is a
+    // system-provisioned default — filtered before `toAttrs` ever runs.
+    const result = await listWith([{} as unknown as TestResource])
+
+    expect(result).toHaveLength(0)
   })
 
   test('returns empty array when all resources are defaults', async () => {
