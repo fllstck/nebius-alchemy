@@ -1,3 +1,40 @@
+# [0.8.0](https://github.com/fllstck/nebius-alchemy/compare/v0.7.0...v0.8.0) (2026-09-21)
+
+
+### BREAKING CHANGES
+
+* **ID-valued props and attributes are branded.** A raw string literal no longer typechecks where a
+  resource ID is expected — pass the exported brand (`Nebius.iam.ServiceAccountId.make('serviceaccount-…')`)
+  or the `id` from a resource output. Runtime behaviour is unchanged. ([51a69aa](https://github.com/fllstck/nebius-alchemy/commit/51a69aa7a), [16ab5a0](https://github.com/fllstck/nebius-alchemy/commit/16ab5a090))
+* **Removed props that never did anything.** `vpc.SecurityRule.description` (the API has no such
+  field), `iam.AccessPermit.name` and `iam.GroupMembership.name` (the API rejects `metadata.name`
+  on both). Passing them was silently ignored — delete them from your stacks. ([d4bc99c](https://github.com/fllstck/nebius-alchemy/commit/d4bc99c07), [6ce19ee](https://github.com/fllstck/nebius-alchemy/commit/6ce19eec4))
+* **Immutable-field changes now plan a replace instead of an update that wrote nothing.**
+  The services behind `mysterybox.SecretVersion` (`description`, `payload`, `setPrimary`),
+  `iam.GroupMembership` (`revokeAfterHours`) and `iam.AccessPermit` (`role`, `resourceId`) have no
+  `Update` RPC, so a change to those fields recreates the resource — **its id changes**. Before this
+  release such a change planned an update that wrote nothing and the change was silently lost.
+  `mysterybox.SecretVersion.name` is also now honoured (it was ignored before) and needs no action.
+
+### Bug Fixes
+
+* **api-client:** omit pageSize in NVL InstanceGroup list requests ([ec3c0c6](https://github.com/fllstck/nebius-alchemy/commit/ec3c0c6e34118592307f70bd0c9e6997e421859e))
+* **auth:** preserve gRPC status and details in bootstrap errors ([ab1be50](https://github.com/fllstck/nebius-alchemy/commit/ab1be50d3a026506746cfb70d763082592359cdd))
+* **auth:** use reconfigureHint for non-refreshable Nebius OAuth tokens ([3ae9dc9](https://github.com/fllstck/nebius-alchemy/commit/3ae9dc9382d49b50bb2759e64105e8ac3682af13))
+* **capacity:** handle empty fabric values in resource advice ([935fce4](https://github.com/fllstck/nebius-alchemy/commit/935fce48ca841e1fbe3a1fd41d50c5732c221974))
+* **compute/instance:** replace on gpuCluster change with delete-first ordering ([02bb67f](https://github.com/fllstck/nebius-alchemy/commit/02bb67fd6f4393dab50d5c582fa2ad8a12b48191))
+* **iam,mysterybox:** replace resources on immutable spec changes ([57d80ee](https://github.com/fllstck/nebius-alchemy/commit/57d80ee8dc394ee448f2554cf735c665d62317c8))
+* **iam:** correct replace semantics for access permits and group memberships ([6ce19ee](https://github.com/fllstck/nebius-alchemy/commit/6ce19eec4f7df478301357cab66a95f864eb8436))
+* **providers:** ensure every prop converges via diff, reconcile, or replace ([d4bc99c](https://github.com/fllstck/nebius-alchemy/commit/d4bc99c0772948ecace0711bec9ec9538a87bd76))
+* **resources:** route spec-only replaces through Factory helpers ([d014e38](https://github.com/fllstck/nebius-alchemy/commit/d014e3853077027df1efae0e832e8307dd48c46c))
+
+
+### Features
+
+* **capacity:** add read-only ResourceAdvice action for fabric discovery ([1aee914](https://github.com/fllstck/nebius-alchemy/commit/1aee914dd9a3b1ca998335e19340e563fe36991e))
+* **compute:** add GpuCluster and NVLInstanceGroup resources ([3453a19](https://github.com/fllstck/nebius-alchemy/commit/3453a19e776c099581bd251c557687958ec104a2))
+* **compute:** verify GpuCluster against real infra and self-discover fabric ([1353e35](https://github.com/fllstck/nebius-alchemy/commit/1353e356cd3d36955cd73fb814afdbd4032f894d))
+* **endpoints:** add new services and pin ts-proto generator ([27ddc7e](https://github.com/fllstck/nebius-alchemy/commit/27ddc7e3d202f599b7bcd17d1e65edb39b6b68ab))
 # [0.7.0](https://github.com/fllstck/nebius-alchemy/compare/v0.6.0...v0.7.0) (2026-09-18)
 
 
