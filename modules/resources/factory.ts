@@ -3,6 +3,7 @@ import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as Duration from 'effect/Duration'
 import * as Option from 'effect/Option'
+import * as Schedule from 'effect/Schedule'
 import * as Schema from 'effect/Schema'
 import * as Alchemy from 'alchemy'
 import * as AlchemyTags from 'alchemy/Tags'
@@ -166,6 +167,24 @@ const DEFAULT_DELETE_STALL_AFTER = Duration.minutes(5)
 const MAX_DELETE_ATTEMPTS = 3
 
 /**
+ * How often, and how long, to wait for a dependency to disappear before giving
+ * up on a delete.
+ *
+ * `9 FAILED_PRECONDITION` is not a failure of the request — it is the API saying
+ * *a dependent still exists* ("Can't delete network … if subnets exist", "Subnet …
+ * cannot be deleted because it is used in network interfaces: computeinstance-…").
+ * During a destroy that is routine: a VM tears down for minutes after its own
+ * delete call returned, and the subnet it held cannot go until it has. Deletes are
+ * idempotent, so waiting and re-issuing is safe.
+ */
+const DEPENDENT_ALIVE_RETRIES = 12
+const DEFAULT_DEPENDENT_RETRY_DELAY = Duration.seconds(20)
+
+/** `9 FAILED_PRECONDITION` — the delete is blocked by something that still exists. */
+const dependentStillAlive = (error: unknown): boolean =>
+  error instanceof GrpcErrorCtor && error.code === 9
+
+/**
  * Run a delete, narrating progress, and re-issuing a stalled attempt.
  *
  * Two failure modes are handled here, both learned the hard way:
@@ -192,9 +211,35 @@ export const runDeleteWithProgress = <E, R>(options: {
   // oxlint-disable-next-line no-explicit-any — approved: the Alchemy session type is not exported
   session: any
   stallAfter?: Duration.Duration
+  /** Delay between retries while a dependency still exists (default 20s). */
+  dependentRetryDelay?: Duration.Duration
 }): Effect.Effect<void, E | DeleteStalledError, R> => {
   const { label, id, deleteOnce, session } = options
   const stallAfter = options.stallAfter ?? DEFAULT_DELETE_STALL_AFTER
+  const dependentRetryDelay = options.dependentRetryDelay ?? DEFAULT_DEPENDENT_RETRY_DELAY
+
+  let notedDependencyWait = false
+  // A delete blocked by an existing dependency is retried HERE, inside the
+  // attempt: waiting for a dependent is not a stall, and the retry must not eat
+  // the attempt budget that the stall logic uses.
+  const deleteWaitingForDependents = deleteOnce.pipe(
+    Effect.tapError((error: unknown) =>
+      Effect.gen(function* () {
+        if (!dependentStillAlive(error) || notedDependencyWait) return
+        notedDependencyWait = true
+        yield* session.note(
+          `Delete of ${label} (${id}) is blocked by a resource that still exists — ` +
+            `retrying every ${Duration.toSeconds(dependentRetryDelay)}s until it goes ` +
+            `(expected while a VM or endpoint finishes tearing down)`,
+        )
+      }),
+    ),
+    Effect.retry({
+      times: DEPENDENT_ALIVE_RETRIES,
+      schedule: Schedule.spaced(dependentRetryDelay),
+      while: dependentStillAlive,
+    }),
+  )
 
   // No annotation here: with a generic `E`/`R` from the caller, `Effect.gen`
   // infers `unknown` for both. The cast on the return states what actually flows:
@@ -202,7 +247,7 @@ export const runDeleteWithProgress = <E, R>(options: {
   const reissuingStalls = Effect.gen(function* () {
     for (let attempt = 1; attempt <= MAX_DELETE_ATTEMPTS; attempt++) {
       // v4 timeout combinators are data-last: `timeoutOption(duration)(self)`.
-      const finished = yield* Effect.timeoutOption(stallAfter)(deleteOnce)
+      const finished = yield* Effect.timeoutOption(stallAfter)(deleteWaitingForDependents)
       if (Option.isSome(finished)) return
       yield* session.note(
         `Delete of ${label} (${id}) has not completed after ${Duration.toSeconds(stallAfter)}s — ` +

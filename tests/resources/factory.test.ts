@@ -7,7 +7,12 @@ import * as Layer from 'effect/Layer'
 
 import type { GrpcError, GrpcDeadlineExceededError } from '../../modules/api-client/grpc-utils.ts'
 import { GrpcError as GrpcErrorCtor } from '../../modules/api-client/grpc-utils.ts'
-import { identityChangeRequiresReplace, makeCrudDelete, makeTenantScopedList } from '../../modules/resources/factory.ts'
+import {
+  identityChangeRequiresReplace,
+  makeCrudDelete,
+  makeTenantScopedList,
+  runDeleteWithProgress,
+} from '../../modules/resources/factory.ts'
 import { fakeSession } from '../helpers/mocks.ts'
 
 // ---------------------------------------------------------------------------
@@ -325,6 +330,60 @@ describe('makeCrudDelete', () => {
     )
 
     expect(calls).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// runDeleteWithProgress — the API blocking a delete on a live dependency
+// ---------------------------------------------------------------------------
+
+/**
+ * `9 FAILED_PRECONDITION` on a delete means "a dependent still exists", which is
+ * routine mid-destroy: a VM tears down for minutes after its own delete returned,
+ * and the subnet it held cannot go until it has. Verified live: the hosted test's
+ * subnet/network were un-deletable while the instance/endpoint were still going,
+ * and deleted in ~2.6s once they were gone.
+ */
+describe('runDeleteWithProgress — dependency still exists', () => {
+  const preconditionFailure = () =>
+    new GrpcErrorCtor({ code: 9, message: 'if subnets exist', details: '' })
+
+  const runEffect = (deleteOnce: Effect.Effect<void, GrpcError>) =>
+    runDeleteWithProgress({
+      label: 'Test.Network',
+      id: 'net-1',
+      deleteOnce,
+      session: fakeSession,
+      dependentRetryDelay: Duration.millis(5),
+    })
+
+  const counted = (failures: number) => {
+    let calls = 0
+    const deleteOnce = Effect.flatMap(
+      Effect.sync(() => {
+        calls += 1
+        return calls
+      }),
+      (n) => (n <= failures ? Effect.fail(preconditionFailure()) : Effect.void),
+    )
+    return { deleteOnce, calls: () => calls }
+  }
+
+  test('waits out a live dependency, then succeeds', async () => {
+    const { deleteOnce, calls } = counted(2)
+    await runPromise(runEffect(deleteOnce))
+
+    expect(calls()).toBe(3)
+  })
+
+  test('a dependency that never goes fails with the API error (not a fake success)', async () => {
+    const { deleteOnce, calls } = counted(Number.POSITIVE_INFINITY)
+    const error = (await runPromise(Effect.flip(runEffect(deleteOnce)))) as { _tag: string; code: number }
+
+    // initial attempt + the retry budget
+    expect(calls()).toBe(13)
+    expect(error._tag).toBe('GrpcError')
+    expect(error.code).toBe(9)
   })
 })
 
