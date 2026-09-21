@@ -40,14 +40,19 @@ printf '{"name":"consumer","version":"1.0.0","private":true}' > package.json
 
 echo "::group::install ($INSTALLER, no overrides)"
 if [ "$INSTALLER" = "npm" ]; then
+  # EXACTLY the README's `bun add` line (which never names `typescript`): the
+  # point of this job is to test the documented install, and an explicit
+  # `typescript@…` argument is what used to hide a real `npm install` failure —
+  # a root pin satisfies the tooling peer and masks the ERESOLVE against
+  # alchemy's optional `typescript@^6` chain.
   npm install "$TARBALL" "effect@$PIN" "@effect/platform-bun@$BUN_PEER" \
-    "@effect/platform-node@$NODE_PEER" "typescript@$TS_PEER"
+    "@effect/platform-node@$NODE_PEER"
 else
   # bun does not enforce peer ranges, so the peers the README's `bun add` line
   # lists explicitly are what actually put them in the tree. No `overrides`:
   # if a drift ever returns, that is exactly what this assertion must catch.
   bun add "$TARBALL" "effect@$PIN" "@effect/platform-bun@$BUN_PEER" \
-    "@effect/platform-node@$NODE_PEER" "typescript@$TS_PEER"
+    "@effect/platform-node@$NODE_PEER"
 fi
 echo "::endgroup::"
 
@@ -65,8 +70,15 @@ echo "✓ @effect/platform-node-shared resolved to $RESOLVED with no consumer ov
 # `skipLibCheck` this never resolves the runtime imports.
 cp "$ROOT/.github/smoke/smoke.ts" .
 cp "$ROOT/.github/smoke/tsconfig.json" .
+# npm auto-installs the `typescript` peer (a range), so the tree already has a
+# compiler — and that is the one we use, so the low end of the supported range is
+# what gets exercised. bun ignores peer ranges, so install it as tooling only
+# (after the assertions above, which must see the documented install).
+if [ ! -x ./node_modules/.bin/tsc ]; then
+  bun add --dev "typescript@$TS_PEER"
+fi
 ./node_modules/.bin/tsc --noEmit
-echo "✓ tsc --noEmit clean"
+echo "✓ tsc --noEmit clean (typescript $(node -p "require('./node_modules/typescript/package.json').version"))"
 
 # The check that actually catches a broken transitive dependency: load it.
 # It fails at import, not at typecheck.
