@@ -1,3 +1,24 @@
+## [0.8.2](https://github.com/fllstck/nebius-alchemy/compare/v0.8.1...v0.8.2) (2026-09-21)
+
+
+### ⚠️ Upgrade notes
+
+* **`npm install` works again — 0.8.0 and 0.8.1 could not be installed by npm at all** when
+  following the README's install line. A *required* `typescript` peer made npm install a compiler
+  version of its own choosing, which cannot be satisfied next to alchemy's optional
+  `typescript@^6` frontend chain (`ERESOLVE`). The peer is now **optional**: npm installs no
+  compiler version, and you install TypeScript 6 or 7 in your own project. Both are verified
+  (`6.0.3`, `7.0.2` compile the package). Bun consumers were never affected.
+* **Dependency pins are unchanged from 0.8.1** (`effect` / `@effect/platform-{bun,node,node-shared}`
+  all `4.0.0-rc.117`) — see the 0.8.1 notes below for why they move as one constellation.
+* **The consumer smoke test now installs the README's exact line, including `alchemy`.** Omitting
+  it is what let both npm failures ship: as a transitive dependency alchemy's optional chain is
+  skipped, so the tested command resolved where the documented one did not.
+
+### Bug Fixes
+
+* **ci:** install the README's line including alchemy in the consumer smoke test ([a0d2b56](https://github.com/fllstck/nebius-alchemy/commit/a0d2b569c0cc03a7dd4f299df736c45e90fef52b))
+* **deps:** make the typescript peer optional so the documented npm install resolves ([d2992f2](https://github.com/fllstck/nebius-alchemy/commit/d2992f24a4afb3ccdf209fe5ca4150dac0a3f212))
 ## [0.8.1](https://github.com/fllstck/nebius-alchemy/compare/v0.8.0...v0.8.1) (2026-09-21)
 
 
