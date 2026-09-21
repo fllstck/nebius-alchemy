@@ -22,15 +22,33 @@
  */
 import * as BunTest from 'bun:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 const { afterAll, describe, expect, test } = BunTest
 
 const REPO_ROOT = join(import.meta.dir, '../..')
-const OXLINT_BIN = join(REPO_ROOT, 'node_modules/.bin/oxlint')
 const PLUGIN = join(REPO_ROOT, 'tools/oxlint-nebius-plugin/index.js')
+
+/**
+ * Locate the `oxlint` binary by walking up from this file.
+ *
+ * It lives in `node_modules/.bin`, which Stryker's mutation-testing sandbox does
+ * not copy (Stryker always ignores `node_modules`), and a sandboxed `bun test`
+ * resolves packages by walking up to the real install. Hard-coding
+ * `<repo>/node_modules/.bin/oxlint` therefore breaks a dry run under Stryker; the
+ * walk-up works from the repo root and from a sandbox beneath it alike.
+ */
+const findOxlint = (): string => {
+  for (let dir = import.meta.dir; ; dir = dirname(dir)) {
+    const candidate = join(dir, 'node_modules/.bin/oxlint')
+    if (existsSync(candidate)) return candidate
+    if (dirname(dir) === dir) throw new Error(`oxlint binary not found above ${import.meta.dir}`)
+  }
+}
+
+const OXLINT_BIN = findOxlint()
 
 const tempDir = mkdtempSync(join(tmpdir(), 'nebius-oxlint-'))
 

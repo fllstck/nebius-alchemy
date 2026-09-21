@@ -18,6 +18,10 @@ schemas.old
 coverage
 *.lcov
 
+# mutation testing (Stryker): sandbox + html/json report
+.stryker-tmp
+reports
+
 # logs
 logs
 _.log
