@@ -103,6 +103,46 @@ pin fails immediately. Also confirm what actually shipped inside the tarball
 (e.g. `find node_modules/@scope/pkg/schemas -name '*.ts' | wc -l`), since
 `files` + `.gitignore` is exactly where this goes wrong quietly.
 
+## Install the README's line VERBATIM — root vs transitive deps resolve differently
+
+Two consecutive releases shipped with a consumer install that could not work, and
+both times the *test* was the reason it wasn't caught. Learned 2026-09-21, at
+0.8.0's and 0.8.1's expense.
+
+**0.8.0 never installed under npm.** `peerDependencies.typescript: "^7"` — an
+exact-ish pin — made npm install `typescript@7.0.2` at the root, which cannot be
+satisfied alongside alchemy's *optional* `@sveltejs/kit` → `typescript@^6` chain:
+`npm error code ERESOLVE`. It passed CI because `consumer.sh` passed
+`typescript@$TS_PEER` **explicitly** — a root pin satisfies the peer and lets npm
+skip the conflicting optional peer.
+
+**0.8.1 fixed that and still didn't install.** The smoke job then installed
+`<tarball> effect@… platform-bun@… platform-node@…` — **omitting `alchemy`**, which
+the README's line *does* name. As a **root** dependency alchemy's optional chain
+competes and npm fails; as a **transitive** dependency (reached through our
+package) the chain is skipped and it resolves. Same command, different tree.
+
+**The fix that held:** make the tooling peer **optional**
+(`peerDependenciesMeta: { typescript: { optional: true } }`) so npm installs no
+compiler version at all, and document "bring TypeScript 6 or 7" instead. Verified
+by installing **`@fllstck/nebius-alchemy@<version>` by name, with the README's
+install line copied character for character**, under npm *and* bun: one copy of
+each `@effect/*` package, no `ERESOLVE`, runtime import, and the README
+quick-start typechecked.
+
+Rules this earned:
+
+1. **Copy the install line out of the README into the test.** If the test spells
+   the dependencies itself, it is testing a different product. Any dependency the
+   docs name belongs in the command, even when our package already depends on it.
+2. **A root pin masks peer conflicts.** Passing a version explicitly at the root
+   is exactly what a real consumer does *not* do, and it silences `ERESOLVE`.
+3. **Never state a version you have not installed.** A range's lower bound is a
+   claim; `>=5 <8` was narrowed to `>=6 <8` only because 6.0.3 was the version
+   actually compiled against.
+4. **Verify by name from the registry**, not only the packed tarball — 0.8.0's
+   publish-time breakage was invisible to a local-tarball install.
+
 ## "Did it publish?" — the diagnostic ladder
 
 A release can *look* done — tag pushed, command exit 0 — while nothing reached
