@@ -97,16 +97,29 @@ const SourceImageFamilySchema = Schema.Struct({
  * Nebius provisions a BLANK boot disk when no source image is given — no OS,
  * no serial output, every port dropped (looks RUNNING, serves nothing). Fail
  * fast with a clear message instead of a dead VM.
+ *
+ * Checked on the **boot** disk only. It used to sit on `ManagedDiskSpecSchema`, which
+ * rejected every managed disk without a source image — including a secondary data disk,
+ * where blank is exactly right (that is how a fresh volume is added), and it blamed the
+ * boot disk for a config that had one. Found by the convergence sweep's instance table,
+ * which had to give its *data* disk an OS image to get past validation (2026-09-21).
  */
-const bootDiskImageRequired = Schema.makeFilter((spec: Record<string, unknown>) => {
-  if (spec.sourceImageId === undefined && spec.sourceImageFamily === undefined) {
-    return {
-      path: ['sourceImageId'],
-      issue:
-        'Boot disk requires an OS image: set `sourceImageId`, or `sourceImageFamily: { imageFamily: "ubuntu24.04-driverless" }` — without one Nebius provisions a blank disk (no OS, no serial output, all ports dropped)',
+const bootDiskImageRequired = Schema.makeFilter(
+  (props: { bootDisk?: { managedDisk?: { spec?: Record<string, unknown> } } }) => {
+    const spec = props.bootDisk?.managedDisk?.spec
+    // No managed spec to check: an `existingDisk` boot disk brings its own content, and a
+    // `bootDisk` with neither form is rejected by `AttachedDiskSpecSchema`'s own check.
+    if (spec === undefined) return undefined
+    if (spec.sourceImageId === undefined && spec.sourceImageFamily === undefined) {
+      return {
+        path: ['bootDisk', 'managedDisk', 'spec', 'sourceImageId'],
+        issue:
+          'Boot disk requires an OS image: set `sourceImageId`, or `sourceImageFamily: { imageFamily: "ubuntu24.04-driverless" }` — without one Nebius provisions a blank disk (no OS, no serial output, all ports dropped)',
+      }
     }
-  }
-})
+    return undefined
+  },
+)
 
 const ManagedDiskSpecSchema = Schema.Struct({
   /** Disk size in gibibytes. Must be ≥ 64 GiB when set — smaller disks hang provisioning (platform behavior). */
@@ -121,7 +134,7 @@ const ManagedDiskSpecSchema = Schema.Struct({
   sourceImageFamily: Schema.optional(SourceImageFamilySchema),
   /** Prevents deletion whilst set. */
   forbidDeletion: Schema.optional(Schema.Boolean),
-}).check(bootDiskImageRequired)
+})
 
 const ManagedDiskSchema = Schema.Struct({
   name: Schema.String,
@@ -364,7 +377,7 @@ export const InstancePropsSchema = Schema.Struct({
    * assets bucket + identity Outputs (resolved by the engine at apply time).
    */
   hosted: Schema.optional(Schema.Unknown),
-})
+}).check(bootDiskImageRequired)
 
 export type InstanceProps = typeof InstancePropsSchema.Type
 

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Module from '../../../../modules/resources/iam/v1/static-key.ts'
-import * as SchemaModule from '../../../../modules/resources/iam/v1/static-key.schema.ts'
 import * as Iam from '../../../../modules/api-client/iam.ts'
 import { resolveProvider, runEffect } from '../../../helpers/provider.ts'
 import { mockIamLayer, testConfigLayer, fakeSession, protoMetadata } from '../../../helpers/mocks.ts'
@@ -104,20 +103,5 @@ describe('Nebius.iam.v1.StaticKey (Issue-only API)', () => {
     // Without precreate output the token is unrecoverable — must die, never silently re-issue.
     expect(Exit.isFailure(exit)).toBe(true)
     expect(String(Exit.isFailure(exit) ? exit.cause : '')).toContain('precreate')
-  })
-})
-
-/**
- * Convergence guard: every prop must be planned, reconciled, or declared.
- *
- * This diff compares an ENUMERATED field list, so a newly added prop would be
- * silently ignored — the engine turns any props change a diff ignores into an
- * `update` that writes nothing (`Plan.ts`). Adding a prop must therefore fail
- * here until someone decides how it converges. See AGENTS.md §Convergence.
- * (`labels` is the one declared exception: no update path sends labels.)
- */
-describe('convergence guard', () => {
-  test('every prop is planned or declared — adding one must fail this test', () => {
-    expect(Object.keys(SchemaModule.StaticKeyPropsSchema.fields).toSorted()).toEqual(['description', 'expiresAt', 'service', 'serviceAccountId'])
   })
 })

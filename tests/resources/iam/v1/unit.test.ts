@@ -74,11 +74,6 @@ describe('Nebius.iam.v1.StaticKey', () => {
       expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', service: 'AI_STUDIO' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toEqual(deleteFirst)
     })
 
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(StaticKeyModule.NebiusStaticKey.Provider, StaticKeyModule.NebiusStaticKeyProvider)
-      expect(await runDiff(svc, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' }, { serviceAccountId: 'serviceaccount-sa1', service: 'OBSERVABILITY' })).toBeUndefined()
-    })
-
     // Issue-only API: no update RPC exists, so these can only change by
     // reissuing. They used to be silently ignored.
     test('a description change reissues the key (delete-first replace)', async () => {

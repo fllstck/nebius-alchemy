@@ -35,15 +35,6 @@ describe('Nebius.storage.v1.Bucket', () => {
   })
 
   describe('diff', () => {
-    test('name change requires replace', async () => {
-      const svc = await provider()
-      expect(await runDiff(svc, { name: 'new-bucket' }, { name: 'old-bucket' })).toEqual({ action: 'replace' })
-    })
-
-    test('same name is a noop (no replace)', async () => {
-      const svc = await provider()
-      expect(await runDiff(svc, { name: 'same-bucket' }, { name: 'same-bucket' })).toBeUndefined()
-    })
 
     test('unresolved news short-circuits to undefined', async () => {
       const svc = await provider()

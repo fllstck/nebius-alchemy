@@ -116,18 +116,20 @@ platform's own default — `subnet.routeTableId`, `disk.{sizeGibibytes,blockSize
 `image.cpuArchitecture` — each of which re-issued an update on **every** reconcile. The
 `news.<field> !== undefined` guard is therefore part of the rule, not a style choice.
 
-**A resource with no `Update` RPC MUST ship a prop-set guard test.** That is the only shape in
-which the silent-no-op class can survive. With an update RPC, `reconcile` sends the full
-`desired` spec, so any prop change is written and the API adjudicates legality — a new prop is
-safe by construction. Without one, the `diff` is the **only** convergence path, so a prop it
-ignores is lost, and a prop added later is lost silently. The guard is ~10 lines: assert
-`Object.keys(<Resource>PropsSchema.fields).toSorted()` against the known list, so adding a prop
-fails until someone decides how it converges. All eight such resources carry one today
-(`secret-version`, `group-membership`, `access-permit`, `static-key`, `gpu-cluster`, `group`;
-`ai/v1/{endpoint,job}` compare everything-but-`labels` via `deepEqual`, so a new prop already
-replaces and needs none). **Check whether the service has an update RPC before writing the
-provider** — the Terraform provider's generated `Update is unimplemented for <service>` stubs
-answer that directly, and that is how `group-membership`'s silent no-op was found.
+**A resource with no `Update` RPC MUST be tabulated prop by prop in the convergence sweep.**
+That is the only shape in which the silent-no-op class can survive. With an update RPC,
+`reconcile` sends the full `desired` spec, so any prop change is written and the API adjudicates
+legality — a new prop is safe by construction. Without one, the `diff` is the **only**
+convergence path, so a prop it ignores is lost, and a prop added later is lost silently. These
+six used to carry a hand-written prop-set guard (`Object.keys(<Resource>PropsSchema.fields)
+.toSorted()`); they now have sweep tables, which subsumes it — the guard could only say "the prop
+list did not change", the table probes each prop for an actual *plan*: `secret-version`,
+`group-membership`, `access-permit`, `static-key`, `gpu-cluster`, `group`.
+`ai/v1/{endpoint,job}` need none either way: they compare everything-but-`labels`, so a new prop
+already replaces (they sit in the by-construction register). **Check whether the service has an
+update RPC before writing the provider** — the Terraform provider's generated
+`Update is unimplemented for <service>` stubs answer that directly, and that is how
+`group-membership`'s silent no-op was found.
 
 And: **a prop that is not a wire field at all MUST be removed, not documented** — the dead
 `security-rule.description` (the proto has no such field) was dropped rather than kept as a

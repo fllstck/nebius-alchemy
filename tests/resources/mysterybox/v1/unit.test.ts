@@ -2,7 +2,7 @@ import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Module from '../../../../modules/resources/mysterybox/v1/secret.ts'
 import * as SchemaModule from '../../../../modules/resources/mysterybox/v1/secret.schema.ts'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import { runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -16,17 +16,6 @@ describe('Nebius.mysterybox.v1.Secret', () => {
     expect(Module.NebiusSecretProvider).toBeDefined()
   })
 
-  describe('diff', () => {
-    test('name change requires replace', async () => {
-      const svc = await resolveProvider(Module.NebiusSecret.Provider, Module.NebiusSecretProvider)
-      expect(await runDiff(svc, { name: 'new-secret' }, { name: 'old-secret' })).toEqual({ action: 'replace' })
-    })
-
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusSecret.Provider, Module.NebiusSecretProvider)
-      expect(await runDiff(svc, { name: 'my-secret' }, { name: 'my-secret' })).toBeUndefined()
-    })
-  })
 
   describe('validation', () => {
     test('accepts valid props', async () => {

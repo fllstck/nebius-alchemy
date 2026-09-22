@@ -49,6 +49,24 @@ const { expect, test } = BunTest
 type Props = Record<string, unknown>
 
 /**
+ * A change row that also pins the exact plan.
+ *
+ * Without it a row only asserts that *something* was planned, which does not distinguish
+ * `{ action: 'replace' }` (create-first) from `{ action: 'replace', deleteFirst: true }` — and
+ * that distinction is the replace-ordering contract (AGENTS.md §Replace ordering). Use
+ * {@link planned} where the shape is the contract, most obviously for identity changes.
+ */
+interface Planned {
+  readonly patch: Props
+  readonly expect: unknown
+}
+
+/** Pin the exact plan a change must produce, e.g. `planned({ name: 'x' }, { action: 'replace' })`. */
+export const planned = (patch: Props, expect: unknown): Planned => ({ patch, expect })
+
+const isPlanned = (entry: Props | Planned): entry is Planned => 'patch' in entry && 'expect' in entry
+
+/**
  * The convergence register: every resource is in exactly one of these buckets, and
  * `tests/convergence-coverage.test.ts` fails if a resource is in none or more than one.
  *
@@ -57,8 +75,11 @@ type Props = Record<string, unknown>
  * 2. `BY_CONSTRUCTION` — resources whose reconcile compares the whole desired spec, so every
  *    prop converges through one comparison. Listed below, with the source pattern that the
  *    whole-spec test asserts still holds.
- * 3. `PROP_SET_GUARDS` — resources with no update RPC at all, whose only convergence path is
- *    `diff`; each ships a hand-written prop-set guard (AGENTS.md §Convergence), listed below.
+ *
+ * There is deliberately **no third bucket**: the six resources with no update RPC used to
+ * carry a hand-written prop-set guard ("the prop list did not change"), which C1 subsumes —
+ * for those, `diff` is the only convergence path, so the sweep probes each prop for an actual
+ * *plan* instead of for its name appearing in a list.
  */
 
 /** `specDeepEqual(<var>.spec, <desired>)` — the whole message, not a field of it. */
@@ -97,34 +118,6 @@ export const BY_CONSTRUCTION: ReadonlyArray<ByConstruction> = [
   { resource: 'Nebius.ai.v1.Job', file: 'ai/v1/job.ts', pattern: PROPS_EXCEPT_LABELS },
 ]
 
-export interface PropSetGuard {
-  readonly resource: string
-  /** Export name of the props schema whose field set the guard pins. */
-  readonly propsSchema: string
-  /** Test file (relative to `tests/resources/`) holding `Object.keys(<propsSchema>.fields)`. */
-  readonly testFile: string
-}
-
-/** Resources with no update RPC: `diff` is their only convergence path, so each guards its
- * prop set by hand (AGENTS.md §Convergence — "a resource with no `Update` RPC MUST ship a
- * prop-set guard test"). */
-export const PROP_SET_GUARDS: ReadonlyArray<PropSetGuard> = [
-  { resource: 'Nebius.compute.v1.GpuCluster', propsSchema: 'GpuClusterPropsSchema', testFile: 'compute/v1/gpu-cluster.test.ts' },
-  { resource: 'Nebius.iam.v1.AccessPermit', propsSchema: 'AccessPermitPropsSchema', testFile: 'iam/v1/access-permit.test.ts' },
-  { resource: 'Nebius.iam.v1.Group', propsSchema: 'GroupPropsSchema', testFile: 'iam/v1/group.test.ts' },
-  {
-    resource: 'Nebius.iam.v1.GroupMembership',
-    propsSchema: 'GroupMembershipPropsSchema',
-    testFile: 'iam/v1/group-membership.test.ts',
-  },
-  { resource: 'Nebius.iam.v1.StaticKey', propsSchema: 'StaticKeyPropsSchema', testFile: 'iam/v1/static-key.test.ts' },
-  {
-    resource: 'Nebius.mysterybox.v1.SecretVersion',
-    propsSchema: 'SecretVersionPropsSchema',
-    testFile: 'mysterybox/v1/secret-version.test.ts',
-  },
-]
-
 export interface ConvergenceSweepConfig<R extends ResourceLike> {
   /** Resource type string, for test titles: `Nebius.dns.v1.Record`. */
   resource: string
@@ -146,9 +139,10 @@ export interface ConvergenceSweepConfig<R extends ResourceLike> {
    * The key must be the prop's name so the completeness check can see it, but the patch is
    * what is applied: some props are only meaningful together (a `security-rule` needs the
    * match block that its `direction` selects, so probing `egress` means swapping the block,
-   * not just setting one field).
+   * not just setting one field). Wrap it in {@link planned} when the exact plan shape is part
+   * of the contract.
    */
-  change: Record<string, Props>
+  change: Record<string, Props | Planned>
   /**
    * Props that legitimately do not converge *by value*, with the reason. This is the
    * "declared" category from AGENTS.md — without it the sweep produces false failures
@@ -242,8 +236,29 @@ export const convergenceSweep = <R extends ResourceLike>(config: ConvergenceSwee
     ).toBe(false)
   })
 
-  for (const [prop, patch] of Object.entries(config.change)) {
+  for (const [prop, entry] of Object.entries(config.change)) {
     test(`${resource}: a \`${prop}\` change is planned or written`, async () => {
+      const patch = isPlanned(entry) ? entry.patch : entry
+      if (isPlanned(entry)) {
+        // Shape-pinned row: the plan *is* the contract, so a write does not count as success.
+        const svc = await resolveProvider(config.provider, config.providerLayer)
+        let plan: unknown
+        try {
+          plan = await runDiff(svc, patched(patch), config.props)
+        } catch (error) {
+          const firstLine = String((error as { message?: string }).message ?? error).split('\n')[0]
+          throw new Error(
+            `${resource}.${prop}: the table's patch is not valid props for this resource — fix the table entry, not the provider.\n  ${firstLine}`,
+            { cause: error },
+          )
+        }
+        expect(
+          plan,
+          `${resource}.${prop}: the plan changed shape. Check the replace ordering (AGENTS.md §Replace ordering):\n` +
+            `  create-first is \`{ action: 'replace' }\`, delete-first adds \`deleteFirst: true\`.`,
+        ).toEqual(entry.expect)
+        return
+      }
       expect(
         await probe(`${resource}.${prop}`, patched(patch)),
         `${resource}.${prop}: the change planned nothing and reconcile wrote nothing, so it is silently lost.\n` +

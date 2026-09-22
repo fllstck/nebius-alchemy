@@ -37,10 +37,6 @@ describe('Nebius.iam.v1.AccessPermit', () => {
       return runDiff(svc, news, olds)
     }
 
-    test('no change is a noop', async () => {
-      expect(await diff(base)).toBeUndefined()
-    })
-
     // No Update RPC: every spec field must plan a replace, or the change is
     // silently lost. Delete-first, because a permit sends no `metadata.name`
     // (the API rejects it) — the grant's identity is server-side `(group,
@@ -59,20 +55,6 @@ describe('Nebius.iam.v1.AccessPermit', () => {
 
     test('parentId change requires replace but NOT delete-first (a different group)', async () => {
       expect(await diff({ ...base, parentId: 'group-abc999' })).toEqual({ action: 'replace' })
-    })
-  })
-
-  describe('convergence guard', () => {
-    test('every prop is planned or declared — adding one must fail this test', () => {
-      // No `name` prop: the API rejects `metadata.name` on permits (verified
-      // live), so a user-chosen name has no wire field. `labels` is the one
-      // declared exception. See AGENTS.md §Convergence.
-      expect(Object.keys(SchemaModule.AccessPermitPropsSchema.fields).toSorted()).toEqual([
-        'labels',
-        'parentId',
-        'resourceId',
-        'role',
-      ])
     })
   })
 

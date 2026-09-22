@@ -75,17 +75,6 @@ describe('Nebius.compute.v1.Instance', () => {
   })
 
   describe('diff', () => {
-    test('name change requires replace', async () => {
-      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
-      expect(
-        await runDiff(svc, { ...validInstanceProps, name: 'new-instance' }, { ...validInstanceProps, name: 'old-instance' }),
-      ).toEqual({ action: 'replace' })
-    })
-
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
-      expect(await runDiff(svc, { ...validInstanceProps, name: 'my-instance' }, { ...validInstanceProps, name: 'my-instance' })).toBeUndefined()
-    })
 
     // ── create-only spec fields (gpuCluster is settable only at creation, so a
     //    change must REPLACE rather than update; before this it planned as
@@ -411,6 +400,28 @@ describe('Nebius.compute.v1.Instance', () => {
         }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+      // The message has to name the hazard, not just the missing field — a blank boot
+      // disk boots and serves nothing, which is a 20-minute debugging session otherwise.
+      expect(result.message).toContain('Boot disk requires an OS image')
+    })
+
+    test('accepts a blank managed data disk — only the BOOT disk needs an OS image', async () => {
+      // `bootDiskImageRequired` used to sit on `ManagedDiskSpecSchema`, so every managed disk
+      // needed a source image: attaching a fresh data volume was rejected, and the error
+      // blamed the boot disk. A data disk is legitimately blank.
+      const result = await runEffect(
+        SchemaModule.validateInstanceProps({
+          ...validInstanceProps,
+          secondaryDisks: [
+            {
+              attachMode: 'READ_WRITE',
+              managedDisk: { name: 'data-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 128 } },
+            },
+          ],
+        }),
+      )
+
+      expect(result.secondaryDisks?.[0]?.managedDisk?.spec?.type).toBe('NETWORK_SSD')
     })
 
     test('accepts a boot disk with sourceImageFamily (platform resolves the image)', async () => {

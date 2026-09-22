@@ -22,15 +22,6 @@ describe('Nebius.kms.v1.AsymmetricKey', () => {
       expect(await runDiff(svc, { algorithm: 'RSA_4096_ENC_OAEP_SHA_256' }, { algorithm: 'ECDSA_NIST_P256_SHA_256' })).toEqual({ action: 'replace' })
     })
 
-    test('name change requires replace', async () => {
-      const svc = await resolveProvider(Module.NebiusAsymmetricKey.Provider, Module.NebiusAsymmetricKeyProvider)
-      expect(await runDiff(svc, { name: 'new-key' }, { name: 'old-key' })).toEqual({ action: 'replace' })
-    })
-
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusAsymmetricKey.Provider, Module.NebiusAsymmetricKeyProvider)
-      expect(await runDiff(svc, { name: 'my-key', algorithm: 'ECDSA_NIST_P256_SHA_256' }, { name: 'my-key', algorithm: 'ECDSA_NIST_P256_SHA_256' })).toBeUndefined()
-    })
   })
 
   describe('validation', () => {

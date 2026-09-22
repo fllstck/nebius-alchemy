@@ -7,8 +7,11 @@
  * requires it to appear in **exactly one** of
  *
  *   1. a per-prop convergence table (parsed out of `tests/convergence.test.ts`),
- *   2. the by-construction register (whole-spec / props-except-labels comparisons),
- *   3. a hand-written prop-set guard (resources with no update RPC, AGENTS.md §Convergence).
+ *   2. the by-construction register (whole-spec / props-except-labels comparisons).
+ *
+ * (The resources with no update RPC used to be a third bucket — a hand-written prop-set guard
+ * each. They are tabulated now, so they appear under 1. Both buckets come from a file the sweep
+ * actually runs, so neither entry can be decorative.)
  *
  * Adding a resource therefore fails here until someone decides how its props converge — the
  * same forcing function as `plan-time-validation.test.ts`'s `EXPECTED_PROVIDER_COUNT`, but
@@ -23,7 +26,7 @@ import * as BunTest from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { BY_CONSTRUCTION, PROP_SET_GUARDS } from './helpers/convergence.ts'
+import { BY_CONSTRUCTION } from './helpers/convergence.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -74,32 +77,24 @@ const tabledResources = (): ReadonlyArray<string> => {
   return [...source.matchAll(TABLED_RESOURCE)].map((m) => m[1] as string)
 }
 
-/** `Object.keys(<PropsSchema>.fields)` in the guard's test file. */
-const guardHolds = (propsSchema: string, testFile: string): boolean =>
-  readFileSync(join(import.meta.dir, 'resources', testFile), 'utf8').includes(`${propsSchema}.fields`)
-
 describe('convergence register', () => {
   test('every resource is in exactly one convergence bucket', async () => {
     const resources = await discoverResources()
     const tabled = new Set(tabledResources())
     const byConstruction = new Set(BY_CONSTRUCTION.map((r) => r.resource))
-    const guarded = new Set(PROP_SET_GUARDS.map((r) => r.resource))
 
-    const uncovered = resources.filter(
-      (r) => !tabled.has(r.resource) && !byConstruction.has(r.resource) && !guarded.has(r.resource),
-    )
+    const uncovered = resources.filter((r) => !tabled.has(r.resource) && !byConstruction.has(r.resource))
     expect(
       uncovered.map((r) => `${r.resource} (${r.file})`),
       'resources with no convergence classification.\n' +
         '  Give the resource a `change` patch per prop in tests/convergence.test.ts (its reconcile\n' +
-        '  compares fields one by one), or add it to BY_CONSTRUCTION in tests/helpers/convergence.ts\n' +
-        '  (it compares the whole spec), or — if it has no update RPC — to PROP_SET_GUARDS.',
+        '  compares fields one by one, or it has no update RPC at all), or add it to BY_CONSTRUCTION\n' +
+        '  in tests/helpers/convergence.ts (it compares the whole spec).',
     ).toEqual([])
 
     const buckets: ReadonlyArray<[string, ReadonlySet<string>]> = [
       ['convergence table', tabled],
       ['by construction', byConstruction],
-      ['prop-set guard', guarded],
     ]
     const duplicated = resources
       .map((r) => ({
@@ -111,19 +106,11 @@ describe('convergence register', () => {
     expect(duplicated, 'resources classified in more than one bucket — pick one').toEqual([])
 
     // The register must not outlive the code either: a stale entry means the resource was
-    // renamed or removed and the table/guard is now inert.
+    // renamed or removed and the table/pattern is now inert.
     const known = new Set(resources.map((r) => r.resource))
-    const stale = [...tabled, ...byConstruction, ...guarded].filter((r) => !known.has(r))
+    const stale = [...tabled, ...byConstruction].filter((r) => !known.has(r))
     expect(stale, 'registered resources that no longer exist — remove them').toEqual([])
 
     expect(resources.length).toBeGreaterThan(30)
-  })
-
-  test('every prop-set guard still pins its schema', () => {
-    for (const { resource, propsSchema, testFile } of PROP_SET_GUARDS) {
-      expect(guardHolds(propsSchema, testFile), `${resource}: ${testFile} no longer pins ${propsSchema}.fields`).toBe(
-        true,
-      )
-    }
   })
 })

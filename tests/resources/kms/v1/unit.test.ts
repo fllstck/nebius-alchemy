@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect'
 import * as Module from '../../../../modules/resources/kms/v1/symmetric-key.ts'
 import * as SchemaModule from '../../../../modules/resources/kms/v1/symmetric-key.schema.ts'
 import * as NebiusSymmetricKeySchema from '../../../../schemas/nebius/kms/v1/symmetric_key.ts'
-import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import { runEffect } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -17,17 +17,6 @@ describe('Nebius.kms.v1.SymmetricKey', () => {
     expect(Module.NebiusSymmetricKeyProvider).toBeDefined()
   })
 
-  describe('diff', () => {
-    test('name change requires replace', async () => {
-      const svc = await resolveProvider(Module.NebiusSymmetricKey.Provider, Module.NebiusSymmetricKeyProvider)
-      expect(await runDiff(svc, { name: 'new-key' }, { name: 'old-key' })).toEqual({ action: 'replace' })
-    })
-
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusSymmetricKey.Provider, Module.NebiusSymmetricKeyProvider)
-      expect(await runDiff(svc, { name: 'my-key', algorithm: 'AES_256' }, { name: 'my-key', algorithm: 'AES_256' })).toBeUndefined()
-    })
-  })
 
   describe('validation', () => {
     test('accepts valid props', async () => {

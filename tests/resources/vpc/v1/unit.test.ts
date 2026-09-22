@@ -33,16 +33,6 @@ describe('Nebius.vpc.v1.Network', () => {
   test('constructor defined', () => { expect(typeof NetworkModule.NebiusNetwork).toBe('function') })
   test('provider defined', () => { expect(NetworkModule.NebiusNetworkProvider).toBeDefined() })
 
-  describe('diff', () => {
-    test('name change requires replace', async () => {
-      const svc = await resolveProvider(NetworkModule.NebiusNetwork.Provider, NetworkModule.NebiusNetworkProvider)
-      expect(await runDiff(svc, { name: 'new-net' }, { name: 'old-net' })).toEqual({ action: 'replace' })
-    })
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(NetworkModule.NebiusNetwork.Provider, NetworkModule.NebiusNetworkProvider)
-      expect(await runDiff(svc, { name: 'my-net' }, { name: 'my-net' })).toBeUndefined()
-    })
-  })
 
   describe('validation', () => {
     test('accepts valid props', async () => {
@@ -64,10 +54,6 @@ describe('Nebius.vpc.v1.Subnet', () => {
     test('networkId change requires replace', async () => {
       const svc = await resolveProvider(SubnetModule.NebiusSubnet.Provider, SubnetModule.NebiusSubnetProvider)
       expect(await runDiff(svc, { networkId: 'network-2' }, { networkId: 'network-1' })).toEqual({ action: 'replace' })
-    })
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(SubnetModule.NebiusSubnet.Provider, SubnetModule.NebiusSubnetProvider)
-      expect(await runDiff(svc, { networkId: 'network-1' }, { networkId: 'network-1' })).toBeUndefined()
     })
   })
 
@@ -91,10 +77,6 @@ describe('Nebius.vpc.v1.SecurityGroup', () => {
     test('networkId change requires replace', async () => {
       const svc = await resolveProvider(SecurityGroupModule.NebiusSecurityGroup.Provider, SecurityGroupModule.NebiusSecurityGroupProvider)
       expect(await runDiff(svc, { networkId: 'network-2' }, { networkId: 'network-1' })).toEqual({ action: 'replace' })
-    })
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(SecurityGroupModule.NebiusSecurityGroup.Provider, SecurityGroupModule.NebiusSecurityGroupProvider)
-      expect(await runDiff(svc, { networkId: 'network-1' }, { networkId: 'network-1' })).toBeUndefined()
     })
   })
 
@@ -122,10 +104,6 @@ describe('Nebius.vpc.v1.SecurityRule', () => {
     test('ingress sourceCidrs change requires replace', async () => {
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
       expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['192.168.0.0/16'] } })).toEqual({ action: 'replace' })
-    })
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
-      expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: { sourceCidrs: ['10.0.0.0/8'] } })).toBeUndefined()
     })
 
     // `direction` is NOT a `SecurityRuleSpec` field — the API derives it from which
@@ -297,10 +275,6 @@ describe('Nebius.vpc.v1.RouteTable', () => {
       const svc = await resolveProvider(RouteTableModule.NebiusRouteTable.Provider, RouteTableModule.NebiusRouteTableProvider)
       expect(await runDiff(svc, { networkId: 'network-2' }, { networkId: 'network-1' })).toEqual({ action: 'replace' })
     })
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(RouteTableModule.NebiusRouteTable.Provider, RouteTableModule.NebiusRouteTableProvider)
-      expect(await runDiff(svc, { networkId: 'network-1' }, { networkId: 'network-1' })).toBeUndefined()
-    })
   })
 
   describe('validation', () => {
@@ -328,10 +302,6 @@ describe('Nebius.vpc.v1.Route', () => {
       const svc = await resolveProvider(RouteModule.NebiusRoute.Provider, RouteModule.NebiusRouteProvider)
       expect(await runDiff(svc, { parentId: 'routetable-abc', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: false } }, { parentId: 'routetable-abc', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: true } })).toEqual({ action: 'replace' })
     })
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(RouteModule.NebiusRoute.Provider, RouteModule.NebiusRouteProvider)
-      expect(await runDiff(svc, { parentId: 'routetable-1', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: true } }, { parentId: 'routetable-1', destination: { cidr: '10.0.0.0/24' }, nextHop: { defaultEgressGateway: true } })).toBeUndefined()
-    })
   })
 
   describe('validation', () => {
@@ -354,16 +324,6 @@ describe('Nebius.vpc.v1.Pool', () => {
   test('constructor defined', () => { expect(typeof PoolModule.NebiusPool).toBe('function') })
   test('provider defined', () => { expect(PoolModule.NebiusPoolProvider).toBeDefined() })
 
-  describe('diff', () => {
-    test('name change requires replace', async () => {
-      const svc = await resolveProvider(PoolModule.NebiusPool.Provider, PoolModule.NebiusPoolProvider)
-      expect(await runDiff(svc, { name: 'new-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] }, { name: 'old-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] })).toEqual({ action: 'replace' })
-    })
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(PoolModule.NebiusPool.Provider, PoolModule.NebiusPoolProvider)
-      expect(await runDiff(svc, { name: 'my-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] }, { name: 'my-pool', version: 'IPV4', visibility: 'PRIVATE', cidrs: [{ cidr: '10.0.0.0/24' }] })).toBeUndefined()
-    })
-  })
 
   describe('validation', () => {
     test('accepts valid props', async () => {

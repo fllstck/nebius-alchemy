@@ -32,15 +32,6 @@ describe('Nebius.dns.v1.Zone', () => {
       expect(await runDiff(svc, { ...validZoneProps, domainName: 'other.com.' }, { ...validZoneProps, domainName: 'example.com.' })).toEqual({ action: 'replace', deleteFirst: true })
     })
 
-    test('name change requires replace', async () => {
-      const svc = await resolveProvider(Module.NebiusZone.Provider, Module.NebiusZoneProvider)
-      expect(await runDiff(svc, { ...validZoneProps, name: 'new-zone' }, { ...validZoneProps, name: 'old-zone' })).toEqual({ action: 'replace' })
-    })
-
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusZone.Provider, Module.NebiusZoneProvider)
-      expect(await runDiff(svc, { ...validZoneProps }, { ...validZoneProps })).toBeUndefined()
-    })
   })
 
   describe('validation', () => {

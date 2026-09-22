@@ -46,10 +46,6 @@ describe('Nebius.iam.v1.GroupMembership', () => {
       return runDiff(svc, news, olds)
     }
 
-    test('no change is a noop', async () => {
-      expect(await diff(base)).toBeUndefined()
-    })
-
     // The service has NO Update RPC, so `revokeAfterHours` is create-only: it must
     // plan a replace or the change is silently lost. Delete-first, because the same
     // (parentId, memberId) pair cannot exist twice and memberships send no
@@ -82,19 +78,6 @@ describe('Nebius.iam.v1.GroupMembership', () => {
 
     test("parentId change requires replace (a membership can't move groups)", async () => {
       expect(await diff({ ...base, parentId: 'group-2' })).toEqual({ action: 'replace' })
-    })
-  })
-
-  describe('convergence guard', () => {
-    test('every prop is planned or declared — adding one must fail this test', () => {
-      // No `name` prop by design: the API rejects `metadata.name` on memberships,
-      // so a user-chosen name has no wire field to travel in (see the schema).
-      expect(Object.keys(SchemaModule.GroupMembershipPropsSchema.fields).toSorted()).toEqual([
-        'labels',
-        'memberId',
-        'parentId',
-        'revokeAfterHours',
-      ])
     })
   })
 

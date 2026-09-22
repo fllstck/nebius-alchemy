@@ -27,10 +27,6 @@ describe('Nebius.mysterybox.v1.SecretVersion', () => {
       return runDiff(svc, news, olds)
     }
 
-    test('no change is a noop', async () => {
-      expect(await diff(base)).toBeUndefined()
-    })
-
     // The service has NO Update RPC: every spec field must plan a replace, or the
     // change is silently lost (an `update` that writes nothing). These four cases
     // pin exactly the bug this diff had — and they assert `deleteFirst`, because
@@ -63,30 +59,8 @@ describe('Nebius.mysterybox.v1.SecretVersion', () => {
       expect(await diff({ ...base, labels: { a: '1' } }, { ...base, labels: { a: '2' } })).toBeUndefined()
     })
 
-    test('name change requires replace but NOT delete-first (a different physical name)', async () => {
-      expect(await diff({ ...base, name: 'v2' }, { ...base, name: 'v1' })).toEqual({ action: 'replace' })
-    })
-
     test("parentId change requires replace (version can't move secrets)", async () => {
       expect(await diff({ ...base, parentId: 'secret-abc222' })).toEqual({ action: 'replace' })
-    })
-  })
-
-  describe('convergence guard', () => {
-    test('every prop is planned or declared — adding one must fail this test', () => {
-      // `labels` is the one declared exception (no update path sends labels
-      // anywhere); every other prop has to be compared by `diff`, because the
-      // engine turns any unplanned props change into an `update` that writes
-      // nothing. A new prop without a convergence decision fails here on purpose —
-      // see AGENTS.md §Convergence.
-      expect(Object.keys(SchemaModule.SecretVersionPropsSchema.fields).toSorted()).toEqual([
-        'description',
-        'labels',
-        'name',
-        'parentId',
-        'payload',
-        'setPrimary',
-      ])
     })
   })
 

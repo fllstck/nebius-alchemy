@@ -37,10 +37,6 @@ describe('Nebius.dns.v1.Record', () => {
       expect(await runDiff(svc, { ...validRecordProps, type: 'AAAA' }, { ...validRecordProps, type: 'A' })).toEqual({ action: 'replace' })
     })
 
-    test('no change is a noop', async () => {
-      const svc = await resolveProvider(Module.NebiusRecord.Provider, Module.NebiusRecordProvider)
-      expect(await runDiff(svc, { ...validRecordProps, parentId: 'zone-1' }, { ...validRecordProps, parentId: 'zone-1' })).toBeUndefined()
-    })
   })
 
   describe('validation', () => {
