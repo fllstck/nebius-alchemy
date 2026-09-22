@@ -368,6 +368,12 @@ was exactly this hole.
   provides the scripted `Interaction` (prompts + notes + offered options recorded; answers may be
   computed from what the flow already said) and the spawner that can never open a browser. Use them
   for anything reachable from the auth flows.
+- **Mutation testing is a signal, never a gate** (it moves ±1–2 mutants between identical runs). It runs
+  **nightly** (`.github/workflows/mutation.yml`, 03:17 UTC + `workflow_dispatch`), keeps
+  `ignoreStatic: true`, and writes a per-file table plus every surviving mutant with its source line into
+  the run's Summary panel via `tools/mutation-summary.ts`. Before chasing a survivor, check TASKS.md
+  §"deliberately left uncovered" — annotation-object and unreachable-fallback mutants are documented
+  there, and the two long-standing `validation.ts` logic survivors are provably equivalent.
 
 ### Namespace hierarchy examples
 

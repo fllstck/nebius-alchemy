@@ -1,0 +1,77 @@
+# Nightly mutation testing.
+#
+# Why its own workflow, and why nightly: a full campaign is minutes, not seconds (8 files, 2 m 44 s on
+# an M-series laptop; a CI runner plus Stryker's sandbox setup is several times that), so it does not
+# belong on every push — and the score is a SIGNAL, NOT A GATE (AGENTS.md §Testing: it moves ±1-2
+# mutants between identical runs, so a per-PR red build would be noise). `thresholds.break: null` in
+# `stryker.conf.mjs` is what keeps that honest: Stryker exits 0 with survivors, and the job only fails
+# when the harness is broken — which must be loud.
+#
+# First run to verify it for real: `gh workflow run mutation.yml` (the schedule cannot be tested
+# locally; every step *has* been run by hand — see TASKS.md §DONE — D).
+#
+# `ignoreStatic: true` (the config default) is deliberately kept: static mutants are 10 % of the
+# mutants but 81 % of the runtime, and their verdict is attribution luck rather than test strength.
+#
+# The report is (a) summarised into the run's Summary panel — per-file scores plus every surviving
+# mutant with its source line, which is the actionable part — and (b) uploaded as an artifact for
+# diffing between nights.
+name: Mutation (nightly)
+
+on:
+  schedule:
+    # 03:17 UTC: off-peak, and deliberately not on the hour (GitHub's scheduler is busiest at :00).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: '1.3.13'
+
+jobs:
+  mutation:
+    name: Mutation testing
+    runs-on: ubuntu-latest
+    # Local: 2 m 44 s for 8 files. A CI runner plus Stryker's sandbox setup is several times that; 45 min
+    # is ~10× headroom, which is what makes a timeout here mean "stuck", not "slow".
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      # schemas/ is gitignored (generated via buf from nebius/api) — Stryker's sandbox needs them for
+      # the initial test run, and the mutated modules import them.
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: '1.71.0'
+      - name: Generate schemas
+        run: bun run generate:schemas
+      - name: Mutation testing
+        run: bun run mutation
+      # `always()`: the summary and the artifact are most valuable exactly when something went wrong.
+      - name: Write the job summary
+        if: always()
+        run: bun run tools/mutation-summary.ts >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          if-no-files-found: warn
+          retention-days: 30

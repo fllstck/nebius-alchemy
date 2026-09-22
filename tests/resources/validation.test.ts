@@ -203,9 +203,14 @@ describe('validation filters', () => {
       { value: SELF_SIGNED_CERT, accept: false, because: 'Expected a public key, not a certificate' },
     ])
 
+    // Exact messages, not `toContain`: the whole point of this filter is what it *says* (the API's own
+    // text is misleading), and a substring assertion lets a mutated message through.
     test('the size message quotes the API error text, so the constraint is traceable', async () => {
       const failure = await failureText(schema, rsa(2048))
-      expect(failure).toContain("Key doesn't fits to any supported algorithms")
+      expect(failure).toBe(
+        'The IAM API accepts only 4096-bit RSA public keys; got 2048-bit. ' +
+          'Smaller sizes are rejected with "Key doesn\'t fits to any supported algorithms".',
+      )
     })
 
     test('the non-RSA message explains why the API error is misleading', async () => {
@@ -213,8 +218,19 @@ describe('validation filters', () => {
         schema,
         generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }).toString(),
       )
-      expect(failure).toContain('Invalid public key data')
-      expect(failure).toContain('does not describe the actual problem')
+      expect(failure).toBe(
+        'The IAM API accepts only RSA public keys; got ed25519. ' +
+          'Ed25519 and ECDSA keys are valid PEM but rejected by the service with "Invalid public key data: ' +
+          'expected public key in PEM-format", which does not describe the actual problem.',
+      )
+    })
+
+    test('the certificate message says how to export the key instead', async () => {
+      const failure = await failureText(schema, SELF_SIGNED_CERT)
+      expect(failure).toBe(
+        'Expected a public key, not a certificate. Export the key itself: ' +
+          '`openssl pkey -in key.pem -pubout` (or `openssl req -in cert.pem -noout -pubkey`).',
+      )
     })
   })
 

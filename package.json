@@ -41,7 +41,7 @@
     "test": "bun test tests/",
     "test:integration": "SLOW_TESTS=1 bun test tests/",
     "generate:schemas": "buf generate",
-    "lint": "oxlint modules/ tests/ examples/",
+    "lint": "oxlint modules/ tests/ examples/ tools/",
     "typecheck:effect": "effect-tsgo diagnostics --project tsconfig.json",
     "typecheck:ts": "tsc --noEmit --skipLibCheck --project tsconfig.json",
     "typecheck": "bun run typecheck:ts && bun run typecheck:effect",
