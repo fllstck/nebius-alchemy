@@ -1610,7 +1610,10 @@ const fedCertLive = (): NebiusFedCertSchema.FederationCertificate => ({
   metadata: protoMetadata(FED_CERT_ID, 'idp-cert', 'project-test-1'),
   spec: NebiusFedCertSchema.FederationCertificateSpec.fromJSON({
     description: 'idp signing cert',
-    data: CERT_A,
+    // ⚠️ The API TERMINATES the PEM it echoes: 1240 bytes sent, 1241 echoed (exactly a trailing `\n`),
+    // measured live 2026-09-22 — which is why the whole-spec comparison used to write on every
+    // reconcile. The live fixture carries the echo so the baseline-noop row below stays meaningful.
+    data: `${CERT_A}\n`,
   }),
   status: undefined,
 })
@@ -1626,7 +1629,10 @@ describe('Nebius.iam.v1.FederationCertificate convergence', () => {
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'idp-cert-2' }, { action: 'replace' }),
       description: { description: 'rotated cert' },
-      data: { data: CERT_B },
+      // Immutable after creation ⇒ a REPLACE. The baseline pins the name (`idp-cert`), so the
+      // ordering is delete-first (AGENTS.md §Replace ordering). Before this it was a plain update row:
+      // it only passed *because of the bug* the drift list had (writing the API's normalized echo).
+      data: planned({ data: CERT_B }, { action: 'replace', deleteFirst: true }),
     },
     declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
     live: fedCertLive(),

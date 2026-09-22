@@ -21,6 +21,23 @@
  * Cost: cheap declarative resources only — no instances, no AI jobs/endpoints (code bundles + GPU
  * quota), no `iam/v1/invitation` (it emails a real person), no `nvl-instance-group` (needs GB200/
  * GB300 entitlement). SLOW_TESTS-gated like every other integration test.
+ *
+ * ## What is NOT here, and why (the coverage question, answered once)
+ *
+ * | resource | why it is not in this file |
+ * | `iam/v1/invitation` | creating one emails a real person |
+ * | `quotas/v1/quota-allowance` | creating one mutates real tenant quotas, and it has no stable id |
+ * | `compute/v1/nvl-instance-group` | needs a GB200/GB300 entitlement this tenant does not have |
+ * | `ai/v1/{job,endpoint}` | code bundles + GPU quota; they have their own gated e2e tests |
+ * | `compute/v1/instance` (+ hosted variants) | cost and minutes per run; the hosted e2e covers it |
+ * | `iam/v2/project` | only the forced-reconcile assertion is missing, and its spec is `{region}` — the lifecycle test already covers create/update/delete (110 s) |
+ *
+ * Resources whose drift list is a **whole-spec comparison** get priority here, because that pattern has
+ * produced every echo bug so far (`network`/`subnet` pools, `pool` cidrs, `transfer`, `auth-public-key`,
+ * `federation-certificate`):
+ * `vpc/v1 allocation` ✓, `compute/v1 {filesystem,disk-snapshot}` ✓, `iam/v1 {federation,
+ * federated-credentials,federation-certificate}` ✓, `storage/v1 transfer` (its own test), and — by
+ * construction — `record`/`subnet`/`filesystem` in their own update-path probes.
  */
 import * as Effect from 'effect/Effect'
 import * as Config from 'effect/Config'
@@ -35,6 +52,7 @@ import {
   specSnapshot,
   type LiveEchoTarget,
 } from '../helpers/live-echo.ts'
+import { SELF_SIGNED_CERT } from '../helpers/fixtures.ts'
 import * as VpcGrpc from '../../modules/api-client/vpc.ts'
 import * as DnsGrpc from '../../modules/api-client/dns.ts'
 import * as ComputeGrpc from '../../modules/api-client/compute.ts'
@@ -94,7 +112,14 @@ const declareVpcFamily = (labels: Record<string, string> | undefined) =>
       cidrs: [{ cidr: '10.0.0.0/24' }],
       ...withLabels(labels),
     })
-    return { network, subnet, routeTable, securityGroup, securityRule, route, pool }
+    // `Allocation`'s drift list is a WHOLE-spec comparison — the pattern that has already produced
+    // three live bugs — so it is audited alongside the rest of the family. A single /32 out of the
+    // family's own pool is the cheapest real allocation.
+    const allocation = yield* Nebius.vpc.Allocation('EchoVpc-Allocation', {
+      ipv4Private: { cidr: '10.0.0.1/32', poolId: pool.id },
+      ...withLabels(labels),
+    })
+    return { network, subnet, routeTable, securityGroup, securityRule, route, pool, allocation }
   })
 
 integrationTest(
@@ -112,6 +137,7 @@ integrationTest(
         { label: 'vpc/v1 SecurityRule', get: vpc.securityRule.get(created.securityRule.id) },
         { label: 'vpc/v1 Route', get: vpc.route.get(created.route.id) },
         { label: 'vpc/v1 Pool', get: vpc.pool.get(created.pool.id) },
+        { label: 'vpc/v1 Allocation', get: vpc.allocation.get(created.allocation.id) },
       ]
       const calibrations = yield* calibrateCreates(targets)
 
@@ -572,6 +598,89 @@ integrationTest(
       yield* expectNoWrites(calibrations, targets)
       yield* expectSpecUnchanged('kms/v1 SymmetricKey', symmetricBefore, kms.symmetricKey.get(created.symmetric.id))
       yield* expectSpecUnchanged('kms/v1 AsymmetricKey', asymmetricBefore, kms.asymmetricKey.get(created.asymmetric.id))
+    }).pipe(
+      safeDestroy(stack),
+    ),
+  { timeout: 420_000 },
+)
+
+
+// ---------------------------------------------------------------------------
+// iam/v1 — federation, federation certificate, federated credentials
+// ---------------------------------------------------------------------------
+
+/**
+ * Three resources whose drift lists compare the WHOLE spec (`specDeepEqual(live.spec, desired)`), which
+ * is precisely the shape that broke twice already:
+ *
+ *   * `iam/v1/auth-public-key` — the API echoes the PEM one byte longer than it was sent (799 → 800),
+ *     so the comparison could never match and every reconcile wrote;
+ *   * `storage/v1/transfer` — the API never echoes `secretAccessKey` (write-only), and answers
+ *     `limiters`/`interIterationInterval` with its own defaults.
+ *
+ * A federation certificate is a PEM of exactly that kind, the federation's SAML settings are the kind
+ * of struct a platform fills defaults into, and `FederatedCredentials` carries a JWKS blob. All three
+ * are cheap to create, so they belong in the audit.
+ *
+ * ⚠️ IAM metadata exposes **no `resourceVersion`** (measured 2026-09-22), so the *create-path*
+ * double-write is not observable here — only the anti-loop direction (a forced reconcile must write
+ * nothing), via the spec echo.
+ */
+const declareFederationFamily = (labels: Record<string, string> | undefined) =>
+  Effect.gen(function* () {
+    const federation = yield* Nebius.iam.Federation('EchoFederation', {
+      samlSettings: {
+        idpIssuer: 'https://echo-idp.example.com',
+        ssoUrl: 'https://echo-idp.example.com/sso',
+        forceAuthn: false,
+      },
+      userAccountAutoCreation: true,
+      ...withLabels(labels),
+    })
+    const certificate = yield* Nebius.iam.FederationCertificate('EchoFederationCertificate', {
+      parentId: federation.id,
+      description: 'live-echo federation certificate',
+      data: SELF_SIGNED_CERT,
+      ...withLabels(labels),
+    })
+    const subject = yield* Nebius.iam.ServiceAccount('EchoFederationSubject', {
+      description: 'live-echo federated subject',
+      ...withLabels(labels),
+    })
+    const credentials = yield* Nebius.iam.FederatedCredentials('EchoFederatedCredentials', {
+      oidcProvider: { issuerUrl: 'https://echo-oidc.example.com' },
+      federatedSubjectId: 'live-echo-federated-subject',
+      subjectId: subject.id,
+      ...withLabels(labels),
+    })
+    return { federation, certificate, subject, credentials }
+  })
+
+integrationTest(
+  test.provider,
+  'live echo — iam/v1 federation family: a forced reconcile writes nothing',
+  (stack) =>
+    Effect.gen(function* () {
+      const iam = yield* IamGrpc.IamGrpcService
+
+      const created = yield* stack.deploy(declareFederationFamily(undefined))
+      const targets: ReadonlyArray<LiveEchoTarget> = [
+        { label: 'iam/v1 Federation', get: iam.federation.get(created.federation.id) },
+        { label: 'iam/v1 FederationCertificate', get: iam.federationCertificate.get(created.certificate.id) },
+        { label: 'iam/v1 FederatedCredentials', get: iam.federatedCredentials.get(created.credentials.id) },
+      ]
+      const calibrations = yield* calibrateCreates(targets)
+
+      const snapshots = new Map<string, string>()
+      for (const target of targets) snapshots.set(target.label, yield* specSnapshot(target.get))
+
+      yield* stack.deploy(declareFederationFamily(FORCE))
+
+      yield* expectNoWrites(calibrations, targets)
+      for (const target of targets) {
+        const before = snapshots.get(target.label)
+        if (before !== undefined) yield* expectSpecUnchanged(target.label, before, target.get)
+      }
     }).pipe(
       safeDestroy(stack),
     ),

@@ -85,7 +85,17 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
       description: news.description || '',
       data: news.data,
     })
-    if (cert.spec && !ResourceUtils.specDeepEqual(cert.spec, desired)) {
+    // Compare ONLY `description` — the one mutable field.
+    //
+    // ⚠️ Live behaviour, probed 2026-09-22: the API does not echo `data` verbatim — it terminates the
+    // PEM (1240 bytes sent, **1241** echoed: exactly a trailing `\n` after `-----END CERTIFICATE-----`),
+    // so the previous whole-spec `specDeepEqual` differed on every read and wrote an update on EVERY
+    // reconcile (`resourceVersion` 1 → 2 across a labels-only reconcile). Same normalization, and the
+    // same fix, as `iam/v1 AuthPublicKey` (799 → 800).
+    //
+    // Nothing is lost: `data` is immutable, and `diff` now plans a REPLACE for a change to it, so it
+    // never reaches this update path.
+    if (cert.spec && (cert.spec.description ?? '') !== (news.description ?? '')) {
       cert = yield* iam.federationCertificate.update({
         metadata: {
           id: cert.metadata!.id,
@@ -135,6 +145,10 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* FedCertSchema.validateFederationCertificateProps(news)
+    // `data` is immutable after creation (the schema says so, and the API normalizes whatever it
+    // echoes — see the drift-list comment), so a change is a REPLACE. Without this the change planned
+    // an `update` that the drift list then declined to write, i.e. the change was silently dropped.
+    if (news.data !== olds?.data) return Factory.replaceKeepingName(news)
     return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

@@ -160,6 +160,17 @@ contained. The three shapes seen so far, each with its own treatment (all found 
   noting it must return a *structural* clone so `Long`s are still `Long`s for `specDeepEqual`).
   Nothing is lost by ignoring them: a change inside `source`/`destination` — a rotated key
   included — is planned as a replace by `diff` and never reaches the update path.
+- **Materialized defaults, or a normalized echo, mean the comparison must change shape.** The API may answer fields the props never carried (`vpc/v1 Network`/`Subnet` pool structs, `transfer.limiters` +
+  `interIterationInterval`, a pool's per-CIDR `state`/`maxMaskLength`), may be **write-only**
+  (`transfer.secretAccessKey` comes back `""`), may report the effective value only in `status`
+  (`filesystem.blockSizeBytes` is `0` in `spec`, `4096` in `status`), and may **normalize what it echoes**
+  — IAM terminates PEMs it stores, so `AuthPublicKey.data` came back 799 → 800 bytes and
+  `FederationCertificate.data` 1240 → 1241. A whole-spec `specDeepEqual(live.spec, desired)` therefore
+  can never match, and the tell is always the same: `metadata.resourceVersion` moving across a reconcile
+  that was planned as an update (or `Updating <resource>` in the log on every apply). The fixes, in
+  preference order: compare only the mutable fields (a normalized/immutable field is planned as a
+  replace by `diff` anyway), guard on the news side (`news.x !== undefined && …`), mirror the live value
+  when the prop is omitted, or strip write-only fields from both sides.
 - **Effective value only in `status`**: a filesystem created without `blockSizeBytes` answers `0`
   in `spec` and `4096` in `status`. Mirror whichever field the API actually answers with, and read
   attributes knowing that `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — status
