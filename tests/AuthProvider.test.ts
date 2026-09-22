@@ -49,6 +49,10 @@ const saBootstrapImpl = {
   getProjectDetails: () =>
     Effect.succeed({ name: 'Test Project', tenantId: 'tenant-from-bootstrap' }),
   deactivateKey: (_token: Redacted.Redacted<string>, _keyId: string) => Effect.succeed(undefined),
+  // The OAuth-login pickers are on the service so they have doubles at all — see the service's doc
+  // comment in `modules/auth/sa-bootstrap.ts`. These arms never reach the browser flow.
+  listTenants: () => Effect.succeed([]),
+  listProjects: () => Effect.succeed([]),
 }
 
 const fakeSaBootstrap = Layer.succeed(SaBootstrap.SaBootstrap, saBootstrapImpl)

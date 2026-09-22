@@ -96,9 +96,14 @@ export const buildAuthorizeUrl = (params: {
  * Start a loopback callback server on an ephemeral 127.0.0.1 port.
  * `waitForCode` resolves with the authorization code once the browser hits
  * the callback (state-validated), bounded by {@link OAUTH_CALLBACK_TIMEOUT}.
+ *
+ * `timeoutMs` is injectable for the same reason `signJwt` takes `nowMs`: the
+ * timeout branch is real behaviour (it is what a headless session sees) and a
+ * 5-minute constant cannot be exercised in a unit test.
  */
 export const startCallbackServer = (
   expectedState: string,
+  timeoutMs: number = OAUTH_CALLBACK_TIMEOUT,
 ): Effect.Effect<
   { readonly port: number; readonly waitForCode: Effect.Effect<string, OAuthError>; readonly close: Effect.Effect<void> },
   OAuthError
@@ -143,7 +148,7 @@ export const startCallbackServer = (
     const waitForCode = deferred.pipe(
       Deferred.await,
       Effect.timeoutOrElse({
-        duration: OAUTH_CALLBACK_TIMEOUT,
+        duration: timeoutMs,
         orElse: () =>
           Effect.fail(
             new OAuthError({ message: 'Timed out waiting for the Nebius browser login (5 minutes).' }),

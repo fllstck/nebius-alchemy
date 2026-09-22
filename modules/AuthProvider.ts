@@ -444,7 +444,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
       // Tenant + project selection — Cloudflare's `selectAccount` analog.
       // The tenant comes from the token itself, so NEBIUS_TENANT_ID is NOT
       // required; env only wins later via the project-config fallback.
-      const tenants = yield* SaBootstrap.listTenants(Redacted.make(credentials.accessToken)).pipe(
+      const tenants = yield* saBootstrap.listTenants(Redacted.make(credentials.accessToken)).pipe(
         Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
       )
       if (tenants.length === 0) {
@@ -464,7 +464,7 @@ export const NebiusAuth = AuthProviderLayer<NebiusAuthConfig, NebiusResolvedCred
               })
               .pipe(mapPromptCancellation)
 
-      const projects = yield* SaBootstrap.listProjects(Redacted.make(credentials.accessToken), tenantId).pipe(
+      const projects = yield* saBootstrap.listProjects(Redacted.make(credentials.accessToken), tenantId).pipe(
         Effect.mapError((e) => new AuthError({ message: e.message, cause: e })),
       )
       if (projects.length === 0) {

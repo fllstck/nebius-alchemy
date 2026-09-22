@@ -34,7 +34,6 @@ import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
 import type { PlatformError } from 'effect/PlatformError'
 import * as PlatformNode from '@effect/platform-node'
-import { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner'
 import {
   AuthError,
   AuthProviders,
@@ -46,6 +45,7 @@ import * as AlchemyCredentials from 'alchemy/Auth/Credentials'
 import * as AlchemyProfile from 'alchemy/Auth/Profile'
 import { Interaction } from 'alchemy/Interaction'
 import * as Schema from 'effect/Schema'
+import { noBrowserSpawner, scriptedInteraction, type Script } from '../helpers/interaction.ts'
 
 import {
   NebiusAuth,
@@ -103,83 +103,6 @@ const credentialFileExists = (profileName: string, key: string): boolean => {
 
 const newProfile = () => `flows-${randomUUID()}`
 
-// ---------------------------------------------------------------------------
-// Scripted Interaction
-// ---------------------------------------------------------------------------
-
-interface Script {
-  readonly select?: Array<unknown>
-  readonly password?: Array<string>
-  readonly text?: Array<string>
-  readonly confirm?: Array<boolean>
-}
-
-interface RecordedPrompt {
-  readonly kind: string
-  readonly message: string
-  /** The values each `select` offered, so a test can pin the choices shown. */
-  readonly optionValues?: ReadonlyArray<unknown>
-  readonly initialValue?: unknown
-}
-
-const scriptedInteraction = (script: Script) => {
-  const prompts: Array<RecordedPrompt> = []
-  const notes: Array<{ kind: string; message: string }> = []
-
-  const answer = <T>(
-    kind: string,
-    message: string,
-    queue: Array<T> | undefined,
-    extra?: object,
-    validate?: (value: T) => string | undefined,
-  ): Effect.Effect<T> => {
-    prompts.push({ kind, message, ...extra })
-    const next = queue?.shift()
-    // A defect (not a typed failure): an unscripted prompt means the flow changed.
-    if (next === undefined) return Effect.die(new Error(`unscripted ${kind} prompt: ${message}`))
-    // The real terminal re-prompts until a prompt's own validator is happy, so an answer the
-    // flow would reject (an empty API key) must not sail through here either.
-    const issue = validate?.(next)
-    return issue === undefined
-      ? Effect.succeed(next)
-      : Effect.die(new Error(`${kind} prompt rejected the answer: ${issue}`))
-  }
-  const note = (kind: string) => (message: string | { message: string }) =>
-    Effect.sync(() => {
-      notes.push({ kind, message: typeof message === 'string' ? message : message.message })
-    })
-
-  const service = {
-    output: {
-      info: note('info'),
-      success: note('success'),
-      warning: note('warning'),
-      error: note('error'),
-    },
-    prompt: {
-      select: (options: { message: string; options: ReadonlyArray<{ value: unknown }>; initialValue?: unknown }) =>
-        answer('select', options.message, script.select, {
-          optionValues: options.options.map((option) => option.value),
-          initialValue: options.initialValue,
-        }),
-      password: (options: { message: string; validate?: (value: string) => string | undefined }) =>
-        answer('password', options.message, script.password, undefined, options.validate),
-      text: (options: { message: string; validate?: (value: string) => string | undefined }) =>
-        answer('text', options.message, script.text, undefined, options.validate),
-      confirm: (options: { message: string }) => answer('confirm', options.message, script.confirm),
-      multiSelect: (options: { message: string }) => answer('multiSelect', options.message, undefined),
-      awaitExternal: (options: { message: string }) => answer('awaitExternal', options.message, undefined),
-    },
-  }
-
-  return {
-    prompts,
-    notes,
-    layer: Layer.succeed(Interaction, service as never),
-    /** Assert the prompts, in order, as `kind: message` pairs. */
-    asked: () => prompts.map((prompt) => `${prompt.kind}: ${prompt.message}`),
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Recording service fakes
@@ -191,32 +114,6 @@ const SETUP_SA_KEY = {
   privateKey: '-----BEGIN PRIVATE KEY-----\nBOOTSTRAPPED\n-----END PRIVATE KEY-----',
 }
 
-/**
- * A fake `ChildProcessSpawner`, so the browser flow can never launch a real browser.
- *
- * `openUrl` spawns the platform opener (`open`, `xdg-open`) with the authorize URL. That matters
- * far beyond this file: **the mutation campaign explores mutants that route a test into the
- * browser OAuth flow**, and the first campaign over `AuthProvider.ts` opened dozens of real
- * browser windows pointing at the loopback callback server — which is closed by then, so every
- * window showed "connection refused". With the spawner faked, the spawn is recorded instead and
- * the safety is structural rather than a promise to behave.
- */
-const noBrowserSpawner = () => {
-  const spawned: Array<unknown> = []
-  // Only `exitCode` is read by `openUrl` (0 = the browser opened); the stdio members are never
-  // touched, so the service is a structural double and cast once below.
-  const handle = { pid: 1, exitCode: Effect.succeed(0), isRunning: Effect.succeed(false), kill: () => Effect.void }
-  return {
-    spawned,
-    layer: Layer.succeed(ChildProcessSpawner, {
-      spawn: (command: unknown) =>
-        Effect.sync(() => {
-          spawned.push(command)
-          return handle
-        }),
-    } as never),
-  }
-}
 
 const makeFakes = (options: { mintFails?: boolean; projectDetailsFail?: boolean } = {}) => {
   const minted: Array<SaToken.SaKey> = []
@@ -244,6 +141,11 @@ const makeFakes = (options: { mintFails?: boolean; projectDetailsFail?: boolean 
           ? Effect.fail(new SaBootstrap.SaBootstrapError({ message: 'project lookup denied' }))
           : Effect.succeed({ name: 'Test Project', tenantId: 'tenant-from-bootstrap' }),
       deactivateKey: () => Effect.succeed(undefined),
+      // The OAuth-login pickers live on the service (so they can be doubled at all). This file's
+      // OAuth arms fail before reaching them (PKCE state mismatch), and one tenant + one project
+      // means a *completing* login would not need a select prompt either.
+      listTenants: () => Effect.succeed([{ id: 'tenant-1', name: 'Test Tenant' }]),
+      listProjects: () => Effect.succeed([{ id: 'project-1', name: 'Test Project' }]),
     }),
   }
 }

@@ -344,6 +344,19 @@ was exactly this hole.
 - Always write tests for implemented resources
 - Always run `bun run check` to type-check and lint after code changes
 - Do NOT test `AuthProvider` layers with `Effect.provide` + `Layer.mergeAll` — use `AlchemyTestUtilities.make()` instead
+- **A dependency reached by `import` cannot be doubled — put it on the Context service.** The auth
+  module already did this for `bootstrap`/`getProjectDetails`/`deactivateKey` (and its comment says
+  so), but `listTenants`/`listProjects` stayed module-level functions, which made the entire OAuth
+  login flow **unreachable** in unit tests: any test that entered it called the real IAM API. Moving
+  them onto the `SaBootstrap` service (2026-09-22) is what took `AuthProvider.ts`'s mutation score
+  from 65 % to 92.8 %. The same rule applies to module *constants*: `oauth.ts` posts to a fixed
+  `OAUTH_TOKEN_ENDPOINT`, so its double is a `fetch` seam (`tests/helpers/oauth-token-double.ts`) —
+  and that double must pass non-token requests through, because the OAuth flow also fetches its own
+  loopback callback server.
+- Doubles for side-effecting platform services are structural, not promises: `tests/helpers/interaction.ts`
+  provides the scripted `Interaction` (prompts + notes + offered options recorded; answers may be
+  computed from what the flow already said) and the spawner that can never open a browser. Use them
+  for anything reachable from the auth flows.
 
 ### Namespace hierarchy examples
 

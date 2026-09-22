@@ -71,4 +71,48 @@ describe('SaBootstrap.describeIamCallFailure', () => {
     expect(SaBootstrap.describeIamCallFailure('boom')).toContain('boom')
     expect(SaBootstrap.describeIamCallFailure(undefined)).toContain('undefined')
   })
+
+  test('a numeric code with no status name renders the bare number', () => {
+    expect(SaBootstrap.describeIamCallFailure({ code: 99, details: 'unknown status' })).toContain('99: unknown status')
+  })
+
+  test('a non-numeric code is not mistaken for a status (the shape is checked, not assumed)', () => {
+    const rendered = SaBootstrap.describeIamCallFailure({ code: '7', details: 'string code' })
+    expect(rendered).toContain('string code')
+    expect(rendered).not.toContain('PERMISSION_DENIED')
+  })
+
+  test('an empty details string falls back to the message', () => {
+    expect(SaBootstrap.describeIamCallFailure({ code: 13, details: '', message: 'the real message' })).toContain(
+      'the real message',
+    )
+  })
+
+  test('a non-string details falls back to the message', () => {
+    expect(SaBootstrap.describeIamCallFailure({ code: 13, details: 42, message: 'fallback message' })).toContain(
+      'fallback message',
+    )
+  })
+
+  test('a status with no text at all still renders the status', () => {
+    // Neither `details` nor `message`: the status alone is what the operator gets.
+    expect(SaBootstrap.describeIamCallFailure({ code: 13 })).toBe('Nebius IAM bootstrap call failed: INTERNAL (13).')
+  })
+
+  test('a status-less object falls back to its string form', () => {
+    expect(SaBootstrap.describeIamCallFailure({ details: '', message: '' })).toContain('[object Object]')
+  })
+
+  test('only the two actionable statuses carry a hint', () => {
+    expect(SaBootstrap.describeIamCallFailure({ code: 7, details: 'x' })).toContain('needs IAM write access')
+    expect(SaBootstrap.describeIamCallFailure({ code: 16, details: 'x' })).toContain('expired or truncated')
+    for (const code of [3, 5, 8, 13, 14]) {
+      const rendered = SaBootstrap.describeIamCallFailure({ code, details: 'x' })
+      expect(rendered).not.toContain('needs IAM write access')
+      expect(rendered).not.toContain('expired or truncated')
+      // No hint sentence: exactly the one-sentence prefix plus the server text.
+      expect(rendered.endsWith('x.')).toBe(true)
+      expect(rendered.split('. ')).toHaveLength(1)
+    }
+  })
 })

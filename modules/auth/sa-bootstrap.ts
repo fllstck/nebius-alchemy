@@ -555,6 +555,23 @@ export class SaBootstrap extends Context.Service<
       token: Redacted.Redacted<string>,
       keyId: string,
     ) => Effect.Effect<void, SaBootstrapError>
+    /**
+     * The user's tenants (token-scoped) — the OAuth login's first picker.
+     *
+     * On the SERVICE, not a direct module import, for the same reason
+     * `bootstrap`/`getProjectDetails`/`deactivateKey` are: a function reached by
+     * `import` has no double, so the whole OAuth-login flow was unreachable in
+     * unit tests (and, since the OAuth-login arm is exercised by the mutation
+     * campaign, a mutant that routed a test into it would hit the real IAM API).
+     */
+    readonly listTenants: (
+      token: Redacted.Redacted<string>,
+    ) => Effect.Effect<ReadonlyArray<{ id: string; name: string }>, SaBootstrapError>
+    /** The projects of a tenant — the OAuth login's second picker. */
+    readonly listProjects: (
+      token: Redacted.Redacted<string>,
+      tenantId: string,
+    ) => Effect.Effect<ReadonlyArray<{ id: string; name: string }>, SaBootstrapError>
   }
 >()('SaBootstrap') {}
 
@@ -563,4 +580,6 @@ export const SaBootstrapLive = Layer.succeed(SaBootstrap, {
   getProjectDetails: (token, projectId): Effect.Effect<{ name?: string; tenantId?: string }, SaBootstrapError> =>
     getProjectDetailsImpl(token, projectId),
   deactivateKey: (token, keyId): Effect.Effect<void, SaBootstrapError> => deactivateAuthPublicKey(token, keyId),
+  listTenants,
+  listProjects,
 })

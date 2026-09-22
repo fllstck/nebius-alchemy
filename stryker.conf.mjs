@@ -37,6 +37,14 @@ export default {
     // The auth provider: method dispatch, env-vs-profile precedence, the credential documents and
     // their redaction. (The browser OAuth flow is exercised only down to its prompt.)
     'modules/AuthProvider.ts',
+    // The OAuth network half — the token exchange and the loopback callback server — once it had
+    // doubles (a `fetch` stub for the module-constant token endpoint and a real 127.0.0.1 listener
+    // for the callback). Measured 90.24 % before being added, so it is in scope by the same rule as
+    // the files above. NOT `modules/auth/sa-token.ts` or `sa-bootstrap.ts`: their uncovered mutants
+    // are the gRPC client plumbing, which needs a live/emulated gRPC server — sa-token measured
+    // 48.15 % total but **100 % of covered** (13 killed / 14 uncovered), so adding it would change
+    // the number without measuring anything.
+    'modules/auth/oauth.ts',
   ],
   // `node_modules` is always ignored by Stryker (the sandbox resolves it by walking
   // up to the real install); `dist/` and `repos/` are 150 MB of code no test reads.
