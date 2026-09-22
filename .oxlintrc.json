@@ -65,7 +65,9 @@
   "env": {
     "builtin": true
   },
-  "ignorePatterns": ["node_modules/", "schemas/", ".alchemy/", "./repos", "modules/api-client/"],
+  // `modules/api-client/` was ignored until 2026-09-21; it is hand-written logic (gRPC code
+  // mapping, retry, operation polling) and was escaping every rule.
+  "ignorePatterns": ["node_modules/", "schemas/", ".alchemy/", "./repos"],
   "overrides": [
     {
       "files": ["tests/**", "examples/**"],
@@ -84,6 +86,19 @@
       "files": ["modules/resources/utilities.ts"],
       "rules": {
         "nebius/no-alchemy-deepequal": "off"
+      }
+    },
+    // `modules/api-client/**` is hand-written logic (gRPC code mapping, retry, operation
+    // polling, the service wrappers) that used to be ignored wholesale — un-ignored
+    // 2026-09-21 so every other rule applies. This one rule is off here on purpose: the
+    // wrappers adapt the generated client's request-object shape (`get(request)`) to the
+    // hand-written service interface (`get(id)`), so `as unknown as <Service>` is the
+    // deliberate adapter cast, and the rule reads its `as unknown` leg as a no-op (removing
+    // the casts fails `tsc` — verified). AGENTS.md sanctions this boundary for casts.
+    {
+      "files": ["modules/api-client/**"],
+      "rules": {
+        "typescript/no-unnecessary-type-assertion": "off"
       }
     },
     {

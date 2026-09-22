@@ -31,6 +31,9 @@ export default {
     'modules/resources/factory.ts',
     'modules/resources/validation.ts',
     'modules/effect-utils.ts',
+    // The gRPC layer every provider sits on: code mapping, retry policy, operation polling,
+    // pagination. Pure decision logic, so a surviving mutant here is a real oracle gap.
+    'modules/api-client/grpc-utils.ts',
   ],
   // `node_modules` is always ignored by Stryker (the sandbox resolves it by walking
   // up to the real install); `dist/` and `repos/` are 150 MB of code no test reads.
