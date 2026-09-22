@@ -45,6 +45,10 @@ export default {
     // 48.15 % total but **100 % of covered** (13 killed / 14 uncovered), so adding it would change
     // the number without measuring anything.
     'modules/auth/oauth.ts',
+    // The credential service every provider's gRPC transport reads its API key from: the mapping,
+    // the `Effect.cached` resolve-once contract and the `orDie` error channel. Measured 100 % before
+    // being added (3/3 — the file is 37 lines and all of it is behaviour a caller depends on).
+    'modules/Credentials.ts',
   ],
   // `node_modules` is always ignored by Stryker (the sandbox resolves it by walking
   // up to the real install); `dist/` and `repos/` are 150 MB of code no test reads.
