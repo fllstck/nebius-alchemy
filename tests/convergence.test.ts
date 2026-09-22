@@ -15,9 +15,15 @@ import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 
+import * as DiskSnapshotModule from '../modules/resources/compute/v1/disk-snapshot.ts'
+import * as FilesystemModule from '../modules/resources/compute/v1/filesystem.ts'
+import * as FilesystemSchema from '../modules/resources/compute/v1/filesystem.schema.ts'
+import * as DiskSnapshotSchema from '../modules/resources/compute/v1/disk-snapshot.schema.ts'
 import * as GpuClusterModule from '../modules/resources/compute/v1/gpu-cluster.ts'
 import * as GpuClusterSchema from '../modules/resources/compute/v1/gpu-cluster.schema.ts'
 import * as InstanceModule from '../modules/resources/compute/v1/instance.ts'
+import * as NvlModule from '../modules/resources/compute/v1/nvl-instance-group.ts'
+import * as NvlSchema from '../modules/resources/compute/v1/nvl-instance-group.schema.ts'
 import * as InstanceSchema from '../modules/resources/compute/v1/instance.schema.ts'
 import * as ComputeModule from '../modules/resources/compute/v1/disk.ts'
 import * as ComputeSchema from '../modules/resources/compute/v1/disk.schema.ts'
@@ -29,18 +35,34 @@ import * as SymmetricKeyModule from '../modules/resources/kms/v1/symmetric-key.t
 import * as SymmetricKeySchema from '../modules/resources/kms/v1/symmetric-key.schema.ts'
 import * as AccessPermitModule from '../modules/resources/iam/v1/access-permit.ts'
 import * as AccessPermitSchema from '../modules/resources/iam/v1/access-permit.schema.ts'
+import * as AuthPublicKeyModule from '../modules/resources/iam/v1/auth-public-key.ts'
+import * as AuthPublicKeySchema from '../modules/resources/iam/v1/auth-public-key.schema.ts'
+import * as FedCertModule from '../modules/resources/iam/v1/federation-certificate.ts'
+import * as FedCertSchema from '../modules/resources/iam/v1/federation-certificate.schema.ts'
+import * as FedCredsModule from '../modules/resources/iam/v1/federated-credentials.ts'
+import * as FedCredsSchema from '../modules/resources/iam/v1/federated-credentials.schema.ts'
 import * as GroupModule from '../modules/resources/iam/v1/group.ts'
 import * as GroupSchema from '../modules/resources/iam/v1/group.schema.ts'
 import * as GroupMembershipModule from '../modules/resources/iam/v1/group-membership.ts'
 import * as GroupMembershipSchema from '../modules/resources/iam/v1/group-membership.schema.ts'
+import * as ServiceAccountModule from '../modules/resources/iam/v1/service-account.ts'
+import * as ServiceAccountSchema from '../modules/resources/iam/v1/service-account.schema.ts'
 import * as StaticKeyModule from '../modules/resources/iam/v1/static-key.ts'
 import * as StaticKeySchema from '../modules/resources/iam/v1/static-key.schema.ts'
+import * as FederationModule from '../modules/resources/iam/v1/federation.ts'
+import * as FederationSchema from '../modules/resources/iam/v1/federation.schema.ts'
+import * as InvitationModule from '../modules/resources/iam/v1/invitation.ts'
+import * as InvitationSchema from '../modules/resources/iam/v1/invitation.schema.ts'
+import * as AccessKeyModule from '../modules/resources/iam/v2/access-key.ts'
+import * as AccessKeySchema from '../modules/resources/iam/v2/access-key.schema.ts'
 import * as ProjectModule from '../modules/resources/iam/v2/project.ts'
 import * as ProjectSchema from '../modules/resources/iam/v2/project.schema.ts'
 import * as SecretModule from '../modules/resources/mysterybox/v1/secret.ts'
 import * as SecretVersionModule from '../modules/resources/mysterybox/v1/secret-version.ts'
 import * as SecretVersionSchema from '../modules/resources/mysterybox/v1/secret-version.schema.ts'
 import * as SecretSchema from '../modules/resources/mysterybox/v1/secret.schema.ts'
+import * as AllocationModule from '../modules/resources/vpc/v1/allocation.ts'
+import * as AllocationSchema from '../modules/resources/vpc/v1/allocation.schema.ts'
 import * as RouteTableModule from '../modules/resources/vpc/v1/route-table.ts'
 import * as RouteTableSchema from '../modules/resources/vpc/v1/route-table.schema.ts'
 import * as SecurityGroupModule from '../modules/resources/vpc/v1/security-group.ts'
@@ -63,9 +85,23 @@ import * as NebiusRecordSchema from '../schemas/nebius/dns/v1/record.ts'
 import * as NebiusZoneSchema from '../schemas/nebius/dns/v1/zone.ts'
 import * as NebiusDiskSchema from '../schemas/nebius/compute/v1/disk.ts'
 import * as NebiusGpuClusterSchema from '../schemas/nebius/compute/v1/gpu_cluster.ts'
+import * as NebiusDiskSnapshotSchema from '../schemas/nebius/compute/v1/disk_snapshot.ts'
+import * as NebiusFilesystemSchema from '../schemas/nebius/compute/v1/filesystem.ts'
+import * as EndpointModule from '../modules/resources/ai/v1/endpoint.ts'
+import * as EndpointSchema from '../modules/resources/ai/v1/endpoint.schema.ts'
+import * as JobModule from '../modules/resources/ai/v1/job.ts'
+import * as JobSchema from '../modules/resources/ai/v1/job.schema.ts'
 import * as NebiusInstanceSchema from '../schemas/nebius/compute/v1/instance.ts'
+import * as NebiusNvlSchema from '../schemas/nebius/compute/v1/nvlinstancegroup.ts'
 import * as NebiusAccessPermitSchema from '../schemas/nebius/iam/v1/access_permit.ts'
+import * as NebiusAuthPublicKeySchema from '../schemas/nebius/iam/v1/auth_public_key.ts'
+import * as NebiusFedCertSchema from '../schemas/nebius/iam/v1/federation_certificate.ts'
+import * as NebiusFederationSchema from '../schemas/nebius/iam/v1/federation.ts'
+import * as NebiusInvitationSchema from '../schemas/nebius/iam/v1/invitation.ts'
+import * as NebiusAccessKeySchema from '../schemas/nebius/iam/v2/access_key.ts'
+import * as NebiusFedCredsSchema from '../schemas/nebius/iam/v1/federated_credentials.ts'
 import * as NebiusGroupSchema from '../schemas/nebius/iam/v1/group.ts'
+import * as NebiusServiceAccountSchema from '../schemas/nebius/iam/v1/service_account.ts'
 import * as NebiusGroupMembershipSchema from '../schemas/nebius/iam/v1/group_membership.ts'
 import * as NebiusStaticKeySchema from '../schemas/nebius/iam/v1/static_key.ts'
 import * as NebiusSecretVersionSchema from '../schemas/nebius/mysterybox/v1/secret_version.ts'
@@ -74,13 +110,20 @@ import * as NebiusAsymmetricKeySchema from '../schemas/nebius/kms/v1/asymmetric_
 import * as NebiusSymmetricKeySchema from '../schemas/nebius/kms/v1/symmetric_key.ts'
 import * as NebiusProjectSchema from '../schemas/nebius/iam/v2/project.ts'
 import * as NebiusSecretSchema from '../schemas/nebius/mysterybox/v1/secret.ts'
+import * as NebiusAllocationSchema from '../schemas/nebius/vpc/v1/allocation.ts'
+import * as NebiusQuotaAllowanceSchema from '../schemas/nebius/quotas/v1/quota_allowance.ts'
 import * as NebiusRouteTableSchema from '../schemas/nebius/vpc/v1/route_table.ts'
+import * as NebiusTransferSchema from '../schemas/nebius/storage/v1/transfer.ts'
 import * as NebiusSecurityGroupSchema from '../schemas/nebius/vpc/v1/security_group.ts'
 import * as NebiusNetworkSchema from '../schemas/nebius/vpc/v1/network.ts'
 import * as NebiusPoolSchema from '../schemas/nebius/vpc/v1/pool.ts'
 import * as NebiusRouteSchema from '../schemas/nebius/vpc/v1/route.ts'
 import * as NebiusSecurityRuleSchema from '../schemas/nebius/vpc/v1/security_rule.ts'
 import * as NebiusSubnetSchema from '../schemas/nebius/vpc/v1/subnet.ts'
+import * as QuotaAllowanceModule from '../modules/resources/quotas/v1/quota-allowance.ts'
+import * as QuotaAllowanceSchema from '../modules/resources/quotas/v1/quota-allowance.schema.ts'
+import * as TransferModule from '../modules/resources/storage/v1/transfer.ts'
+import * as TransferSchema from '../modules/resources/storage/v1/transfer.schema.ts'
 import * as BucketModule from '../modules/resources/storage/v1/bucket.ts'
 import * as BucketSchema from '../modules/resources/storage/v1/bucket.schema.ts'
 import * as NebiusBucketSchema from '../schemas/nebius/storage/v1/bucket.ts'
@@ -92,6 +135,7 @@ import {
   mockDnsLayer,
   mockIamLayer,
   mockKmsLayer,
+  mockQuotasLayer,
   mockMysteryboxLayer,
   mockStorageLayer,
   mockVpcLayer,
@@ -1394,5 +1438,843 @@ describe('Nebius.mysterybox.v1.SecretVersion convergence', () => {
           }),
         ),
       ),
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The by-construction resources: tabulated here so every prop is *proven*, not
+// assumed. These compare the whole desired spec, so a prop that never reaches
+// `desired` — a renamed field, a nested message assembled by hand, a prop nobody
+// wired — used to be invisible to a source-pattern check. A row now fails as
+// "planned nothing, wrote nothing" the moment that happens.
+// ---------------------------------------------------------------------------
+
+const SERVICE_ACCOUNT_ID = 'serviceaccount-1'
+const serviceAccountProps = { parentId: 'project-test-1', name: 'my-sa', description: 'ci uploads' }
+const serviceAccountLive = (): NebiusServiceAccountSchema.ServiceAccount => ({
+  metadata: protoMetadata(SERVICE_ACCOUNT_ID, 'my-sa', 'project-test-1'),
+  spec: NebiusServiceAccountSchema.ServiceAccountSpec.fromPartial({ description: 'ci uploads' }),
+  status: undefined,
+})
+
+describe('Nebius.iam.v1.ServiceAccount convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.iam.v1.ServiceAccount',
+    provider: ServiceAccountModule.NebiusServiceAccount.Provider,
+    providerLayer: ServiceAccountModule.NebiusServiceAccountProvider,
+    propsSchema: ServiceAccountSchema.ServiceAccountPropsSchema,
+    props: serviceAccountProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'other-sa' }, { action: 'replace' }),
+      description: { description: 'release uploads' },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: serviceAccountLive(),
+    liveId: SERVICE_ACCOUNT_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockIamLayer({
+            serviceAccount: {
+              get: () => Effect.succeed(serviceAccountLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(serviceAccountLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(serviceAccountLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const FED_CREDS_ID = 'federatedcredentials-1'
+const ISSUER = 'https://token.actions.githubusercontent.com'
+const fedCredsProps = {
+  parentId: 'project-test-1',
+  name: 'gh-actions',
+  oidcProvider: { issuerUrl: ISSUER },
+  federatedSubjectId: 'repo:org/repo:ref:refs/heads/main',
+  subjectId: 'serviceaccount-abc123',
+}
+const fedCredsLive = (): NebiusFedCredsSchema.FederatedCredentials => ({
+  metadata: protoMetadata(FED_CREDS_ID, 'gh-actions', 'project-test-1'),
+  spec: NebiusFedCredsSchema.FederatedCredentialsSpec.fromJSON({
+    oidcProvider: { issuerUrl: ISSUER },
+    federatedSubjectId: 'repo:org/repo:ref:refs/heads/main',
+    subjectId: 'serviceaccount-abc123',
+  }),
+  status: undefined,
+})
+
+describe('Nebius.iam.v1.FederatedCredentials convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.iam.v1.FederatedCredentials',
+    provider: FedCredsModule.NebiusFederatedCredentials.Provider,
+    providerLayer: FedCredsModule.NebiusFederatedCredentialsProvider,
+    propsSchema: FedCredsSchema.FederatedCredentialsPropsSchema,
+    props: fedCredsProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'gh-actions-2' }, { action: 'replace' }),
+      oidcProvider: { oidcProvider: { issuerUrl: 'https://accounts.google.com' } },
+      federatedSubjectId: { federatedSubjectId: 'repo:org/repo:ref:refs/heads/other' },
+      subjectId: { subjectId: 'serviceaccount-def456' },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: fedCredsLive(),
+    liveId: FED_CREDS_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockIamLayer({
+            federatedCredentials: {
+              get: () => Effect.succeed(fedCredsLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(fedCredsLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(fedCredsLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const FED_CERT_ID = 'federationcertificate-1'
+const CERT_A = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----'
+const CERT_B = '-----BEGIN CERTIFICATE-----\nMIIC\n-----END CERTIFICATE-----'
+const fedCertProps = {
+  parentId: 'project-test-1',
+  name: 'idp-cert',
+  description: 'idp signing cert',
+  data: CERT_A,
+}
+const fedCertLive = (): NebiusFedCertSchema.FederationCertificate => ({
+  metadata: protoMetadata(FED_CERT_ID, 'idp-cert', 'project-test-1'),
+  spec: NebiusFedCertSchema.FederationCertificateSpec.fromJSON({
+    description: 'idp signing cert',
+    data: CERT_A,
+  }),
+  status: undefined,
+})
+
+describe('Nebius.iam.v1.FederationCertificate convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.iam.v1.FederationCertificate',
+    provider: FedCertModule.NebiusFederationCertificate.Provider,
+    providerLayer: FedCertModule.NebiusFederationCertificateProvider,
+    propsSchema: FedCertSchema.FederationCertificatePropsSchema,
+    props: fedCertProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'idp-cert-2' }, { action: 'replace' }),
+      description: { description: 'rotated cert' },
+      data: { data: CERT_B },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: fedCertLive(),
+    liveId: FED_CERT_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockIamLayer({
+            federationCertificate: {
+              get: () => Effect.succeed(fedCertLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(fedCertLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(fedCertLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const AUTH_KEY_ID = 'authpublickey-1'
+const PUBKEY_A = '-----BEGIN PUBLIC KEY-----\nAAA\n-----END PUBLIC KEY-----'
+const PUBKEY_B = '-----BEGIN PUBLIC KEY-----\nBBB\n-----END PUBLIC KEY-----'
+const authKeyProps = {
+  parentId: 'project-test-1',
+  name: 'ci-key',
+  accountId: 'serviceaccount-abc123',
+  description: 'ci signer',
+  expiresAt: '2030-01-01T00:00:00Z',
+  data: PUBKEY_A,
+}
+const authKeyLive = (): NebiusAuthPublicKeySchema.AuthPublicKey => ({
+  metadata: protoMetadata(AUTH_KEY_ID, 'ci-key', 'project-test-1'),
+  spec: NebiusAuthPublicKeySchema.AuthPublicKeySpec.fromJSON({
+    account: { serviceAccount: { id: 'serviceaccount-abc123' } },
+    description: 'ci signer',
+    data: PUBKEY_A,
+    expiresAt: '2030-01-01T00:00:00Z',
+  }),
+  status: undefined,
+})
+
+describe('Nebius.iam.v1.AuthPublicKey convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.iam.v1.AuthPublicKey',
+    provider: AuthPublicKeyModule.NebiusAuthPublicKey.Provider,
+    providerLayer: AuthPublicKeyModule.NebiusAuthPublicKeyProvider,
+    propsSchema: AuthPublicKeySchema.AuthPublicKeyPropsSchema,
+    props: authKeyProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'ci-key-2' }, { action: 'replace' }),
+      accountId: { accountId: 'serviceaccount-def456' },
+      description: { description: 'release signer' },
+      // Immutable after creation per the schema — a change is still *written* (the API
+      // adjudicates), so it must reach `desired` rather than being dropped.
+      expiresAt: { expiresAt: '2031-01-01T00:00:00Z' },
+      data: { data: PUBKEY_B },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: authKeyLive(),
+    liveId: AUTH_KEY_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockIamLayer({
+            authPublicKey: {
+              get: () => Effect.succeed(authKeyLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(authKeyLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(authKeyLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const SNAPSHOT_ID = 'disksnapshot-1'
+const snapshotProps = {
+  parentId: 'project-test-1',
+  name: 'pre-upgrade',
+  sourceDiskId: 'disk-1',
+  description: 'taken before the upgrade',
+}
+const snapshotLive = (): NebiusDiskSnapshotSchema.DiskSnapshot => ({
+  metadata: protoMetadata(SNAPSHOT_ID, 'pre-upgrade', 'project-test-1'),
+  spec: NebiusDiskSnapshotSchema.DiskSnapshotSpec.fromJSON({
+    sourceDiskId: 'disk-1',
+    description: 'taken before the upgrade',
+  }),
+  status: undefined,
+})
+
+describe('Nebius.compute.v1.DiskSnapshot convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.compute.v1.DiskSnapshot',
+    provider: DiskSnapshotModule.NebiusDiskSnapshot.Provider,
+    providerLayer: DiskSnapshotModule.NebiusDiskSnapshotProvider,
+    propsSchema: DiskSnapshotSchema.DiskSnapshotPropsSchema,
+    props: snapshotProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'pre-downgrade' }, { action: 'replace' }),
+      sourceDiskId: { sourceDiskId: 'disk-2' },
+      description: { description: 'taken before the downgrade' },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: snapshotLive(),
+    liveId: SNAPSHOT_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockComputeLayer({
+            diskSnapshot: {
+              get: () => Effect.succeed(snapshotLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(snapshotLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(snapshotLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const ALLOCATION_ID = 'allocation-1'
+const allocationProps = {
+  parentId: 'project-test-1',
+  name: 'my-alloc',
+  ipv4Private: { cidr: '10.0.0.0/24' },
+}
+const allocationLive = (): NebiusAllocationSchema.Allocation => ({
+  metadata: protoMetadata(ALLOCATION_ID, 'my-alloc', 'project-test-1'),
+  spec: NebiusAllocationSchema.AllocationSpec.fromJSON({ ipv4Private: { cidr: '10.0.0.0/24' } }),
+  status: undefined,
+})
+
+describe('Nebius.vpc.v1.Allocation convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.vpc.v1.Allocation',
+    provider: AllocationModule.NebiusAllocation.Provider,
+    providerLayer: AllocationModule.NebiusAllocationProvider,
+    propsSchema: AllocationSchema.AllocationPropsSchema,
+    props: allocationProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'other-alloc' }, { action: 'replace' }),
+      ipv4Private: { ipv4Private: { cidr: '10.0.1.0/24' } },
+      // The schema allows exactly one of the two, so probing the public arm means dropping
+      // the private one.
+      ipv4Public: { ipv4Public: { cidr: '203.0.113.0/24' }, ipv4Private: undefined },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: allocationLive(),
+    liveId: ALLOCATION_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockVpcLayer({
+            allocation: {
+              get: () => Effect.succeed(allocationLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(allocationLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(allocationLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const QUOTA_ID = 'quotaallowance-1'
+const QUOTA_METRIC = 'compute.disk.size.network-ssd'
+const quotaProps = {
+  parentId: 'project-test-1',
+  name: QUOTA_METRIC,
+  region: 'eu-north1',
+  limit: '1099511627776',
+}
+const quotaLive = (): NebiusQuotaAllowanceSchema.QuotaAllowance => ({
+  metadata: protoMetadata(QUOTA_ID, QUOTA_METRIC, 'project-test-1'),
+  spec: NebiusQuotaAllowanceSchema.QuotaAllowanceSpec.fromPartial({
+    region: 'eu-north1',
+    limit: '1099511627776',
+  }),
+  status: undefined,
+})
+
+describe('Nebius.quotas.v1.QuotaAllowance convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.quotas.v1.QuotaAllowance',
+    provider: QuotaAllowanceModule.NebiusQuotaAllowance.Provider,
+    providerLayer: QuotaAllowanceModule.NebiusQuotaAllowanceProvider,
+    propsSchema: QuotaAllowanceSchema.QuotaAllowancePropsSchema,
+    props: quotaProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'compute.disk.size.network-hdd' }, { action: 'replace' }),
+      // Identity is `(parentId, name, region)` — a region change is a different allowance.
+      region: planned({ region: 'eu-west1' }, { action: 'replace' }),
+      limit: { limit: '2199023255552' },
+    },
+    live: quotaLive(),
+    liveId: QUOTA_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockQuotasLayer({
+            quotaAllowance: {
+              get: () => Effect.succeed(quotaLive()),
+              getByName: () => Effect.succeed(quotaLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(quotaLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(quotaLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const NVL_ID = 'nvlinstancegroup-1'
+const nvlProps = { parentId: 'project-test-1', name: 'my-nvl', type: 'GB200', size: 4 }
+const nvlLive = (): NebiusNvlSchema.NVLInstanceGroup => ({
+  metadata: protoMetadata(NVL_ID, 'my-nvl', 'project-test-1'),
+  spec: NebiusNvlSchema.NVLInstanceGroupSpec.fromJSON({ type: 'GB200', size: '4' }),
+  status: undefined,
+})
+
+describe('Nebius.compute.v1.NVLInstanceGroup convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.compute.v1.NVLInstanceGroup',
+    provider: NvlModule.NebiusNVLInstanceGroup.Provider,
+    providerLayer: NvlModule.NebiusNVLInstanceGroupProvider,
+    propsSchema: NvlSchema.NVLInstanceGroupPropsSchema,
+    props: nvlProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'other-nvl' }, { action: 'replace' }),
+      // Immutable platform. `replaceKeepingName`: the pinned name is reused, so the new group
+      // cannot exist alongside the old one — delete-first, unlike an identity change.
+      type: planned({ type: 'GB300' }, { action: 'replace', deleteFirst: true }),
+      size: { size: 8 },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: nvlLive(),
+    liveId: NVL_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockComputeLayer({
+            nvlInstanceGroup: {
+              get: () => Effect.succeed(nvlLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(nvlLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(nvlLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const FILESYSTEM_ID = 'filesystem-1'
+const filesystemProps = {
+  parentId: 'project-test-1',
+  name: 'shared-fs',
+  sizeGibibytes: 1024,
+  blockSizeBytes: 4096,
+  type: 'NETWORK_SSD',
+}
+const filesystemLive = (): NebiusFilesystemSchema.Filesystem => ({
+  metadata: protoMetadata(FILESYSTEM_ID, 'shared-fs', 'project-test-1'),
+  spec: NebiusFilesystemSchema.FilesystemSpec.fromJSON({
+    sizeGibibytes: '1024',
+    type: 'NETWORK_SSD',
+    blockSizeBytes: '4096',
+  }),
+  status: undefined,
+})
+
+describe('Nebius.compute.v1.Filesystem convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.compute.v1.Filesystem',
+    provider: FilesystemModule.NebiusFilesystem.Provider,
+    providerLayer: FilesystemModule.NebiusFilesystemProvider,
+    propsSchema: FilesystemSchema.FilesystemPropsSchema,
+    props: filesystemProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'other-fs' }, { action: 'replace' }),
+      sizeGibibytes: { sizeGibibytes: 2048 },
+      // Both are immutable after creation, so a change must REPLACE (pinning the shape is what
+      // makes that checkable — a write would have satisfied a shape-less row).
+      blockSizeBytes: planned({ blockSizeBytes: 8192 }, { action: 'replace', deleteFirst: true }),
+      type: planned({ type: 'WEKA' }, { action: 'replace', deleteFirst: true }),
+      forbidDeletion: { forbidDeletion: true },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    // Omitted `blockSizeBytes` must not fight the platform's 4096.
+    omits: ['blockSizeBytes'],
+    live: filesystemLive(),
+    liveId: FILESYSTEM_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockComputeLayer({
+            filesystem: {
+              get: () => Effect.succeed(filesystemLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(filesystemLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(filesystemLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const ACCESS_KEY_ID = 'accesskey-1'
+const accessKeyProps = {
+  serviceAccountId: 'serviceaccount-abc123',
+  description: 'ci uploads',
+  expiresAt: '2030-01-01T00:00:00Z',
+  secretDeliveryMode: 'INLINE',
+}
+const accessKeyLive = (): NebiusAccessKeySchema.AccessKey => ({
+  metadata: protoMetadata(ACCESS_KEY_ID, 'ak-test', 'serviceaccount-abc123'),
+  spec: NebiusAccessKeySchema.AccessKeySpec.fromJSON({
+    account: { serviceAccount: { id: 'serviceaccount-abc123' } },
+    description: 'ci uploads',
+    expiresAt: new Date('2030-01-01T00:00:00Z'),
+    secretDeliveryMode: 'INLINE',
+  }),
+  status: undefined,
+})
+
+describe('Nebius.iam.v2.AccessKey convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.iam.v2.AccessKey',
+    provider: AccessKeyModule.NebiusAccessKey.Provider,
+    providerLayer: AccessKeyModule.NebiusAccessKeyProvider,
+    propsSchema: AccessKeySchema.AccessKeyPropsSchema,
+    props: accessKeyProps,
+    change: {
+      // The account and the delivery mode are fixed at issue time, and the name is derived
+      // (`ak-<id>`) — so both re-issue rather than update, delete-first because the name is reused.
+      serviceAccountId: planned({ serviceAccountId: 'serviceaccount-def456' }, { action: 'replace', deleteFirst: true }),
+      description: { description: 'release uploads' },
+      expiresAt: { expiresAt: '2031-01-01T00:00:00Z' },
+      secretDeliveryMode: planned({ secretDeliveryMode: 'EXPLICIT' }, { action: 'replace', deleteFirst: true }),
+    },
+    live: accessKeyLive(),
+    liveId: ACCESS_KEY_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockIamLayer({
+            accessKeyV2: {
+              get: () => Effect.succeed(accessKeyLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(accessKeyLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(accessKeyLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const FEDERATION_ID = 'federation-1'
+const SAML_A = { idpIssuer: 'https://idp.example.com', ssoUrl: 'https://idp.example.com/sso' }
+const federationProps = {
+  parentId: 'tenant-1',
+  name: 'my-federation',
+  userAccountAutoCreation: true,
+  samlSettings: SAML_A,
+}
+const federationLive = (): NebiusFederationSchema.Federation => ({
+  metadata: protoMetadata(FEDERATION_ID, 'my-federation', 'tenant-1'),
+  spec: NebiusFederationSchema.FederationSpec.fromJSON({
+    userAccountAutoCreation: true,
+    samlSettings: { ...SAML_A, forceAuthn: false },
+  }),
+  status: undefined,
+})
+
+describe('Nebius.iam.v1.Federation convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.iam.v1.Federation',
+    provider: FederationModule.NebiusFederation.Provider,
+    providerLayer: FederationModule.NebiusFederationProvider,
+    propsSchema: FederationSchema.FederationPropsSchema,
+    props: federationProps,
+    change: {
+      parentId: planned({ parentId: 'tenant-2' }, { action: 'replace' }),
+      name: planned({ name: 'other-federation' }, { action: 'replace' }),
+      userAccountAutoCreation: { userAccountAutoCreation: false },
+      samlSettings: {
+        samlSettings: { idpIssuer: 'https://other.example.com', ssoUrl: 'https://other.example.com/sso' },
+      },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: federationLive(),
+    liveId: FEDERATION_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockIamLayer({
+            federation: {
+              get: () => Effect.succeed(federationLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(federationLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(federationLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const INVITATION_ID = 'invitation-1'
+const invitationProps = { parentId: 'tenant-1', description: 'come join', email: 'dev@example.com' }
+const invitationLive = (): NebiusInvitationSchema.Invitation => ({
+  metadata: protoMetadata(INVITATION_ID, 'dev@example.com', 'tenant-1'),
+  spec: NebiusInvitationSchema.InvitationSpec.fromJSON({ description: 'come join', email: 'dev@example.com' }),
+  status: undefined,
+})
+
+describe('Nebius.iam.v1.Invitation convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.iam.v1.Invitation',
+    provider: InvitationModule.NebiusInvitation.Provider,
+    providerLayer: InvitationModule.NebiusInvitationProvider,
+    propsSchema: InvitationSchema.InvitationPropsSchema,
+    props: invitationProps,
+    change: {
+      parentId: planned({ parentId: 'tenant-2' }, { action: 'replace' }),
+      description: { description: 'still waiting' },
+      email: { email: 'ops@example.com' },
+    },
+    declared: {
+      labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
+      noSend:
+        'create-time-only request field: `CreateInvitationInput.noSend` decides whether the invite is emailed, and `UpdateInvitationInput` cannot carry it (see the api-client types). A change is therefore a no-op until the invitation is re-created — the documented declared category, not a silent one.',
+      expiresInSeconds:
+        'create-time-only request field: `CreateInvitationInput.expiresIn` sets the validity window at issue time and has no update equivalent, so a change cannot converge in place (a replace would risk a duplicate invite for the same email).',
+    },
+    live: invitationLive(),
+    liveId: INVITATION_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockIamLayer({
+            invitation: {
+              get: () => Effect.succeed(invitationLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(invitationLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(invitationLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+const TRANSFER_ID = 'transfer-1'
+const transferProps = {
+  parentId: 'project-test-1',
+  name: 'nightly-copy',
+  source: { nebius: { region: 'eu-north1', bucketName: 'source-bucket' } },
+  destination: {
+    s3Compatible: { endpoint: 'https://s3.example.com', region: 'us-east-1', bucketName: 'dest-bucket' },
+  },
+  stopCondition: { afterOneIteration: true },
+  overwriteStrategy: 'NEVER',
+}
+const transferLive = (): NebiusTransferSchema.Transfer => ({
+  metadata: protoMetadata(TRANSFER_ID, 'nightly-copy', 'project-test-1'),
+  spec: NebiusTransferSchema.TransferSpec.fromJSON({
+    source: transferProps.source,
+    destination: transferProps.destination,
+    // The flat oneof arm the provider now sends (see `stopConditionFields`).
+    afterOneIteration: {},
+    overwriteStrategy: 'NEVER',
+  }),
+  status: undefined,
+})
+
+describe('Nebius.storage.v1.Transfer convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.storage.v1.Transfer',
+    provider: TransferModule.NebiusTransfer.Provider,
+    providerLayer: TransferModule.NebiusTransferProvider,
+    propsSchema: TransferSchema.TransferPropsSchema,
+    props: transferProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'other-copy' }, { action: 'replace' }),
+      source: { source: { nebius: { region: 'eu-west1', bucketName: 'source-bucket' } } },
+      destination: {
+        destination: {
+          nebius: {
+            region: 'eu-north1',
+            bucketName: 'dest-bucket',
+            accessKey: { accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'secret' },
+          },
+        },
+      },
+      limiters: { limiters: { bandwidthBytesPerSecond: 1000000, requestsPerSecond: 100 } },
+      stopCondition: { stopCondition: { afterNEmptyIterations: { emptyIterationsThreshold: 3 } } },
+      overwriteStrategy: { overwriteStrategy: 'IF_NEWER' },
+      enableDeletesInDestination: { enableDeletesInDestination: true },
+      touchUnmanaged: { touchUnmanaged: true },
+      interIterationIntervalSeconds: { interIterationIntervalSeconds: 60 },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    live: transferLive(),
+    liveId: TRANSFER_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockStorageLayer({
+            transfer: {
+              get: () => Effect.succeed(transferLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(transferLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(transferLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Nebius.ai.v1.Endpoint / Job — diff-only, so the probe is `diff` alone
+//
+// Their `diff` compares the whole props object except `labels`, which is why they sit in the
+// by-construction register. Tabulating them proves it per prop: every non-declared prop must
+// produce a replace, and `labels` is the single declared exception. `probe` skips mocked
+// reconcile deliberately — there is no update RPC to call, so a plan is the whole contract (and
+// the hosted machinery would otherwise need a filesystem).
+// ---------------------------------------------------------------------------
+
+const AI_BASE = {
+  parentId: 'project-test-1',
+  name: 'my-ai',
+  image: 'nginx:latest',
+  platform: 'cpu-d3',
+  preset: '4vcpu-16gb',
+  subnetId: 'subnet-abc123',
+  publicIp: true,
+  preemptible: false,
+  environmentVariables: [{ name: 'LOG_LEVEL', value: 'info' }],
+  ports: [{ containerPort: 80, protocol: 'HTTP' }],
+  volumes: [{ source: 'data', containerPath: '/data', mode: 'READ_WRITE' }],
+  disk: { type: 'NETWORK_SSD', sizeBytes: 107_374_182_400 },
+}
+
+/** Everything the AI props share: one identity pair plus a replace per spec prop. */
+const AI_CHANGES: Record<string, unknown> = {
+  parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+  name: planned({ name: 'other-ai' }, { action: 'replace' }),
+  image: planned({ image: 'nginx:1.27' }, { action: 'replace', deleteFirst: true }),
+  platform: planned({ platform: 'gpu-h200-sxm' }, { action: 'replace', deleteFirst: true }),
+  preset: planned({ preset: '8vcpu-32gb' }, { action: 'replace', deleteFirst: true }),
+  subnetId: planned({ subnetId: 'subnet-def456' }, { action: 'replace', deleteFirst: true }),
+  publicIp: planned({ publicIp: false }, { action: 'replace', deleteFirst: true }),
+  preemptible: planned({ preemptible: true }, { action: 'replace', deleteFirst: true }),
+  containerCommand: planned({ containerCommand: 'python' }, { action: 'replace', deleteFirst: true }),
+  args: planned({ args: 'main.py' }, { action: 'replace', deleteFirst: true }),
+  workingDir: planned({ workingDir: '/srv' }, { action: 'replace', deleteFirst: true }),
+  environmentVariables: planned(
+    { environmentVariables: [{ name: 'LOG_LEVEL', value: 'debug' }] },
+    { action: 'replace', deleteFirst: true },
+  ),
+  ports: planned({ ports: [{ containerPort: 9090, protocol: 'TCP' }] }, { action: 'replace', deleteFirst: true }),
+  volumes: planned(
+    { volumes: [{ source: 'logs', containerPath: '/logs', mode: 'READ_ONLY' }] },
+    { action: 'replace', deleteFirst: true },
+  ),
+  disk: planned(
+    { disk: { type: 'NETWORK_SSD', sizeBytes: 214_748_364_800 } },
+    { action: 'replace', deleteFirst: true },
+  ),
+  sshAuthorizedKeys: planned(
+    { sshAuthorizedKeys: ['ssh-ed25519 AAAA'] },
+    { action: 'replace', deleteFirst: true },
+  ),
+  shmSizeBytes: planned({ shmSizeBytes: 2_147_483_648 }, { action: 'replace', deleteFirst: true }),
+  injectedFiles: planned(
+    { injectedFiles: [{ containerPath: '/etc/other.conf', content: 'aGVsbG8=' }] },
+    { action: 'replace', deleteFirst: true },
+  ),
+  registryCredentials: planned(
+    { registryCredentials: { username: 'ci', password: 'hunter2' } },
+    { action: 'replace', deleteFirst: true },
+  ),
+}
+
+const AI_DECLARED = {
+  labels: 'create-time only: no update path sends labels, and `diff` compares props minus labels',
+}
+
+describe('Nebius.ai.v1.Endpoint convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.ai.v1.Endpoint',
+    provider: EndpointModule.NebiusEndpoint.Provider,
+    providerLayer: EndpointModule.NebiusEndpointProvider,
+    propsSchema: EndpointSchema.EndpointPropsSchema,
+    props: { ...AI_BASE, name: 'my-endpoint' },
+    change: {
+      ...AI_CHANGES,
+      // The auth token is a oneof: probing either arm alone is valid, both together is not.
+      authToken: planned({ authToken: 'token-2' }, { action: 'replace', deleteFirst: true }),
+      authTokenMysteryboxSecret: planned(
+        { authTokenMysteryboxSecret: { secretId: 'secret-abc123', versionId: 'secretversion-abc123' } },
+        { action: 'replace', deleteFirst: true },
+      ),
+    },
+    declared: AI_DECLARED,
+    probe: async (svc, news, baseline) => (await runDiff(svc, news, baseline)) !== undefined,
+  })
+})
+
+describe('Nebius.ai.v1.Job convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.ai.v1.Job',
+    provider: JobModule.NebiusJob.Provider,
+    providerLayer: JobModule.NebiusJobProvider,
+    propsSchema: JobSchema.JobPropsSchema,
+    props: { ...AI_BASE, name: 'my-job' },
+    change: {
+      ...AI_CHANGES,
+      restartAttempts: planned({ restartAttempts: 3 }, { action: 'replace', deleteFirst: true }),
+      timeout: planned({ timeout: { seconds: 600 } }, { action: 'replace', deleteFirst: true }),
+    },
+    declared: AI_DECLARED,
+    probe: async (svc, news, baseline) => (await runDiff(svc, news, baseline)) !== undefined,
   })
 })

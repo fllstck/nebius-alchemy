@@ -17,6 +17,21 @@ import * as Factory from '../../factory.ts'
 
 // ----- RESOURCE TYPES
 
+/**
+ * The props' `stopCondition` union maps onto three **flat** oneof fields of `TransferSpec`
+ * (`afterOneIteration`, `afterNEmptyIterations`, `infinite`) — the proto has no
+ * `stopCondition` message. Passing `stopCondition` through (as this did) is silently dropped
+ * by `fromJSON`, so the transfer ran with the server's default stop behaviour on create *and*
+ * update. Found by the convergence sweep: the prop reached neither the plan nor the write.
+ */
+const stopConditionFields = (stop: TransferSchema.TransferProps['stopCondition']): Record<string, unknown> => {
+  if ('afterOneIteration' in stop) return { afterOneIteration: {} }
+  if ('infinite' in stop) return { infinite: {} }
+  return {
+    afterNEmptyIterations: { emptyIterationsThreshold: stop.afterNEmptyIterations.emptyIterationsThreshold },
+  }
+}
+
 export type NebiusTransfer = Alchemy.Resource<
   'Nebius.storage.v1.Transfer',
   TransferSchema.TransferProps,
@@ -70,7 +85,7 @@ export const NebiusTransferProvider: Layer.Layer<
         source: news.source,
         destination: news.destination,
         overwriteStrategy: news.overwriteStrategy,
-        stopCondition: news.stopCondition,
+        ...stopConditionFields(news.stopCondition),
       }
       if (news.limiters) spec.limiters = news.limiters
       if (news.interIterationIntervalSeconds != null)
@@ -91,7 +106,7 @@ export const NebiusTransferProvider: Layer.Layer<
       source: news.source,
       destination: news.destination,
       overwriteStrategy: news.overwriteStrategy,
-      stopCondition: news.stopCondition,
+      ...stopConditionFields(news.stopCondition),
     }
     if (news.limiters) desiredSpec.limiters = news.limiters
     if (news.interIterationIntervalSeconds != null)

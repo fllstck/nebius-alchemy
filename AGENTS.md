@@ -97,23 +97,30 @@ Every user-facing prop **MUST** be one of:
   "never compared" — a false positive, like the ones recorded in TASKS.md §"What could not
   be automated".
 
-**Enforced by the convergence sweep** — `tests/convergence.test.ts` (per-prop tables),
-`tests/convergence-whole-spec.test.ts` (the by-construction resources) and
+**Enforced by the convergence sweep** — `tests/convergence.test.ts` (the tables) and
 `tests/convergence-coverage.test.ts`, with the harness in `tests/helpers/convergence.ts`.
-Every resource sits in **exactly one** bucket:
+There is **one mechanism**: a table per resource that
 
-- a **table** that probes every prop (a change must be planned by `diff` or written by a mocked
-  `reconcile`), plus an anti-loop row for optional props (`omits`: omitting one must write
-  nothing) and a `declared` list with a reason per non-converging prop;
-- **by construction** — the resource compares its whole desired spec, asserted against the
-  module source so a rewrite to field-by-field comparison cannot silently drop coverage;
-- a **prop-set guard** — the resources with no update RPC (above).
+- probes **every** prop — a change must be planned by `diff` or written by a mocked `reconcile`,
+  with `planned(patch, expect)` used wherever the plan *shape* is the contract
+  (`{ action: 'replace' }` = create-first vs `…deleteFirst: true` = delete-first);
+- carries an anti-loop row for optional props (`omits`: omitting one must write nothing) and a
+  `declared` map with a **reason per non-converging prop** — the escape hatch that keeps the
+  table from rotting into "everything is declared".
 
-The coverage test discovers all 38 providers and fails when one is in none or more than one
-bucket, so a new resource (or a new prop, via the table's own completeness check) cannot slip
-in unclassified. It also caught three providers comparing an *optional* prop against the
-platform's own default — `subnet.routeTableId`, `disk.{sizeGibibytes,blockSizeBytes}`,
-`image.cpuArchitecture` — each of which re-issued an update on **every** reconcile. The
+The coverage test discovers all 38 providers from `modules/` and fails when one has no table, so
+a new resource cannot slip in unclassified; the table's own completeness check fails on a new
+prop until someone classifies it. Two earlier mechanisms are **retired**, not layered on top:
+*by construction* (asserting a whole-spec comparison pattern in the source — it proved that a
+comparison existed, not that every prop reached `desired`) and the hand-written prop-set guards
+of the resources with no update RPC (a table row proves behaviour; a name list proves nothing).
+Tabulating the by-construction resources paid immediately: it found `transfer.stopCondition`
+reaching neither `desired` nor the wire (the proto models it as three flat fields), an identity
+prop that was never compared, and an immutable field that was written in place.
+
+The sweep also caught four providers comparing an *optional* prop against the platform's own
+default — `subnet.routeTableId`, `disk.{sizeGibibytes,blockSizeBytes}`, `image.cpuArchitecture`,
+`filesystem.blockSizeBytes` — each of which re-issued an update on **every** reconcile. The
 `news.<field> !== undefined` guard is therefore part of the rule, not a style choice.
 
 **A resource with no `Update` RPC MUST be tabulated prop by prop in the convergence sweep.**

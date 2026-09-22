@@ -67,56 +67,16 @@ export const planned = (patch: Props, expect: unknown): Planned => ({ patch, exp
 const isPlanned = (entry: Props | Planned): entry is Planned => 'patch' in entry && 'expect' in entry
 
 /**
- * The convergence register: every resource is in exactly one of these buckets, and
- * `tests/convergence-coverage.test.ts` fails if a resource is in none or more than one.
+ * There is exactly **one** convergence mechanism: the table in `tests/convergence.test.ts`.
  *
- * 1. `TABLES` — resources whose reconcile compares spec fields one by one; tabulated prop by
- *    prop in `tests/convergence.test.ts` (derived from that file, not listed here).
- * 2. `BY_CONSTRUCTION` — resources whose reconcile compares the whole desired spec, so every
- *    prop converges through one comparison. Listed below, with the source pattern that the
- *    whole-spec test asserts still holds.
- *
- * There is deliberately **no third bucket**: the six resources with no update RPC used to
- * carry a hand-written prop-set guard ("the prop list did not change"), which C1 subsumes —
- * for those, `diff` is the only convergence path, so the sweep probes each prop for an actual
- * *plan* instead of for its name appearing in a list.
+ * Every resource used to be in one of two buckets — a table, or "by construction" (its
+ * reconcile compares the whole desired spec, asserted against the module source). The second
+ * bucket was retired once all 15 of those resources were tabulated: the pattern check could
+ * only prove that *a* whole-spec comparison existed, not that every prop reached `desired` —
+ * and tabulating them immediately found a prop that reached neither (`transfer.stopCondition`,
+ * dropped by `fromJSON` on create *and* update) plus two more shape bugs. One mechanism now,
+ * and `tests/convergence-coverage.test.ts` proves no resource escapes it.
  */
-
-/** `specDeepEqual(<var>.spec, <desired>)` — the whole message, not a field of it. */
-const WHOLE_SPEC = /specDeepEqual\(\s*\w+\.spec,/
-
-/** All props except `labels` compared inside `diff`, which replaces on any other change. */
-const PROPS_EXCEPT_LABELS = /specDeepEqual\(newsWithoutLabels, oldsWithoutLabels\)/
-
-export interface ByConstruction {
-  readonly resource: string
-  readonly file: string
-  readonly pattern: RegExp
-}
-
-export const BY_CONSTRUCTION: ReadonlyArray<ByConstruction> = [
-  // `reconcile` compares `live.spec` with the built `desired` in one call.
-  { resource: 'Nebius.iam.v1.Federation', file: 'iam/v1/federation.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.iam.v1.Invitation', file: 'iam/v1/invitation.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.iam.v1.ServiceAccount', file: 'iam/v1/service-account.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.iam.v1.AuthPublicKey', file: 'iam/v1/auth-public-key.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.iam.v1.FederatedCredentials', file: 'iam/v1/federated-credentials.ts', pattern: WHOLE_SPEC },
-  {
-    resource: 'Nebius.iam.v1.FederationCertificate',
-    file: 'iam/v1/federation-certificate.ts',
-    pattern: WHOLE_SPEC,
-  },
-  { resource: 'Nebius.iam.v2.AccessKey', file: 'iam/v2/access-key.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.compute.v1.DiskSnapshot', file: 'compute/v1/disk-snapshot.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.compute.v1.Filesystem', file: 'compute/v1/filesystem.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.compute.v1.NVLInstanceGroup', file: 'compute/v1/nvl-instance-group.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.vpc.v1.Allocation', file: 'vpc/v1/allocation.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.storage.v1.Transfer', file: 'storage/v1/transfer.ts', pattern: WHOLE_SPEC },
-  { resource: 'Nebius.quotas.v1.QuotaAllowance', file: 'quotas/v1/quota-allowance.ts', pattern: WHOLE_SPEC },
-  // `diff` replaces on any change except `labels` — no update path at all.
-  { resource: 'Nebius.ai.v1.Endpoint', file: 'ai/v1/endpoint.ts', pattern: PROPS_EXCEPT_LABELS },
-  { resource: 'Nebius.ai.v1.Job', file: 'ai/v1/job.ts', pattern: PROPS_EXCEPT_LABELS },
-]
 
 export interface ConvergenceSweepConfig<R extends ResourceLike> {
   /** Resource type string, for test titles: `Nebius.dns.v1.Record`. */
@@ -153,9 +113,9 @@ export interface ConvergenceSweepConfig<R extends ResourceLike> {
   /** Props whose *omission* must not write: the anti-loop guard. Must also be classified. */
   omits?: ReadonlyArray<string>
   /** What the mocked `get` returns — build it from the baseline, or the rows pass vacuously. */
-  live: unknown
+  live?: unknown
   /** The persisted state id passed to reconcile. */
-  liveId: string
+  liveId?: string
   /**
    * Mock layer for one reconcile run; `writes` receives every create/update request.
    * Required unless `probe` is given.
@@ -184,8 +144,8 @@ export const convergenceSweep = <R extends ResourceLike>(config: ConvergenceSwee
     const svc = await resolveProvider(config.provider, config.providerLayer)
     if (config.probe) return config.probe(svc, news, baseline)
     if ((await runDiff(svc, news, baseline)) !== undefined) return true
-    if (!config.layerFor) {
-      throw new Error(`${resource}: this sweep needs either \`probe\` or \`layerFor\``)
+    if (config.layerFor === undefined || config.liveId === undefined) {
+      throw new Error(`${resource}: this sweep needs either \`probe\`, or \`layerFor\` and \`liveId\``)
     }
     const writes: Array<unknown> = []
     await runReconcile(svc, news, { id: config.liveId }, baseline, config.layerFor(writes))

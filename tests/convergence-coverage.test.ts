@@ -6,12 +6,10 @@
  * it discovers every resource provider from `modules/`, reads its resource-type string, and
  * requires it to appear in **exactly one** of
  *
- *   1. a per-prop convergence table (parsed out of `tests/convergence.test.ts`),
- *   2. the by-construction register (whole-spec / props-except-labels comparisons).
- *
- * (The resources with no update RPC used to be a third bucket — a hand-written prop-set guard
- * each. They are tabulated now, so they appear under 1. Both buckets come from a file the sweep
- * actually runs, so neither entry can be decorative.)
+ * the per-prop convergence table in `tests/convergence.test.ts`. That is the only bucket:
+ * the "by construction" register (whole-spec comparison, asserted against the module source)
+ * and the hand-written prop-set guards of the no-update-RPC resources were both retired once
+ * those resources were tabulated — a table row proves behaviour, a pattern proves only shape.
  *
  * Adding a resource therefore fails here until someone decides how its props converge — the
  * same forcing function as `plan-time-validation.test.ts`'s `EXPECTED_PROVIDER_COUNT`, but
@@ -26,7 +24,6 @@ import * as BunTest from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { BY_CONSTRUCTION } from './helpers/convergence.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -78,37 +75,22 @@ const tabledResources = (): ReadonlyArray<string> => {
 }
 
 describe('convergence register', () => {
-  test('every resource is in exactly one convergence bucket', async () => {
+  test('every resource is tabulated in the convergence sweep', async () => {
     const resources = await discoverResources()
-    const tabled = new Set(tabledResources())
-    const byConstruction = new Set(BY_CONSTRUCTION.map((r) => r.resource))
+    const tabled = tabledResources()
 
-    const uncovered = resources.filter((r) => !tabled.has(r.resource) && !byConstruction.has(r.resource))
+    const uncovered = resources.filter((r) => !tabled.includes(r.resource))
     expect(
       uncovered.map((r) => `${r.resource} (${r.file})`),
-      'resources with no convergence classification.\n' +
-        '  Give the resource a `change` patch per prop in tests/convergence.test.ts (its reconcile\n' +
-        '  compares fields one by one, or it has no update RPC at all), or add it to BY_CONSTRUCTION\n' +
-        '  in tests/helpers/convergence.ts (it compares the whole spec).',
+      'resources with no convergence table.\n' +
+        '  Add a `change` patch per prop (or a `declared` reason) to tests/convergence.test.ts —\n' +
+        '  the table is the only mechanism, so a resource outside it has no convergence proof.',
     ).toEqual([])
 
-    const buckets: ReadonlyArray<[string, ReadonlySet<string>]> = [
-      ['convergence table', tabled],
-      ['by construction', byConstruction],
-    ]
-    const duplicated = resources
-      .map((r) => ({
-        resource: r.resource,
-        buckets: buckets.filter(([, set]) => set.has(r.resource)).map(([name]) => name),
-      }))
-      .filter((entry) => entry.buckets.length > 1)
-      .map((entry) => `${entry.resource}: ${entry.buckets.join(' + ')}`)
-    expect(duplicated, 'resources classified in more than one bucket — pick one').toEqual([])
-
     // The register must not outlive the code either: a stale entry means the resource was
-    // renamed or removed and the table/pattern is now inert.
+    // renamed or removed and the table is now inert.
     const known = new Set(resources.map((r) => r.resource))
-    const stale = [...tabled, ...byConstruction].filter((r) => !known.has(r))
+    const stale = tabled.filter((r) => !known.has(r))
     expect(stale, 'registered resources that no longer exist — remove them').toEqual([])
 
     expect(resources.length).toBeGreaterThan(30)

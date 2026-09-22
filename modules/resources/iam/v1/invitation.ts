@@ -10,6 +10,7 @@ import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as InvitationSchema from './invitation.schema.ts'
+import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 
 // ----- RESOURCE TYPES
@@ -144,8 +145,13 @@ export const NebiusInvitationProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* InvitationSchema.validateInvitationProps(news)
-    // email is immutable
+    // `email` is immutable, and since the physical name IS the email, a different one is a
+    // different invitation (create-first is safe: the names differ).
     if (news.email !== olds?.email) return { action: 'replace' }
-    return undefined
+    // `parentId` is the tenant the invitation belongs to — a move is a different invitation.
+    // Before this the diff compared *nothing* but email, so a tenant change planned no update at
+    // all and was silently dropped (found by the convergence sweep's `parentId` row; the 2026-09-19
+    // `identityChangeRequiresReplace` sweep missed this provider).
+    return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })

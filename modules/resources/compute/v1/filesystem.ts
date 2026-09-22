@@ -85,6 +85,11 @@ export const NebiusFilesystemProvider: Layer.Layer<
       type: news.type,
     }
     if (news.blockSizeBytes) desiredSpec.blockSizeBytes = String(news.blockSizeBytes)
+    // An omitted `blockSizeBytes` must not read as drift against the value the platform holds
+    // (4096 by default) — that re-issued the same update on every reconcile and never converged
+    // (found by the convergence sweep: omitting it wrote an update). The prop is immutable after
+    // creation, so carrying the live value into the comparison is the only converged outcome.
+    else if (fs.spec?.blockSizeBytes !== undefined) desiredSpec.blockSizeBytes = String(fs.spec.blockSizeBytes)
     if (news.forbidDeletion) desiredSpec.forbidDeletion = true
 
     const desired = NebiusFilesystemSchema.FilesystemSpec.fromJSON(desiredSpec)
@@ -137,8 +142,16 @@ export const NebiusFilesystemProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* FilesystemSchema.validateFilesystemProps(news)
-    // type is immutable
-    if (news.type !== olds?.type) return Factory.replaceKeepingName(news)
+    // `type` and `blockSizeBytes` are immutable after creation (see the props schema), so a
+    // change plans a replace instead of an update the API rejects. `blockSizeBytes` is guarded
+    // on the news side: *removing* an optional prop from a config must not replace a live
+    // filesystem (found by the convergence sweep, which pinned the expected plan shape).
+    if (
+      news.type !== olds?.type ||
+      (news.blockSizeBytes !== undefined && news.blockSizeBytes !== olds?.blockSizeBytes)
+    ) {
+      return Factory.replaceKeepingName(news)
+    }
     return Factory.identityChangeRequiresReplace(news, olds)
   }),
 })
