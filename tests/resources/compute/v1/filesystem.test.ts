@@ -3,6 +3,7 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import Long from 'long'
 import * as Module from '../../../../modules/resources/compute/v1/filesystem.ts'
+import * as ResourceUtils from '../../../../modules/resources/utilities.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/filesystem.schema.ts'
 import * as ComputeSchema from '../../../../schemas/nebius/compute/v1/filesystem.ts'
 import {
@@ -125,5 +126,30 @@ describe('Nebius.compute.v1.Filesystem', () => {
 
       expect(updated).toHaveLength(0)
     })
+  })
+})
+
+describe('attributes: int64 fields arrive as decimal strings', () => {
+  /**
+   * `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON`, and ts-proto renders every int64 as a
+   * decimal **string** — so an attribute typed `Schema.Finite` was a type that lied, and a consumer
+   * doing arithmetic on it silently concatenated. The schemas now say `Schema.String` (like
+   * `RecordAttributes.ttl`); this pins the runtime side of that contract, so "fixing" the types back
+   * to numbers cannot land without a decision.
+   */
+  test('Filesystem reports its int64 attributes as strings', () => {
+    // The same call the provider makes — `toFriendlyAttributes` is not re-exported by every module,
+    // and the behaviour under test lives in the shared helper anyway.
+    const attrs = ResourceUtils.toFriendlyAttributes<Record<string, unknown>>({
+      rawResource: ComputeSchema.Filesystem.fromJSON({
+        spec: { sizeGibibytes: '4', blockSizeBytes: '8192', type: 'NETWORK_SSD' },
+        metadata: { id: 'computefilesystem-1', name: 'fs', parentId: 'project-1' },
+      }),
+      resourceSchema: ComputeSchema.Filesystem,
+    })
+    expect(typeof attrs.sizeGibibytes).toBe('string')
+    expect(attrs.sizeGibibytes).toBe('4')
+    expect(typeof attrs.blockSizeBytes).toBe('string')
+    expect(attrs.blockSizeBytes).toBe('8192')
   })
 })

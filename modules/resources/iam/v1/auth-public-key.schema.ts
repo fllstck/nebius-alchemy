@@ -17,8 +17,15 @@ export const AuthPublicKeyPropsSchema = Schema.Struct({
   description: Schema.optional(Schema.String),
   /** When the key expires. Immutable after creation. */
   expiresAt: Schema.optional(Schema.DateFromString),
-  /** PEM-encoded public key data. Immutable after creation. */
-  data: Schema.String.check(Validation.isPemFormat),
+  /**
+   * PEM-encoded public key data. Immutable after creation.
+   *
+   * The IAM API accepts **only RSA-4096** — see `Validation.isSupportedAuthPublicKey` for the live
+   * measurements (smaller RSA sizes and non-RSA keys are all rejected, with error text that does not
+   * name the real problem). Validated here so the failure is a plan-time error instead of an opaque
+   * apply-time one.
+   */
+  data: Schema.String.check(Validation.isPemFormat, Validation.isSupportedAuthPublicKey),
 })
 
 export type AuthPublicKeyProps = typeof AuthPublicKeyPropsSchema.Type

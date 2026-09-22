@@ -1,5 +1,6 @@
 import * as Effect from 'effect/Effect'
 import * as Schema from 'effect/Schema'
+import { createPublicKey, type KeyObject } from 'node:crypto'
 
 // ---------------------------------------------------------------------------
 // Shared filter
@@ -152,6 +153,61 @@ export const isPemFormat = Schema.makeFilter(
       ? undefined
       : `Expected PEM-encoded data (must contain BEGIN/END markers), got "${s.slice(0, 50)}..."`,
   { title: 'PEM data' },
+)
+
+/**
+ * `iam/v1 AuthPublicKey.data` — the API accepts **exactly one** key shape: RSA-4096.
+ *
+ * Measured live 2026-09-22 by probing the neighbours, because the API's own errors do not say
+ * enough to act on:
+ *
+ * | key | API answer |
+ * | RSA-4096 | accepted |
+ * | RSA-2048, RSA-3072 | `3 INVALID_ARGUMENT: Key doesn't fits to any supported algorithms:` (no size named) |
+ * | Ed25519, ECDSA P-256/P-384 | `3 INVALID_ARGUMENT: Invalid public key data: expected public key in PEM-format` (**misleading** — those ARE PEM; the service only parses RSA) |
+ *
+ * Before this filter the only check was the PEM *shape*, so every one of those became an opaque
+ * apply-time failure in a flow that has already stored a profile by then. Parsing the key here turns
+ * it into a plan-time error that names the shape the API wants.
+ *
+ * Synchronous and pure (no I/O): `createPublicKey` parses the DER, which is exactly the work the
+ * service does before deciding the key "doesn't fit".
+ */
+export const isSupportedAuthPublicKey = Schema.makeFilter(
+  (pem: string) => {
+    // A CERTIFICATE also parses as a public key (Node extracts the key from it), so reject it by
+    // label **first** — otherwise a 4096-bit certificate would sail through and fail at the API.
+    if (pem.includes('-----BEGIN CERTIFICATE-----')) {
+      return (
+        'Expected a public key, not a certificate. Export the key itself: ' +
+        '`openssl pkey -in key.pem -pubout` (or `openssl req -in cert.pem -noout -pubkey`).'
+      )
+    }
+    let key: KeyObject
+    try {
+      key = createPublicKey(pem)
+    } catch (cause) {
+      return `Not a parsable public key PEM (${
+        cause instanceof Error ? cause.message : String(cause)
+      }) — the IAM API accepts an RSA-4096 public key in SPKI PEM form`
+    }
+    if (key.asymmetricKeyType !== 'rsa') {
+      return (
+        `The IAM API accepts only RSA public keys; got ${key.asymmetricKeyType ?? 'an unknown type'}. ` +
+        `Ed25519 and ECDSA keys are valid PEM but rejected by the service with "Invalid public key data: ` +
+        `expected public key in PEM-format", which does not describe the actual problem.`
+      )
+    }
+    const bits = key.asymmetricKeyDetails?.modulusLength
+    if (bits !== 4096) {
+      return (
+        `The IAM API accepts only 4096-bit RSA public keys; got ${bits ?? 'an unknown size'}-bit. ` +
+        `Smaller sizes are rejected with "Key doesn't fits to any supported algorithms".`
+      )
+    }
+    return undefined
+  },
+  { title: 'an RSA-4096 public key (the only shape the IAM API accepts)' },
 )
 
 /**

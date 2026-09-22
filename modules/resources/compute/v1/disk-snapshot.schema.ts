@@ -33,8 +33,22 @@ export const DiskSnapshotAttributesSchema = Schema.Struct({
   sourceDiskId: Ids.DiskId,
   description: Schema.String,
   state: Schema.String,
-  contentSizeBytes: Schema.Finite,
-  storageSizeBytes: Schema.Finite,
+  /**
+   * Size of the snapshot content in bytes.
+   *
+   * int64 on the wire, and `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — ts-proto
+   * renders int64s as decimal **strings**, so this is a string at runtime. Typed to match reality
+   * (like `RecordAttributes.ttl`); parse it (`Number(...)`, `BigInt(...)`) if you need arithmetic.
+   */
+  contentSizeBytes: Schema.String,
+  /**
+   * Storage actually consumed in bytes.
+   *
+   * int64 on the wire, and `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — ts-proto
+   * renders int64s as decimal **strings**, so this is a string at runtime. Typed to match reality
+   * (like `RecordAttributes.ttl`); parse it (`Number(...)`, `BigInt(...)`) if you need arithmetic.
+   */
+  storageSizeBytes: Schema.String,
   sourceCpuArchitecture: Schema.optional(Schema.String),
 })
 

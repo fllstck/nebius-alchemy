@@ -128,6 +128,7 @@ import * as BucketModule from '../modules/resources/storage/v1/bucket.ts'
 import * as BucketSchema from '../modules/resources/storage/v1/bucket.schema.ts'
 import * as NebiusBucketSchema from '../schemas/nebius/storage/v1/bucket.ts'
 import { convergenceSweep, planned } from './helpers/convergence.ts'
+import { RSA_4096_PUBLIC_KEY_A, RSA_4096_PUBLIC_KEY_B } from './helpers/fixtures.ts'
 import { runDiff } from './helpers/provider.ts'
 import {
   instanceIdLayer,
@@ -1659,8 +1660,11 @@ describe('Nebius.iam.v1.FederationCertificate convergence', () => {
 })
 
 const AUTH_KEY_ID = 'authpublickey-1'
-const PUBKEY_A = '-----BEGIN PUBLIC KEY-----\nAAA\n-----END PUBLIC KEY-----'
-const PUBKEY_B = '-----BEGIN PUBLIC KEY-----\nBBB\n-----END PUBLIC KEY-----'
+// Real RSA-4096 public keys: `Validation.isSupportedAuthPublicKey` rejects the placeholder PEMs these
+// used to be — and that placeholder is exactly what hid the API's algorithm constraint (see
+// tests/helpers/fixtures.ts for the live measurements).
+const PUBKEY_A = RSA_4096_PUBLIC_KEY_A
+const PUBKEY_B = RSA_4096_PUBLIC_KEY_B
 /**
  * The echoed form is NOT byte-identical to what we send — the API terminates the PEM (measured live
  * 2026-09-22: 799 chars sent, 800 echoed), which is exactly why the whole-spec comparison used to

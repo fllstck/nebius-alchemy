@@ -33,7 +33,14 @@ export const FederationCertificateAttributesSchema = Schema.Struct({
   state: Schema.String,
   fingerprint: Schema.String,
   algorithm: Schema.String,
-  keySize: Schema.Number,
+  /**
+   * Size of the certificate key in bits, as the platform reports it.
+   *
+   * int64 on the wire, and `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — ts-proto
+   * renders int64s as decimal **strings**, so this is a string at runtime. Typed to match reality
+   * (like `RecordAttributes.ttl`); parse it (`Number(...)`, `BigInt(...)`) if you need arithmetic.
+   */
+  keySize: Schema.String,
   notBefore: Schema.optional(Schema.DateFromString),
   notAfter: Schema.optional(Schema.DateFromString),
 })

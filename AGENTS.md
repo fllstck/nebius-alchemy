@@ -476,6 +476,22 @@ nebius storage bucket list
   resolve, and even a one-time secret survives there (it rides on the create/issue response, as
   `iam/v2 AccessKey` and now `iam/v1 StaticKey` both do). Keep `precreate` only for a resource that
   must exist *before* its siblings are planned and whose props carry no foreign id.
+- **Attribute types must match what `toFriendlyAttributes` produces, and for int64s that is a
+  `Schema.String`.** The helper merges `spec.toJSON`/`status.toJSON` — the RFC 3339/JSON renderings —
+  and ts-proto renders every int64 as a decimal string, so an attribute typed `Schema.Finite` for a
+  `Long`-backed field is a type that lies: a consumer doing arithmetic on it concatenates (silently,
+  since the compiler believes the number). Type such fields `Schema.String` (as `RecordAttributes.ttl`
+  did from the start) and say so in a doc comment; check the *wire* type, because `keySize` is `number`
+  in `AuthPublicKeyStatus` and `Long` in `FederationCertificateStatus` — both in the same service.
+  Seven fields were fixed in one sweep (disk/filesystem sizes, snapshot byte counts,
+  federation-certificate `keySize`).
+- **Validate props against what the API accepts, not just their shape.** A shape-only check (`isPemFormat`,
+  a non-empty string) moves the failure to apply time, where the API's message is often wrong: the IAM
+  auth-public-key endpoint takes **only RSA-4096** and answers `Key doesn't fits to any supported
+  algorithms:` for RSA-2048/3072 and `Invalid public key data: expected public key in PEM-format` for
+  Ed25519/ECDSA — which *are* valid PEM. `Validation.isSupportedAuthPublicKey` pins that (and rejects a
+  certificate by label before parsing, since Node extracts a public key from one). When such a
+  constraint is discovered live, add a filter and put the measurement in its doc comment.
 - Ownership tagging uses `createInternalTags` / `hasAlchemyTags` / `Unowned` from `alchemy/Tags`
 - Label merge order: internal tags are base, user labels override
 

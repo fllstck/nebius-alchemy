@@ -39,6 +39,7 @@
  * federated-credentials,federation-certificate}` ✓, `storage/v1 transfer` (its own test), and — by
  * construction — `record`/`subnet`/`filesystem` in their own update-path probes.
  */
+import { expect } from 'bun:test'
 import * as Effect from 'effect/Effect'
 import * as Config from 'effect/Config'
 import { Nebius, test } from '../helpers/stack.ts'
@@ -52,7 +53,7 @@ import {
   specSnapshot,
   type LiveEchoTarget,
 } from '../helpers/live-echo.ts'
-import { SELF_SIGNED_CERT } from '../helpers/fixtures.ts'
+import { RSA_4096_PUBLIC_KEY_A, SELF_SIGNED_CERT } from '../helpers/fixtures.ts'
 import * as VpcGrpc from '../../modules/api-client/vpc.ts'
 import * as DnsGrpc from '../../modules/api-client/dns.ts'
 import * as ComputeGrpc from '../../modules/api-client/compute.ts'
@@ -287,6 +288,15 @@ integrationTest(
       const fabric = yield* discoverFabric(stack)
 
       const created = yield* stack.deploy(declareComputeFamily(undefined, fabric))
+
+      // The attribute *type* contract, on real API data: these fields are int64 on the wire and
+      // `toFriendlyAttributes` renders them as decimal strings, so the schemas type them `Schema.String`
+      // (they were `Finite` — a type that lied). Pinned here as well as in the unit tests because this
+      // is the path that produced the original observation.
+      expect(typeof created.disk.sizeGibibytes).toBe('string')
+      expect(typeof created.filesystem.blockSizeBytes).toBe('string')
+      expect(typeof created.snapshot.contentSizeBytes).toBe('string')
+
       const targets: ReadonlyArray<LiveEchoTarget> = [
         { label: 'compute/v1 Disk', get: compute.disk.get(created.disk.id) },
         { label: 'compute/v1 DiskSnapshot', get: compute.diskSnapshot.get(created.snapshot.id) },
@@ -304,25 +314,7 @@ integrationTest(
   { timeout: 420_000 },
 )
 
-/**
- * A REAL RSA-4096 public key (generated with `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096`
- * + `openssl pkey -pubout`) — the API derives `algorithm`/`fingerprint` from the key material, so the
- * unit tests' shape-only placeholder (`MIIB`) is rejected live. Public material, no private part.
- */
-const LIVE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAwMRQOlTYr+mdv/BQpUyL
-hYU7yTcc6Fi49PVmJT47K3UEqqByP03A/Ptkigcd6uFq7rbDJKBNiVfjzpraElHk
-yQ3Ci0DTxXb6OPI5bq3quS928ysoMnDuLABCeeX+qWgavzEOw5w0kfWEELDAHLoW
-C0KvuB5YzYfqdYib6x1yEdN5Yrm8WlfUxTXUDk8Zk07lcWROVdBjBUBiWdsTWOdK
-+3LwLU83iw9xqdIwAJm0uISgjzfkpzLgC9J13LmGP9j/PsdqPnj2z0IWUv3iOOao
-LOhOdER98YS4mnnXXbr9b1KgJGLaFVdvTD4W4XWwWVROirazz4XqwRxSsu8dP3n+
-4wNs2GwjJXgAjYgU2XAXI+Slv+vHkGBlB24so/FkRv1U3bSS1VaAKc1ouYpQlvPj
-sQV7KDX68Vu692oAo6ZnO+rgkMSRnx4+Gg9g1w1q3DBBgUSqekWnM90GdQU1YerI
-APwkc28kzuxti8KKFl2YPxyp2dn1OHi/62V8J7DvnJ1N94Y1Bd3HyRkOJGEhQ9Bq
-DkLmbS6v9geflEet4xGN6/d7DLc9qFLWPTlKjdb5OfIHgMPLlQsrr8K9ZeLf1hH9
-xQIcaqxLgZ5SOkqO4fDqMFbd+9uG9LNF8e4v2CGtLk/txNTlFjFB/r8dIU9pzkQf
-T+U9zxgs4/Aw3fafqqaenNMCAwEAAQ==
------END PUBLIC KEY-----`
+
 
 /** The tenant's default editors group — used as the membership parent (as the bindings test does). */
 const EDITORS_GROUP_ID = 'group-e00ee03sdm7ht85b9m'
@@ -353,7 +345,7 @@ const declareIamFamily = (labels: Record<string, string> | undefined) =>
     })
     const authPublicKey = yield* Nebius.iam.AuthPublicKey('EchoAuthKey', {
       accountId: sa.id,
-      data: LIVE_PUBLIC_KEY,
+      data: RSA_4096_PUBLIC_KEY_A,
       description: 'live-echo auth key',
       ...withLabels(labels),
     })

@@ -21,9 +21,11 @@
  */
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
+import { generateKeyPairSync } from 'node:crypto'
 import * as Schema from 'effect/Schema'
 
 import * as Validation from '../../modules/resources/validation.ts'
+import { RSA_4096_PUBLIC_KEY_A, RSA_4096_PUBLIC_KEY_B, SELF_SIGNED_CERT } from '../helpers/fixtures.ts'
 import { runEffect } from '../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
@@ -162,6 +164,58 @@ describe('validation filters', () => {
       { value: 5000, accept: false, because: 'Block size must be a power of two' },
       { value: 12288, accept: false, because: 'Block size must be a power of two' },
     ])
+  })
+
+  describe('isSupportedAuthPublicKey (the only shape the IAM API takes)', () => {
+    const schema = Schema.String.check(Validation.isSupportedAuthPublicKey)
+    // 4096-bit RSA keys come from the fixtures (real key material, no keygen); the *rejected*
+    // neighbours are generated here, because generating them is what proves the boundary.
+    const rsa = (modulusLength: number) =>
+      generateKeyPairSync('rsa', { modulusLength }).publicKey.export({ type: 'spki', format: 'pem' }).toString()
+
+    cases('authPublicKey', schema, [
+      { value: RSA_4096_PUBLIC_KEY_A, accept: true },
+      { value: RSA_4096_PUBLIC_KEY_B, accept: true },
+      { value: rsa(2048), accept: false, because: 'accepts only 4096-bit RSA public keys; got 2048-bit' },
+      { value: rsa(3072), accept: false, because: 'accepts only 4096-bit RSA public keys; got 3072-bit' },
+      { value: rsa(4096), accept: true },
+      {
+        value: generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+        accept: false,
+        because: 'accepts only RSA public keys; got ed25519',
+      },
+      {
+        value: generateKeyPairSync('ec', { namedCurve: 'P-256' })
+          .publicKey.export({ type: 'spki', format: 'pem' })
+          .toString(),
+        accept: false,
+        because: 'accepts only RSA public keys; got ec',
+      },
+      // Shape-valid but not parsable: the API answers `Invalid public key data: expected public key
+      // in PEM-format`, which names the wrong problem — say it here instead.
+      {
+        value: '-----BEGIN PUBLIC KEY-----\nAAA\n-----END PUBLIC KEY-----',
+        accept: false,
+        because: 'Not a parsable public key PEM',
+      },
+      // A CERTIFICATE is not a public key (and `isPemFormat` alone would accept it) — and Node
+      // happily extracts the key from one, so the label check is what catches it.
+      { value: SELF_SIGNED_CERT, accept: false, because: 'Expected a public key, not a certificate' },
+    ])
+
+    test('the size message quotes the API error text, so the constraint is traceable', async () => {
+      const failure = await failureText(schema, rsa(2048))
+      expect(failure).toContain("Key doesn't fits to any supported algorithms")
+    })
+
+    test('the non-RSA message explains why the API error is misleading', async () => {
+      const failure = await failureText(
+        schema,
+        generateKeyPairSync('ed25519').publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      )
+      expect(failure).toContain('Invalid public key data')
+      expect(failure).toContain('does not describe the actual problem')
+    })
   })
 
   describe('isResourceId', () => {

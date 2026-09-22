@@ -96,8 +96,22 @@ export const DiskAttributesSchema = Schema.Struct({
   name: Schema.String,
   labels: Schema.Array(Schema.String),
   type: DiskTypeSchema,
-  sizeGibibytes: Schema.optional(Schema.Finite),
-  blockSizeBytes: Schema.optional(Schema.Finite),
+  /**
+   * Size in gibibytes, as the platform reports it.
+   *
+   * int64 on the wire, and `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — ts-proto
+   * renders int64s as decimal **strings**, so this is a string at runtime. Typed to match reality
+   * (like `RecordAttributes.ttl`); parse it (`Number(...)`, `BigInt(...)`) if you need arithmetic.
+   */
+  sizeGibibytes: Schema.optional(Schema.String),
+  /**
+   * Block size in bytes.
+   *
+   * int64 on the wire, and `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — ts-proto
+   * renders int64s as decimal **strings**, so this is a string at runtime. Typed to match reality
+   * (like `RecordAttributes.ttl`); parse it (`Number(...)`, `BigInt(...)`) if you need arithmetic.
+   */
+  blockSizeBytes: Schema.optional(Schema.String),
   sourceImageId: Schema.optional(Ids.ImageId),
   state: Schema.Union([
     Schema.Literal('CREATING'),

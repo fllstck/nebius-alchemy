@@ -33,3 +33,48 @@ QqJq9Z+Q9y49scfUs7ZSmPVOXBTk2pdHXvo8Ex2vtGTIDOtXaAY4zIwSBLMJeY6j
 sI688QaeYs7WH2py42CdJXy3sMbrD5gXKRQMnzYYGuF0AwNwwqrxVcydt0hfmc7V
 0voTAmIdaRbb2EE=
 -----END CERTIFICATE-----`
+
+// ---------------------------------------------------------------------------
+//
+// `RSA_4096_PUBLIC_KEY_A` / `_B` are the ONLY shape `iam/v1 AuthPublicKey` accepts. Measured live
+// 2026-09-22 by probing the neighbours, because the API's errors are opaque:
+//
+// | key | API answer |
+// | RSA-4096 | accepted (this fixture) |
+// | RSA-2048, RSA-3072 | `3 INVALID_ARGUMENT: Key doesn't fits to any supported algorithms:` |
+// | Ed25519, ECDSA P-256, ECDSA P-384 | `3 INVALID_ARGUMENT: Invalid public key data: expected public key in PEM-format` — **misleading**: those ARE valid PEM; the service only parses RSA |
+//
+// Both are public material (no private half), generated with
+// `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 | openssl pkey -pubout`. They are
+// embedded rather than generated per run so fixtures do not pay ~2 s of keygen, and so the sweep and
+// the unit tests exercise real key material — the placeholder PEMs they used before are exactly what
+// hid the algorithm constraint.
+export const RSA_4096_PUBLIC_KEY_A = `-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAudE0/3rHnGfLd5P6X5KZ
+zeWRpYoBMKtIC/vcEdZt1lAsiSz+YBLx/NLOwaiml7af2eddfpuF1+AUY15c3oyX
+zZ1Q4PmVHLrzOYo3VvssC32+GaD7omu4zWguMYjW9LgAA3penSHKIqIaNr7Vy96Z
+DSPd2wATT9HULolWKRJkM1MidWkI7z3WcBaLB7EjTGNPnAPSqgz6iL1OQE2XlYZ4
+NducRiWX2GPbeKQLTAzvL15N5Vh50L8iiJcrczFTNk3Iu7o9JiMAIpgDDrmC24WJ
+tyJoCAfOP3u/tBd0fRB5EitRgSbh0Xu2JoYS7fC7i9ER5ISNFU/8skDQjMF++0py
+D6SrmpcR8St0Pjsd93kh2ol7MxBRAH4HRRHEoJi5lDDPukui6+r0y1u+/kPEbWqn
+d69ocY0/ip+TGiFu7vBr1r7ErkyG2J9DW7gRCgNQgMtMDpdulKgbItckH5hHyPiF
+AYQEuv8APJoQVknEHEbMS6Mg4g+iIls9CX3XFJNMcsfF/LqLr63v6eSd3XrZ64sb
+fZCwY9/xwam1gccqdCFhGzNTK382LFXsGgKfO/k8R4s6Cmwh+YxmYmszpwrFSpWP
+ZxD+xMpMwvEZm3+hrCLJnBIRGgzGRhJbm8FH9e0bG+XAgxsoRCFA0ne8w8yEgdqv
+uFp64jF681jUYRCwkoG9jxsCAwEAAQ==
+-----END PUBLIC KEY-----`
+
+export const RSA_4096_PUBLIC_KEY_B = `-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAzOwO0SXZCWAntee5dGfB
+eqOtKOLCygj56P5Ts/y9Hs7nQUQ3qpmDEUiHFmb6tDO3Aucaw+dnvley8JBKR9RD
+eEz7eiu06ptx/3gZvbFdbZvkKVsOpySPQpJEk+ilc5ThwDZjMQt4nZxWo5wnWB1Q
+92Ncbl9nK33qEMpVuE5JzI5bGHHMIHBesNBKeQ66QoI9Z1MCqPm7tLBTGLD3I7DU
++F04O3K6eKvnm1P2uKUn6UHhLI1ZGx4VMjwNoEZcNwPF6/lDgAiSG/W0AgVCfzGi
+uQQqKL9f/LPCM2LHbOGLeBQPklPRpNqsH8reV1yDKtIwQV/b8mnRWHtsbDH0Eakl
+0/eXXSODSfEnSi1Trn7B7hYOjN8LSMkDEIPPGpooLJib/WEIIMwgNhVVi4ygTvE+
+/BtIXWLlZzCoHINjz3J2xTmUI7yU4nU/LN/6naCk+o6CFVqAFJrToaW1MRvWIjNq
+E9EXN3KxvhvNOAy/QV09WBrleFUOIcK4T6IRSlpnvHJZFbH645cHFiYup3RWeB10
+NDCQCk7Af9iOy5QCK5EN8tvrR2BSdHqVED/M48tkHlm4p451AjvHMFEkKXkdLlHO
+QHPVetRO37FzRWnutSXN/S95Y3rxSlcy+q7zlEbw67KYcMp6+bMcwihJv/pFyf/F
+8TvN4F5IkwpI8c+HQiG8uDUCAwEAAQ==
+-----END PUBLIC KEY-----`
