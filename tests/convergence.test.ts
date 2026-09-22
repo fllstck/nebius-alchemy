@@ -171,7 +171,14 @@ describe('Nebius.dns.v1.Record convergence', () => {
     props: recordProps,
     change: {
       parentId: planned({ parentId: 'zone-2' }, { action: 'replace' }),
-      relativeName: { relativeName: 'api' },
+      // CLOSED DECISION (2026-09-21): a `relativeName` change plans a **replace**. The physical
+      // resource name is derived from it (`${relativeName}-${type}`) and a Nebius name is
+      // immutable, so an in-place write would leave `metadata.name` contradicting the spec, and
+      // — worst case — be ignored by the API, which would drift on every reconcile forever. The
+      // alternative (compare it in the drift list) is only better if the API confirms
+      // `spec.relative_name` is mutable; if that ever happens, move the row to the drift list and
+      // update `record.ts`'s diff in the same change. Pinned by shape so it cannot flip silently.
+      relativeName: planned({ relativeName: 'api' }, { action: 'replace' }),
       type: { type: 'AAAA' },
       ttl: { ttl: 300 },
       data: { data: '10.0.0.2' },
@@ -318,7 +325,7 @@ describe('Nebius.vpc.v1.SecurityRule convergence', () => {
     declared: {
       labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
       direction:
-        'status-derived selector: `SecurityRuleSpec` has no `direction` — the API infers it from which match block is present and returns it in `status.direction`, so it converges *through* the `ingress`/`egress` rows above (see AGENTS.md §Convergence)',
+        'status-derived selector, now made representable: `SecurityRuleSpec` has no `direction` — the API infers it from which match block is present and returns it in `status.direction`, so it converges *through* the `ingress`/`egress` rows above. The schema requires the block the direction selects, so the previously-acceptable "no match block at all" state (which could not express its direction) is now a plan-time error.',
     },
     // Both are provider-defaulted, so omitting them must not look like drift.
     omits: ['priority', 'type'],

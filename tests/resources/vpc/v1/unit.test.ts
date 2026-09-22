@@ -99,7 +99,7 @@ describe('Nebius.vpc.v1.SecurityRule', () => {
   describe('diff', () => {
     test('access change requires replace (immutable)', async () => {
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
-      expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'DENY' }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW' })).toEqual({ action: 'replace' })
+      expect(await runDiff(svc, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'DENY', ingress: {} }, { parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', ingress: {} })).toEqual({ action: 'replace' })
     })
     test('ingress sourceCidrs change requires replace', async () => {
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
@@ -204,30 +204,32 @@ describe('Nebius.vpc.v1.SecurityRule', () => {
       expect(updated[0]!.spec!.ingress).toBeUndefined()
     })
 
-    test('a match-less rule has no wire change to make, so nothing is written', async () => {
-      // With neither `ingress` nor `egress` the spec is identical whatever the
-      // `direction` prop says — the API has nothing to derive a direction from, and
-      // the attributes report the platform's view (`status.direction`), not the prop.
+    test('a match-less rule is rejected at plan time, not silently converged', async () => {
+      // This used to be accepted and converge to nothing: with neither `ingress` nor `egress` the
+      // spec is identical whatever `direction` says, the API has nothing to derive a direction
+      // from, and the attributes report the platform's `status.direction` instead of the prop.
+      // The schema now requires the block the direction selects (see the validation tests).
       const svc = await resolveProvider(SecurityRuleModule.NebiusSecurityRule.Provider, SecurityRuleModule.NebiusSecurityRuleProvider)
       const updated: Array<{ spec?: NebiusSecurityRuleProto.SecurityRuleSpec }> = []
 
-      const attrs = await runReconcile(
+      const error = (await runReconcile(
         svc,
         { parentId: 'securitygroup-abc', direction: 'EGRESS', protocol: 'TCP', access: 'ALLOW' },
         { id: 'securityrule-1' },
         undefined,
         layerFor(liveRule({}, 'INGRESS'), updated),
-      )
+      ).catch((cause: unknown) => cause)) as { _tag?: string; message?: string }
 
+      expect(error._tag).toBe('PropsValidationError')
+      expect(error.message).toContain('requires an `egress` block')
       expect(updated).toHaveLength(0)
-      expect(attrs.direction).toBe('INGRESS')
     })
   })
 
   describe('validation', () => {
     test('accepts valid props', async () => {
       const result = await runEffect(
-        SecurityRuleSchema.validateSecurityRuleProps({ parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', priority: 10 }),
+        SecurityRuleSchema.validateSecurityRuleProps({ parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', priority: 10, ingress: {} }),
       )
       expect(result.access).toBe('ALLOW')
     })
@@ -236,6 +238,26 @@ describe('Nebius.vpc.v1.SecurityRule', () => {
         SecurityRuleSchema.validateSecurityRuleProps({ parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW', egress: {} }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+    })
+
+    // `SecurityRuleSpec` has no `direction` field: the API derives it from the match block and
+    // echoes it in `status.direction`. So a rule with no match block cannot express its declared
+    // direction — before this it was accepted, converged to nothing, and the attributes reported
+    // the platform's own (UNSPECIFIED) value instead of the prop.
+    test('rejects an INGRESS rule with no ingress block', async () => {
+      const result = await runEffect(
+        SecurityRuleSchema.validateSecurityRuleProps({ parentId: 'securitygroup-abc', direction: 'INGRESS', protocol: 'TCP', access: 'ALLOW' }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+      expect(result.message).toContain('requires an `ingress` block')
+    })
+
+    test('rejects an EGRESS rule with no egress block', async () => {
+      const result = await runEffect(
+        SecurityRuleSchema.validateSecurityRuleProps({ parentId: 'securitygroup-abc', direction: 'EGRESS', protocol: 'TCP', access: 'ALLOW' }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+      expect(result.message).toContain('requires an `egress` block')
     })
   })
 

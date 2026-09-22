@@ -82,20 +82,30 @@ Every user-facing prop **MUST** be one of:
   field was already part of `desired`: adding it to the list changes *when* an update fires,
   not the payload, so the API (not us) decides whether it is legal; or
 - planned as a **replace** when the API cannot change it (`preemptible`, `gpuCluster`,
-  a disk's content source, `description`/`expiresAt` on the issue-only `StaticKey`); the
-  plan makes it visible instead of silent; or
-- **declared**: documented as create-time-only, with a comment saying why. `labels` is the
-  one such field today — no update path sends labels, so a labels-only change is a no-op
-  until some other change rewrites the resource; or
+  a disk's content source, `description`/`expiresAt` on the issue-only `StaticKey`,
+  `dns/v1/record.relativeName` — the physical name is derived from it and a Nebius name is
+  immutable, so an in-place write would contradict `metadata.name`, or worse be ignored and drift
+  forever); the plan makes it visible instead of silent; or
+- **declared**: documented as create-time-only, with a comment saying why, **plus the fields that
+  only ever travel on a request** (`invitation.{noSend,expiresInSeconds}` are
+  `CreateInvitationInput` fields). `labels` is the one fleet-wide example: no update path sends
+  labels, so a labels-only change is a no-op until some other change rewrites the resource.
+  *Decision, not impossibility*: `Update*Request.metadata` is the shared `ResourceMetadata`, which
+  does carry `labels`, so converging them is a code change (merge internal + user labels into every
+  update's metadata, 30+ sites) that also changes behaviour — a label removed from config would be
+  deleted in the cloud. Parked in TASKS.md; a `declared` entry must always say which of the two it
+  is, or the table rots into "everything is declared"; or
 - a **selector of a sibling field**: a props-only field that has *no* wire field, because the
   API derives it from which sibling message is present and reports it back through `status`.
   `security-rule.direction` is the one such prop — `SecurityRuleSpec` has no `direction` at
   all (the API infers INGRESS/EGRESS from `ingress` vs `egress` and returns it in
   `status.direction`). It converges **through that sibling**, so it MUST NOT appear in the
   drift list; pin the sibling's plan and the status echo instead
-  (`tests/resources/vpc/v1/unit.test.ts`). A props-vs-provider text audit flags it as
-  "never compared" — a false positive, like the ones recorded in TASKS.md §"What could not
-  be automated".
+  (`tests/resources/vpc/v1/unit.test.ts`). Because a rule with *neither* block cannot express its
+  direction at all, the props schema **requires the block the direction selects** — so the
+  unrepresentable state is a plan-time error rather than a silent no-op. A props-vs-provider text
+  audit flags the prop as "never compared" — a false positive, like the ones recorded in
+  TASKS.md §"What could not be automated".
 
 **Enforced by the convergence sweep** — `tests/convergence.test.ts` (the tables) and
 `tests/convergence-coverage.test.ts`, with the harness in `tests/helpers/convergence.ts`.

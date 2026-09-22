@@ -25,6 +25,26 @@ const securityRuleValid = Schema.makeFilter((rule: Record<string, unknown>) => {
     issues.push({ path: ['ingress'], issue: 'Ingress rules cannot be specified when direction is EGRESS' })
   }
 
+  // …and the declared direction must be *representable*: `SecurityRuleSpec` has no `direction`
+  // field at all — the API derives it from which match block is present and echoes it back in
+  // `status.direction`. A rule with neither block therefore cannot express its direction, so the
+  // attributes would report the platform's own value instead of the prop. Require the block the
+  // direction selects (an empty one is enough — presence is what the API reads).
+  if (rule.direction === 'INGRESS' && rule.ingress === undefined) {
+    issues.push({
+      path: ['ingress'],
+      issue:
+        'direction "INGRESS" requires an `ingress` block: SecurityRuleSpec has no direction field, the API derives it from the match block (see AGENTS.md §Convergence)',
+    })
+  }
+  if (rule.direction === 'EGRESS' && rule.egress === undefined) {
+    issues.push({
+      path: ['egress'],
+      issue:
+        'direction "EGRESS" requires an `egress` block: SecurityRuleSpec has no direction field, the API derives it from the match block (see AGENTS.md §Convergence)',
+    })
+  }
+
   return issues
 })
 
