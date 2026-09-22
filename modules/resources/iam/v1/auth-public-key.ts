@@ -96,7 +96,21 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
       data: news.data,
       ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
     })
-    if (key.spec && !ResourceUtils.specDeepEqual(key.spec, desired)) {
+    // Compare the mutable `description`, plus `expiresAt` only when the user pinned it.
+    //
+    // ⚠️ Live behaviour, probed 2026-09-22: the API does not echo `data` verbatim — it normalizes
+    // the PEM (799 chars sent, 800 echoed), so the previous whole-spec `specDeepEqual` differed on
+    // every read and wrote an update on EVERY reconcile (`resourceVersion` 1 → 2 across a
+    // labels-only reconcile, `Updating Nebius.iam.v1.AuthPublicKey` logged each time).
+    // `data`/`accountId` are immutable and a change to either is planned as a REPLACE by `diff`, so
+    // ignoring them here loses nothing; `expiresAt` stays compared (guarded on the news side) so a
+    // change to it is still written for the API to adjudicate rather than silently dropped.
+    if (
+      key.spec &&
+      ((key.spec.description ?? '') !== (news.description ?? '') ||
+        (news.expiresAt !== undefined &&
+          !ResourceUtils.specDeepEqual(key.spec.expiresAt, desired.expiresAt)))
+    ) {
       yield* session.note(`Updating Nebius.iam.v1.AuthPublicKey (${key.metadata!.name})`)
       key = yield* iam.authPublicKey.update({
         metadata: {

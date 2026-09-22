@@ -165,6 +165,34 @@ contained. The three shapes seen so far, each with its own treatment (all found 
   attributes knowing that `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — status
   wins, and int64s arrive as strings (`FilesystemAttributes.blockSizeBytes` is typed `Finite` but
   is `"4096"`; `RecordAttributes.ttl` models that correctly as a string).
+- **Nested defaults inside an array are materialized too**: `vpc/v1 Pool` answers
+  `cidrs: [{cidr, state: 'AVAILABLE', maxMaskLength: '32'}]` when the props send only `cidr`, so a
+  whole-array `specDeepEqual` re-wrote the pool on every reconcile (live `resourceVersion`
+  2 → 3 → 4). Compare such an array element by element, keeping the news-side guard per element
+  (`cidr` always; `state`/`maxMaskLength` only when pinned). A materialized field that the API
+  *normalizes* rather than fills is the same trap: `iam/v1 AuthPublicKey` echoes the PEM one byte
+  longer than it was sent (799 → 800), so its drift list compares `description` and a pinned
+  `expiresAt` instead of the whole spec.
+
+**The live-echo audit is the oracle for this class** — `tests/resources/live-echo.integration.test.ts`
+with `tests/helpers/live-echo.ts` (`SLOW_TESTS=1`, gated; 8 families / 20 resources, ~2 min): one
+test per family, asserting (a) a create-only deploy wrote exactly once (`metadata.resourceVersion
+=== 1`) and (b) a forced reconcile writes nothing (re-deploy with `labels` added — a props change
+`diff` ignores, so reconcile runs; an identical re-deploy is a `noop` and probes nothing).
+
+⚠️ **Calibrate `resourceVersion` before trusting it** — it is not always a per-resource counter, and
+it is absent entirely for some services (measured 2026-09-22, encoded in the helper's
+`NOT_A_WRITE_COUNTER`):
+
+| type | create-only value | reading |
+| `vpc/v1 {Subnet,RouteTable,SecurityGroup,Route,Pool}`, `compute/v1 {Disk,DiskSnapshot,Filesystem,GpuCluster,Image}`, `storage/v1 Bucket/Transfer` | `1`, increments | per-resource write counter — both assertions apply |
+| `vpc/v1 SecurityRule` | `5`, stable | opaque/platform-side (the platform writes the rule into dataplane state during creation) |
+| `dns/v1 {Zone,Record}` | `~200k`, moving | service-wide sequence — a real write still moves it, so assertion (b) bites |
+| `vpc/v1 Network` | moves while idle | the platform writes `vpcpool-` ids into `spec`; assert the assigned spec survives instead |
+| `iam/**`, `mysterybox/**` | **`0` — absent** | no counter; fall back to a **spec-echo snapshot** (`specSnapshot` + `expectSpecUnchanged`), which cannot see a write that re-sends an identical spec |
+
+A documented entry is required for anything that is not `1` (the helper fails otherwise, quoting the
+evidence needed), so the audit cannot rot into log-only.
 
 **A hand-written `delete` MUST treat `NOT_FOUND` as success**, exactly as `makeCrudDelete` does.
 This is not cosmetic: when a create fails, the leftover state row makes the delete fail, and the
@@ -434,6 +462,13 @@ Some Nebius APIs don't follow the standard CRUD pattern:
 - **GroupMembership**: uses `listMembers` instead of `list`
 - **QuotaAllowance**: lacks stable `id` — use `(parentId, name, region)` as identity tuple
 - **ResourceAdvice**: virtual advisory resource with `id: ""` — list-only, no stable identifier
+- **IAM v1 metadata has no `resourceVersion`** (`0` for every resource type, measured 2026-09-22),
+  so a drift check for IAM cannot use the version as its witness — and `AuthPublicKey` echoes the
+  submitted PEM normalized (one byte longer). `StaticKey`/`AuthPublicKey` also validate an
+  id-valued prop inside `precreate`, so they cannot be created in the same deploy as the service
+  account they reference (`PropsValidationError: Expected string`); the fix pattern is the one
+  `iam/v2 AccessKey` uses — create in `reconcile`, which runs after reference resolution — see
+  TASKS.md §F.
 - **Storage Transfer**: `source.nebius.accessKey` is **required by the API** even though the proto
   marks it optional (without it `Create` answers a bare `3 INVALID_ARGUMENT: Invalid argument` for
   every stop condition) — the props schema requires it, so it fails at plan time instead. The

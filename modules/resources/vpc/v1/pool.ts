@@ -29,11 +29,50 @@ export const toFriendlyAttributes = (raw: NebiusPoolSchema.Pool): PoolSchema.Poo
     resourceSchema: NebiusPoolSchema.Pool,
   })
 
-const specDrifted = (current: NebiusPoolSchema.PoolSpec, desired: NebiusPoolSchema.PoolSpec): boolean =>
+/**
+ * Compare CIDR blocks element by element, because the API materializes per-block defaults the props
+ * may omit: a create with `cidrs: [{ cidr: '10.0.0.0/24' }]` comes back as
+ * `[{ cidr: '10.0.0.0/24', state: 'AVAILABLE', maxMaskLength: '32' }]`.
+ *
+ * The previous whole-array `specDeepEqual` therefore compared the platform's `AVAILABLE`/32 against
+ * the omitted props' `STATE_UNSPECIFIED`/0 and wrote an update on EVERY reconcile — probed live
+ * 2026-09-22: `resourceVersion` climbed 2 → 3 → 4 across two reconciles that should have written
+ * nothing, each logging `Updating Nebius.vpc.v1.Pool`.
+ *
+ * `cidr` is required and always compared; the two optional fields are compared **only when the
+ * user pinned them** (the same news-side guard as `subnet.routeTableId`): omitting them means
+ * "leave whatever the platform has", which is what the convergence contract requires.
+ */
+const cidrsDrifted = (
+  current: ReadonlyArray<NebiusPoolSchema.PoolCidr>,
+  desired: ReadonlyArray<NebiusPoolSchema.PoolCidr>,
+  props: PoolSchema.PoolProps['cidrs'],
+): boolean => {
+  if (current.length !== desired.length) return true
+  return current.some((live, index) => {
+    const want = desired[index]
+    if (want === undefined) return true
+    if (live.cidr !== want.cidr) return true
+    const prop = props[index]
+    if (prop?.state !== undefined && live.state !== want.state) return true
+    if (
+      prop?.maxMaskLength !== undefined &&
+      !ResourceUtils.specDeepEqual(live.maxMaskLength, want.maxMaskLength)
+    )
+      return true
+    return false
+  })
+}
+
+const specDrifted = (
+  current: NebiusPoolSchema.PoolSpec,
+  desired: NebiusPoolSchema.PoolSpec,
+  props: PoolSchema.PoolProps,
+): boolean =>
   current.sourcePoolId !== desired.sourcePoolId ||
   current.version !== desired.version ||
   current.visibility !== desired.visibility ||
-  !ResourceUtils.specDeepEqual(current.cidrs, desired.cidrs)
+  cidrsDrifted(current.cidrs, desired.cidrs, props.cidrs)
 
 // ----- PROVIDER
 
@@ -75,7 +114,7 @@ export const NebiusPoolProvider: Layer.Layer<
     }
 
     const desired = NebiusPoolSchema.PoolSpec.fromJSON(news)
-    if (pool.spec && specDrifted(pool.spec, desired)) {
+    if (pool.spec && specDrifted(pool.spec, desired, news)) {
       yield* session.note(`Updating Nebius.vpc.v1.Pool (${pool.metadata!.name})`)
       pool = yield* vpcGrpcService.pool.update({
         metadata: { id: pool.metadata!.id, resourceVersion: pool.metadata!.resourceVersion.toString() },

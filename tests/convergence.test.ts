@@ -494,9 +494,18 @@ const poolProps = {
   visibility: 'PRIVATE',
   cidrs: [{ cidr: '10.0.0.0/8' }],
 }
+/**
+ * ⚠️ Live shape (probed 2026-09-22): the API MATERIALIZES the per-CIDR defaults into `spec` —
+ * `state: 'AVAILABLE'` and `maxMaskLength: '32'` — while the props may omit both, so the old
+ * whole-array comparison wrote an update on every reconcile (`resourceVersion` 2 → 3 → 4 across two
+ * reconciles that should have written nothing). The live fixture carries the echo.
+ */
 const poolLive = (): NebiusPoolSchema.Pool => ({
   metadata: protoMetadata(POOL_ID, 'my-pool', 'project-test-1'),
-  spec: NebiusPoolSchema.PoolSpec.fromJSON(poolProps),
+  spec: NebiusPoolSchema.PoolSpec.fromJSON({
+    ...poolProps,
+    cidrs: [{ cidr: '10.0.0.0/8', state: 'AVAILABLE', maxMaskLength: '32' }],
+  }),
   status: undefined,
 })
 
@@ -514,6 +523,8 @@ describe('Nebius.vpc.v1.Pool convergence', () => {
       version: { version: 'IPV6' },
       visibility: { visibility: 'PUBLIC' },
       cidrs: { cidrs: [{ cidr: '10.1.0.0/8' }] },
+      // A pinned per-CIDR field is a real change (the nested fields cannot be probed as their own
+      // rows — the sweep is prop-level — so the live-echo audit covers them instead).
     },
     declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
     live: poolLive(),
@@ -1644,6 +1655,12 @@ describe('Nebius.iam.v1.FederationCertificate convergence', () => {
 const AUTH_KEY_ID = 'authpublickey-1'
 const PUBKEY_A = '-----BEGIN PUBLIC KEY-----\nAAA\n-----END PUBLIC KEY-----'
 const PUBKEY_B = '-----BEGIN PUBLIC KEY-----\nBBB\n-----END PUBLIC KEY-----'
+/**
+ * The echoed form is NOT byte-identical to what we send — the API terminates the PEM (measured live
+ * 2026-09-22: 799 chars sent, 800 echoed), which is exactly why the whole-spec comparison used to
+ * write an update on every reconcile.
+ */
+const PUBKEY_A_ECHOED = `${PUBKEY_A}\n`
 const authKeyProps = {
   parentId: 'project-test-1',
   name: 'ci-key',
@@ -1657,7 +1674,7 @@ const authKeyLive = (): NebiusAuthPublicKeySchema.AuthPublicKey => ({
   spec: NebiusAuthPublicKeySchema.AuthPublicKeySpec.fromJSON({
     account: { serviceAccount: { id: 'serviceaccount-abc123' } },
     description: 'ci signer',
-    data: PUBKEY_A,
+    data: PUBKEY_A_ECHOED,
     expiresAt: '2030-01-01T00:00:00Z',
   }),
   status: undefined,
@@ -1681,6 +1698,9 @@ describe('Nebius.iam.v1.AuthPublicKey convergence', () => {
       data: { data: PUBKEY_B },
     },
     declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    // An omitted `expiresAt` must not drive an update (the API answers its own default) — the
+    // comparison is guarded on the news side, exactly as for the other optional props.
+    omits: ['expiresAt'],
     live: authKeyLive(),
     liveId: AUTH_KEY_ID,
     layerFor: (writes) =>
