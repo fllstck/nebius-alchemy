@@ -1,7 +1,8 @@
 /**
- * `configureWith` / `configure` / `login` — the three provider methods behind alchemy's
- * `profile` commands (`create`, `edit --reconfigure`, `refresh`, `delete`), i.e. everything a
- * user does to set up or renew Nebius credentials.
+ * The provider methods behind alchemy's `profile` commands — `configure`/`configureWith`
+ * (`create`, `edit --reconfigure`), `login` (`refresh`), `logout` (`delete`) and `details`
+ * (`show`), plus the CI-only `readEnvironment`. In other words: everything a user does to set up
+ * or renew Nebius credentials, and everything CI resolves them with.
  *
  * Neither method had any coverage before this file: the interactive paths need `Interaction`
  * (prompt answers) and the credential writes need an isolated home, and the existing
@@ -33,7 +34,13 @@ import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
 import type { PlatformError } from 'effect/PlatformError'
 import * as PlatformNode from '@effect/platform-node'
-import { AuthError, AuthProviders, getAuthProvider } from 'alchemy/Auth/AuthProvider'
+import {
+  AuthError,
+  AuthProviders,
+  getAuthProvider,
+  NeedsReauth,
+  type ProviderDetails,
+} from 'alchemy/Auth/AuthProvider'
 import * as AlchemyCredentials from 'alchemy/Auth/Credentials'
 import * as AlchemyProfile from 'alchemy/Auth/Profile'
 import { Interaction } from 'alchemy/Interaction'
@@ -118,13 +125,23 @@ const scriptedInteraction = (script: Script) => {
   const prompts: Array<RecordedPrompt> = []
   const notes: Array<{ kind: string; message: string }> = []
 
-  const answer = <T>(kind: string, message: string, queue: Array<T> | undefined, extra?: object): Effect.Effect<T> => {
+  const answer = <T>(
+    kind: string,
+    message: string,
+    queue: Array<T> | undefined,
+    extra?: object,
+    validate?: (value: T) => string | undefined,
+  ): Effect.Effect<T> => {
     prompts.push({ kind, message, ...extra })
     const next = queue?.shift()
     // A defect (not a typed failure): an unscripted prompt means the flow changed.
-    return next === undefined
-      ? Effect.die(new Error(`unscripted ${kind} prompt: ${message}`))
-      : Effect.succeed(next)
+    if (next === undefined) return Effect.die(new Error(`unscripted ${kind} prompt: ${message}`))
+    // The real terminal re-prompts until a prompt's own validator is happy, so an answer the
+    // flow would reject (an empty API key) must not sail through here either.
+    const issue = validate?.(next)
+    return issue === undefined
+      ? Effect.succeed(next)
+      : Effect.die(new Error(`${kind} prompt rejected the answer: ${issue}`))
   }
   const note = (kind: string) => (message: string | { message: string }) =>
     Effect.sync(() => {
@@ -144,8 +161,10 @@ const scriptedInteraction = (script: Script) => {
           optionValues: options.options.map((option) => option.value),
           initialValue: options.initialValue,
         }),
-      password: (options: { message: string }) => answer('password', options.message, script.password),
-      text: (options: { message: string }) => answer('text', options.message, script.text),
+      password: (options: { message: string; validate?: (value: string) => string | undefined }) =>
+        answer('password', options.message, script.password, undefined, options.validate),
+      text: (options: { message: string; validate?: (value: string) => string | undefined }) =>
+        answer('text', options.message, script.text, undefined, options.validate),
       confirm: (options: { message: string }) => answer('confirm', options.message, script.confirm),
       multiSelect: (options: { message: string }) => answer('multiSelect', options.message, undefined),
       awaitExternal: (options: { message: string }) => answer('awaitExternal', options.message, undefined),
@@ -171,7 +190,7 @@ const SETUP_SA_KEY = {
   privateKey: '-----BEGIN PRIVATE KEY-----\nBOOTSTRAPPED\n-----END PRIVATE KEY-----',
 }
 
-const makeFakes = (options: { mintFails?: boolean } = {}) => {
+const makeFakes = (options: { mintFails?: boolean; projectDetailsFail?: boolean } = {}) => {
   const minted: Array<SaToken.SaKey> = []
   const bootstrapped: Array<string> = []
   return {
@@ -192,7 +211,10 @@ const makeFakes = (options: { mintFails?: boolean } = {}) => {
           bootstrapped.push(Redacted.value(token))
           return SETUP_SA_KEY
         }),
-      getProjectDetails: () => Effect.succeed({ name: 'Test Project', tenantId: 'tenant-from-bootstrap' }),
+      getProjectDetails: () =>
+        options.projectDetailsFail === true
+          ? Effect.fail(new SaBootstrap.SaBootstrapError({ message: 'project lookup denied' }))
+          : Effect.succeed({ name: 'Test Project', tenantId: 'tenant-from-bootstrap' }),
       deactivateKey: () => Effect.succeed(undefined),
     }),
   }
@@ -213,14 +235,17 @@ interface RunOptions {
   readonly script?: Script
   /** Make the token minter fail, for the error-mapping assertions. */
   readonly mintFails?: boolean
+  /** Make the bootstrap's friendly project lookup fail, for its error mapping. */
+  readonly projectDetailsFail?: boolean
 }
 
 /**
- * `configure`/`configureWith` admit `PlatformError` as well as `AuthError` (the credential write
- * chmods the file and the provider contract does not narrow that), so the flows' error channel is
- * the union. The assertions still check the `_tag` they expect.
+ * The flows' error channel as the contract declares it: `AuthError` for the interactive methods,
+ * `NeedsReauth` for `details` (stale credentials), and `PlatformError` where the credential write
+ * chmods a file and the contract does not narrow that. The assertions still check the `_tag` they
+ * expect.
  */
-type FlowError = AuthError | PlatformError
+type FlowError = AuthError | NeedsReauth | PlatformError
 
 /**
  * The three contract methods this file drives, with the optionality the `AuthProviderImpl`
@@ -234,24 +259,25 @@ interface AuthFlows {
     input: { readonly method: string; readonly values: Record<string, string> },
   ) => Effect.Effect<NebiusAuthConfig, FlowError, Interaction>
   readonly login: (profile: string, config: NebiusAuthConfig) => Effect.Effect<void, FlowError, Interaction>
+  readonly logout: (profile: string, config: NebiusAuthConfig) => Effect.Effect<void, FlowError, Interaction>
+  readonly details: (profile: string, config: NebiusAuthConfig) => Effect.Effect<ProviderDetails, FlowError, Interaction>
+  /** The CI contract: env only, no profile, no prompts (`R = never`). */
+  readonly readEnvironment: Effect.Effect<NebiusResolvedCredentials, FlowError>
 }
 
-/** `configureWith` is optional in the contract; the flows below require it. */
-const required = <T>(method: T | undefined, name: string): T => {
-  if (method === undefined) throw new Error(`the Nebius auth provider does not implement ${name}`)
-  return method
-}
+// `configureWith` is optional in the `AuthProviderImpl` contract, so the façade below checks it
+// is implemented before calling it (loudly, rather than silently skipping the flow).
 
 /**
  * Run `body` with a Nebius auth provider built over the temp home, the scripted interaction and
  * the recording fakes. The result is an `Effect.result`, so a caller can assert either arm.
  */
 const runFlow = async <A>(
-  { env = {}, script = {}, mintFails = false }: RunOptions,
+  { env = {}, script = {}, mintFails = false, projectDetailsFail = false }: RunOptions,
   body: (auth: AuthFlows) => Effect.Effect<A, FlowError, Interaction>,
 ) => {
   const interaction = scriptedInteraction(script)
-  const fakes = makeFakes({ mintFails })
+  const fakes = makeFakes({ mintFails, projectDetailsFail })
 
   const layer = Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
     Layer.provide(AlchemyCredentials.CredentialsStoreLive.pipe(Layer.provide(PlatformNode.NodeServices.layer))),
@@ -272,13 +298,20 @@ const runFlow = async <A>(
       const auth = yield* getAuthProvider<NebiusAuthConfig, NebiusResolvedCredentials>(
         NEBIUS_AUTH_PROVIDER_NAME,
       )
-      // Arrow wrappers, not bare method references: the linter bans unbound methods, and these
-      // closures never use `this` anyway.
-      const configureWith = required(auth.configureWith, 'configureWith')
+      // Arrow wrappers that *invoke* the methods (not bare references — the linter bans unbound
+      // methods, and these closures never use `this` anyway).
       return yield* body({
         configure: (profile, current) => auth.configure(profile, current),
-        configureWith: (profile, input) => configureWith(profile, input),
+        configureWith: (profile, input) => {
+          if (auth.configureWith === undefined) {
+            return Effect.die(new Error('the Nebius auth provider does not implement configureWith'))
+          }
+          return auth.configureWith(profile, input)
+        },
         login: (profile, config) => auth.login(profile, config),
+        logout: (profile, config) => auth.logout(profile, config),
+        details: (profile, config) => auth.details(profile, config),
+        readEnvironment: auth.readEnvironment ?? Effect.die(new Error('no readEnvironment')),
       })
     }).pipe(Effect.provide(layer), Effect.result).pipe(Effect.orDie),
   )
@@ -475,6 +508,12 @@ describe('login', () => {
       'text: Service account name',
       'select: Grant the SA a role on project Test Project (project-1)?',
     ])
+    // No OAuth login is stored here, so the only source offered is the pasted API key — the
+    // "recommended" OAuth option appears only when a still-valid token exists (next test).
+    expect(interaction.prompts[0]?.optionValues).toEqual(['apiKey'])
+    // The bootstrap ends by printing the CI variable names, which is the whole point of storing a
+    // key you can also paste into CI.
+    expect(interaction.notes.map((n) => n.message)).toContain('  NEBIUS_SA_KEY_ID=publickey-bootstrapped')
     expect(fakes.bootstrapped).toEqual(['one-time-bootstrap-key'])
     expect(fakes.minted).toHaveLength(1)
     expect(interaction.notes).toContainEqual({ kind: 'success', message: 'Nebius: service-account key available.' })
@@ -608,5 +647,223 @@ describe('configure', () => {
       keyId: 'publickey-bootstrapped',
       projectId: 'project-new',
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Bootstrap branches, `details`, `logout`, and the CI path
+// ---------------------------------------------------------------------------
+
+describe('bootstrap branches', () => {
+  test('without NEBIUS_PROJECT_ID it refuses before prompting at all', async () => {
+    const profile = newProfile()
+    const { result, interaction } = await runFlow({ script: { select: ['sa-key'] } }, (auth) =>
+      auth.configure(profile, undefined),
+    )
+
+    expect(result._tag).toBe('Failure')
+    if (result._tag === 'Failure') {
+      // The sa-key arm wraps the cause, so the actionable text is nested inside its headline.
+      expect(result.failure.message).toContain(
+        'Nebius service-account key not usable: Set NEBIUS_PROJECT_ID to bootstrap a service account.',
+      )
+    }
+    // The check runs *before* the second prompt, so the user is not walked through choices that
+    // cannot work (and nothing is written).
+    expect(interaction.asked()).toEqual(['select: Nebius authentication method'])
+    expect(credentialFileExists(profile, SA_KEY_KEY)).toBe(false)
+  })
+
+  test('a stored OAuth token is offered as the bootstrap credential source', async () => {
+    const profile = newProfile()
+    writeCredentialFixture(profile, OAUTH_KEY, {
+      type: 'oauth',
+      accessToken: 'stored-access-token',
+      expiresAt: Date.now() + 60_000,
+      tenantId: 'tenant-1',
+      projectId: 'project-1',
+    })
+
+    const { interaction, fakes } = await runOk(
+      {
+        env: { NEBIUS_PROJECT_ID: 'project-1' },
+        script: { select: ['oauth', 'editor'], text: ['my-sa'] },
+      },
+      (auth) => auth.login(profile, { method: 'sa-key' }),
+    )
+
+    // The bootstrap-source select offers OAuth *first* when a valid token is stored, so the
+    // recommended path is one Enter away — and the chosen source is the stored access token.
+    expect(interaction.prompts[0]?.message).toBe('Create the service account using')
+    expect(interaction.prompts[0]?.optionValues).toEqual(['oauth', 'apiKey'])
+    expect(fakes.bootstrapped).toEqual(['stored-access-token'])
+  })
+
+  test('an unreadable NEBIUS_SA_PRIVATE_KEY_FILE names the path and the cause', async () => {
+    const profile = newProfile()
+    const error = await runFailing(
+      { env: { ...SA_KEY_ENV, NEBIUS_SA_PRIVATE_KEY: '', NEBIUS_SA_PRIVATE_KEY_FILE: '/nonexistent/key.pem' } },
+      (auth) => auth.configureWith(profile, { method: 'sa-key', values: {} }),
+    )
+
+    expect(error.message).toContain('Could not read private key file /nonexistent/key.pem')
+    // ENOENT vs EACCES need different fixes, so the cause must survive into the message.
+    expect(error.message).toContain('ENOENT')
+  })
+
+  test('a mint failure while configuring sa-key is wrapped as "not usable"', async () => {
+    const profile = newProfile()
+    const error = await runFailing({ env: SA_KEY_ENV, mintFails: true, script: { select: ['sa-key'] } }, (auth) =>
+      auth.configure(profile, { method: 'sa-key' }),
+    )
+
+    expect(error.message).toContain('Nebius service-account key not usable')
+    expect(error.message).toContain('mint rejected by the token service')
+  })
+})
+
+describe('details (`alchemy profile show`)', () => {
+  test('reports the env API key redacted, with its source', async () => {
+    const profile = newProfile()
+    const { result } = await runOk({ env: { NEBIUS_API_KEY: 'key-abcdefghijkl' } }, (auth) =>
+      auth.details(profile, { method: 'env' }),
+    )
+
+    const lines = Object.fromEntries(result.lines.map((line) => [line.key, line.value]))
+    // Redacted to a 7-character prefix plus `****` — the whole point of `displayRedacted`, so
+    // `profile show` never prints a usable key.
+    expect(lines.apiKey).toBe('key-abc****')
+    expect(lines.source).toBe('env')
+  })
+
+  test('a key shorter than the visible prefix is fully hidden', async () => {
+    const profile = newProfile()
+    const { result } = await runOk({ env: { NEBIUS_API_KEY: 'short' } }, (auth) =>
+      auth.details(profile, { method: 'env' }),
+    )
+
+    const lines = Object.fromEntries(result.lines.map((line) => [line.key, line.value]))
+    expect(lines.apiKey).toBe('****')
+  })
+
+  test('names the service account when the source carries a detail', async () => {
+    const profile = newProfile()
+    const { result } = await runOk({ env: SA_KEY_ENV }, (auth) => auth.details(profile, { method: 'sa-key' }))
+
+    const lines = Object.fromEntries(result.lines.map((line) => [line.key, line.value]))
+    expect(lines.source).toBe('sa-key - serviceaccount-from-env')
+  })
+})
+
+describe('logout', () => {
+  test('oauth: removes the stored token document', async () => {
+    const profile = newProfile()
+    writeCredentialFixture(profile, OAUTH_KEY, {
+      type: 'oauth',
+      accessToken: 'token',
+      expiresAt: Date.now() + 60_000,
+      tenantId: 'tenant-1',
+      projectId: 'project-1',
+    })
+
+    const { interaction } = await runOk({}, (auth) => auth.logout(profile, { method: 'oauth' }))
+
+    expect(credentialFileExists(profile, OAUTH_KEY)).toBe(false)
+    expect(interaction.notes).toContainEqual({ kind: 'success', message: 'Nebius: OAuth credentials removed.' })
+  })
+
+  test('stored: removes the API key document', async () => {
+    const profile = newProfile()
+    writeCredentialFixture(profile, STORED_KEY, { type: 'apiKey', apiKey: 'key' })
+
+    const { interaction } = await runOk({}, (auth) => auth.logout(profile, { method: 'stored' }))
+
+    expect(credentialFileExists(profile, STORED_KEY)).toBe(false)
+    expect(interaction.notes).toContainEqual({ kind: 'success', message: 'Nebius: stored credentials removed' })
+  })
+})
+
+describe('readEnvironment (the CI path)', () => {
+  test('a static API key is used directly', async () => {
+    const { result } = await runOk({ env: { NEBIUS_API_KEY: 'ci-key' } }, (auth) => auth.readEnvironment)
+
+    expect(Redacted.value(result.apiKey)).toBe('ci-key')
+    expect(result.source).toEqual({ type: 'env' })
+  })
+
+  test('the service-account group mints a token, naming the SA in the source', async () => {
+    const { result, fakes } = await runOk({ env: SA_KEY_ENV }, (auth) => auth.readEnvironment)
+
+    expect(Redacted.value(result.apiKey)).toBe('minted-test-token')
+    expect(result.source).toEqual({ type: 'sa-key', details: 'serviceaccount-from-env' })
+    expect(fakes.minted).toHaveLength(1)
+  })
+
+  test('an incomplete group is named in the failure, with nothing to resolve', async () => {
+    const error = await runFailing({ env: { NEBIUS_SA_ID: 'serviceaccount-only' } }, (auth) => auth.readEnvironment)
+
+    expect(error.message).toContain('Nebius CI credentials not found')
+    expect(error.message).toContain('The service-account group is incomplete')
+    expect(error.message).toContain('NEBIUS_SA_ID')
+  })
+
+  test('with nothing set it explains both CI options', async () => {
+    const error = await runFailing({}, (auth) => auth.readEnvironment)
+
+    expect(error.message).toContain('Set NEBIUS_API_KEY, or NEBIUS_SA_ID + NEBIUS_SA_KEY_ID')
+    // No half-set group to name here.
+    expect(error.message).not.toContain('incomplete')
+  })
+})
+
+describe('bootstrap error mapping and file input', () => {
+  test('an empty answer to a prompt is rejected by the prompt validator', async () => {
+    const profile = newProfile()
+
+    // The scripted interaction runs the flow's own `validate` and dies on a rejected answer (a
+    // defect, since the real terminal would simply re-prompt), so an empty API key must throw
+    // rather than be persisted. Captured by hand: bun's `expect(...).rejects` is not seen as a
+    // thenable by the linter.
+    const outcome = await runFlow({ script: { password: [''] } }, (auth) =>
+      auth.login(profile, { method: 'stored' }),
+    ).then(
+      () => 'resolved',
+      (error: unknown) => String(error),
+    )
+
+    expect(outcome).toContain('password prompt rejected the answer: Required')
+    expect(credentialFileExists(profile, STORED_KEY)).toBe(false)
+  })
+
+  test('a failing project lookup is wrapped as an AuthError naming the cause', async () => {
+    const profile = newProfile()
+    const error = await runFailing(
+      {
+        env: { NEBIUS_PROJECT_ID: 'project-1' },
+        projectDetailsFail: true,
+        script: { select: ['apiKey', 'editor'], password: ['key'], text: ['my-sa'] },
+      },
+      (auth) => auth.login(profile, { method: 'sa-key' }),
+    )
+
+    expect(error.message).toContain('login failed')
+    expect((error.cause as { message?: string }).message).toBe('project lookup denied')
+  })
+
+  test('the private key file is read as text, and reaches the minter unchanged', async () => {
+    const profile = newProfile()
+    const pem = '-----BEGIN PRIVATE KEY-----\nFROM-FILE\n-----END PRIVATE KEY-----\n'
+    const keyFile = join(HOME, 'sa-key.pem')
+    writeFileSync(keyFile, pem)
+
+    const { fakes } = await runOk(
+      { env: { ...SA_KEY_ENV, NEBIUS_SA_PRIVATE_KEY: '', NEBIUS_SA_PRIVATE_KEY_FILE: keyFile } },
+      (auth) => auth.configureWith(profile, { method: 'sa-key', values: {} }),
+    )
+
+    // Encoding matters: read as a Buffer the PEM would reach the JWT signer as bytes, and the
+    // trailing newline must survive too.
+    expect(typeof fakes.minted[0]?.privateKey).toBe('string')
+    expect(fakes.minted[0]?.privateKey).toBe(pem)
   })
 })
