@@ -51,6 +51,59 @@ const toFriendlyAttributes = (
   return { ...base, serviceAccountId }
 }
 
+interface CreateInput {
+  id: string
+  news: StaticKeySchema.StaticKeyProps
+  session: { note(message: string): Effect.Effect<void> }
+}
+
+/**
+ * Issue the key and capture the one-time token (the create path).
+ *
+ * ⚠️ This runs in `reconcile`, NOT in a `precreate`. `precreate` receives **raw props** — it runs
+ * before `waitForDeps` + `Output.evaluate` resolve references — so a static key declared in the same
+ * deploy as its service account failed with
+ * `PropsValidationError: Expected string at ["serviceAccountId"]`, and the half-written state row it
+ * left behind then blocked the entire destroy plan (`Skipping delete — blocked by failed delete of …`).
+ * `reconcile` runs after references are resolved, and the one-time capture works identically there
+ * (the token rides on the `Issue` response). Same reasoning and shape as `iam/v2 AccessKey`, whose
+ * binding `hostIdentity` chain depends on it. See TASKS.md §F.
+ *
+ * `@__PURE__` + `Effect.fn`: the annotation keeps this deploy-only helper droppable from runtime
+ * bundles (see TASKS.md §D8).
+ */
+const create = /* @__PURE__ */ Effect.fn('Nebius.iam.v1.StaticKey.create')(function* ({
+  id,
+  news,
+  session,
+}: CreateInput) {
+  news = yield* StaticKeySchema.validateStaticKeyProps(news)
+
+  const iamGrpcService = yield* IamGrpc.IamGrpcService
+  const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
+
+  // Auto-generate name: `sk-<logicalId>` — deterministic, so a replacement generation reuses it and
+  // the diff must plan delete-first (see `diff` below).
+  const name = `sk-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
+
+  yield* session.note(`Issuing static key for service account (${news.serviceAccountId})`)
+  const result = yield* iamGrpcService.staticKey.issue({
+    metadata: {
+      parentId,
+      name,
+    },
+    spec: NebiusStaticKeySchema.StaticKeySpec.fromJSON({
+      account: NebiusAccessSchema.Account.fromPartial({
+        serviceAccount: { id: news.serviceAccountId },
+      }),
+      service: news.service || 'OBSERVABILITY',
+      ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
+    }),
+  })
+
+  return toFriendlyAttributes(result.key, result.token)
+})
+
 // ----- PROVIDER
 
 /** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
@@ -67,44 +120,12 @@ export const NebiusStaticKeyProvider: Layer.Layer<
   // SA must outlive every key: nuke deletes static keys before their SA.
   nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
 
-  // precreate issues the key and captures the one-time token in output.
-  // This ensures the token is always available for downstream consumers.
-  precreate: Effect.fn('Nebius.iam.v1.StaticKey.precreate')(function* ({ id, news, session }) {
-    news = yield* StaticKeySchema.validateStaticKeyProps(news)
-
-    const iamGrpcService = yield* IamGrpc.IamGrpcService
-    const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
-
-    // Auto-generate name
-    const name = `sk-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
-
-    yield* session.note(`Issuing static key for service account (${news.serviceAccountId})`)
-    const result = yield* iamGrpcService.staticKey.issue({
-      metadata: {
-        parentId,
-        name,
-      },
-      spec: NebiusStaticKeySchema.StaticKeySpec.fromJSON({
-        account: NebiusAccessSchema.Account.fromPartial({
-          serviceAccount: { id: news.serviceAccountId },
-        }),
-        service: news.service || 'OBSERVABILITY',
-        ...(news.expiresAt ? { expiresAt: news.expiresAt } : {}),
-      }),
-    })
-
-    return toFriendlyAttributes(result.key, result.token)
-  }),
-
-  reconcile: Effect.fn('Nebius.iam.v1.StaticKey.reconcile')(function* ({ output, session }) {
-    // Static keys are immutable — they can't be updated via the API.
-    // precreate always runs before reconcile for greenfield deployments,
-    // so output should always be populated. If it's not, something went wrong.
+  reconcile: Effect.fn('Nebius.iam.v1.StaticKey.reconcile')(function* ({ id, news, output, session }) {
+    // Static keys are immutable — there is no Update RPC. Creation happens HERE (in reconcile), not
+    // in a `precreate`, so a key declared in the same deploy as its service account works — see
+    // `create` above for the failure mode that shaped this.
     if (!output) {
-      return yield* Effect.die(
-        `Nebius.iam.v1.StaticKey.reconcile: output is undefined. ` +
-          `Static keys must be created via precreate.`,
-      )
+      return yield* create({ id, news, session })
     }
 
     const iamGrpcService = yield* IamGrpc.IamGrpcService
@@ -116,8 +137,9 @@ export const NebiusStaticKeyProvider: Layer.Layer<
 
     if (!key) {
       return yield* Effect.die(
-        `Nebius.iam.v1.StaticKey.reconcile: key ${output.id} disappeared after precreate. ` +
-          `Static keys cannot be re-issued (token is lost). Replace the resource to get a new key.`,
+        `Nebius.iam.v1.StaticKey.reconcile: key ${output.id} disappeared. ` +
+          `Static keys cannot be re-issued — the token is only returned by Issue and is lost — so ` +
+          `replace the resource to get a new key.`,
       )
     }
 

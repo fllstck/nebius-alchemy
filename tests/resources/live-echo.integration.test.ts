@@ -302,40 +302,37 @@ T+U9zxgs4/Aw3fafqqaenNMCAwEAAQ==
 const EDITORS_GROUP_ID = 'group-e00ee03sdm7ht85b9m'
 
 /**
- * Stage 1 — the service account ALONE, so its id is a concrete value for stage 2.
- *
- * `iam/v1/{StaticKey,AuthPublicKey}` validate their id-valued prop inside **`precreate`**, which
- * alchemy runs BEFORE reference resolution, so passing an in-effect resource instance
- * (`sa.id` from the same deploy) fails with `PropsValidationError: Expected string` at plan time —
- * the trap AGENTS.md §"precreate lifecycle for dependency-breaking" documents, whose robust fix
- * (create in `reconcile`) was applied to `iam/v2.AccessKey` but not to these two. Recording it as
- * a TASKS.md follow-up rather than papering over it here: the audit needs these resources probed.
+ * The whole IAM family in ONE deploy, with the service account created in the SAME deploy and
+ * referenced through its in-effect instance (`sa.id`). That is the shape that used to fail: both
+ * `StaticKey` and `AuthPublicKey` validated an id-valued prop inside `precreate`, which runs before
+ * reference resolution, so the create died with `PropsValidationError: Expected string at
+ * ["serviceAccountId"]` and the half-written state row blocked the destroy. `StaticKey` now creates
+ * in `reconcile` (TASKS.md §F), and this test is the live pin for it.
  */
-const declareIamServiceAccount = () =>
-  Nebius.iam.ServiceAccount('EchoSA', { description: 'live-echo service account' })
-
-const declareIamFamily = (serviceAccountId: string, labels: Record<string, string> | undefined) =>
+const declareIamFamily = (labels: Record<string, string> | undefined) =>
   Effect.gen(function* () {
-    // Re-declared so the stage-2 re-plan does not DELETE the account (partial re-deploys delete).
-    const sa = yield* Nebius.iam.ServiceAccount('EchoSA', { description: 'live-echo service account' })
+    const sa = yield* Nebius.iam.ServiceAccount('EchoSA', {
+      description: 'live-echo service account',
+      ...withLabels(labels),
+    })
     const group = yield* Nebius.iam.Group('EchoGroup', { ...withLabels(labels) })
     const membership = yield* Nebius.iam.GroupMembership('EchoMembership', {
       parentId: EDITORS_GROUP_ID as never,
-      memberId: serviceAccountId as never,
+      memberId: sa.id,
       ...withLabels(labels),
     })
     const accessKey = yield* Nebius.iam.AccessKey('EchoAccessKey', {
-      serviceAccountId: serviceAccountId as never,
+      serviceAccountId: sa.id,
       secretDeliveryMode: 'INLINE',
     })
     const authPublicKey = yield* Nebius.iam.AuthPublicKey('EchoAuthKey', {
-      accountId: serviceAccountId as never,
+      accountId: sa.id,
       data: LIVE_PUBLIC_KEY,
       description: 'live-echo auth key',
       ...withLabels(labels),
     })
     const staticKey = yield* Nebius.iam.StaticKey('EchoStaticKey', {
-      serviceAccountId: serviceAccountId as never,
+      serviceAccountId: sa.id,
       service: 'OBSERVABILITY',
     })
     return { sa, group, membership, accessKey, authPublicKey, staticKey }
@@ -348,8 +345,7 @@ integrationTest(
     Effect.gen(function* () {
       const iam = yield* IamGrpc.IamGrpcService
 
-      const stage1 = yield* stack.deploy(declareIamServiceAccount())
-      const created = yield* stack.deploy(declareIamFamily(stage1.id, undefined))
+      const created = yield* stack.deploy(declareIamFamily(undefined))
 
       // `AccessKey` (v2) and `StaticKey` have no `labels` and no harmless prop change, so they carry
       // the create-only assertion only (`AccessKey` replaces on any spec change; the issue-only
@@ -370,7 +366,7 @@ integrationTest(
       const snapshots = new Map<string, string>()
       for (const target of targets) snapshots.set(target.label, yield* specSnapshot(target.get))
 
-      yield* stack.deploy(declareIamFamily(stage1.id, FORCE))
+      yield* stack.deploy(declareIamFamily(FORCE))
 
       const forceable = new Set([
         'iam/v1 ServiceAccount',

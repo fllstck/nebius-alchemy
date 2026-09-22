@@ -443,6 +443,15 @@ nebius storage bucket list
 
 - `precreate` runs BEFORE reconcile for greenfield deployments; its output becomes the initial `output` for reconcile
 - When `precreate` is set, reconcile NEVER creates the resource — it dies with a clear error if `output` is undefined
+- **`precreate` receives RAW props — references are NOT resolved yet** (`waitForDeps` + `Output.evaluate`
+  run only before `reconcile`). So a `precreate` that derisks an id-valued prop fails whenever the
+  resource is declared in the same deploy as the thing it references: `StaticKey` answered
+  `PropsValidationError: Expected string at ["serviceAccountId"]`, and the half-written state row it
+  left blocked the entire destroy plan (`Skipping delete — blocked by failed delete of …`), leaking
+  the parents. **Create in `reconcile`, not in `precreate`** — reconcile runs after references
+  resolve, and even a one-time secret survives there (it rides on the create/issue response, as
+  `iam/v2 AccessKey` and now `iam/v1 StaticKey` both do). Keep `precreate` only for a resource that
+  must exist *before* its siblings are planned and whose props carry no foreign id.
 - Ownership tagging uses `createInternalTags` / `hasAlchemyTags` / `Unowned` from `alchemy/Tags`
 - Label merge order: internal tags are base, user labels override
 
@@ -457,7 +466,7 @@ nebius storage bucket list
 
 Some Nebius APIs don't follow the standard CRUD pattern:
 
-- **IAM StaticKey**: uses `Issue` not `Create` — token only available at creation time, must be stored in output
+- **IAM StaticKey**: uses `Issue` not `Create` — the token exists only in the issue response, so it must be captured into the attributes at create time (creation happens in `reconcile`, never in a `precreate`: the `serviceAccountId` is an unresolved reference there, so a key declared in the same deploy as its SA used to fail at apply time)
 - **AccessPermit**: requires group parent (not project), rejects `metadata.name`
 - **GroupMembership**: uses `listMembers` instead of `list`
 - **QuotaAllowance**: lacks stable `id` — use `(parentId, name, region)` as identity tuple

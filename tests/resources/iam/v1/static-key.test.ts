@@ -4,7 +4,7 @@ import * as Exit from 'effect/Exit'
 import * as Module from '../../../../modules/resources/iam/v1/static-key.ts'
 import * as Iam from '../../../../modules/api-client/iam.ts'
 import { resolveProvider, runEffect } from '../../../helpers/provider.ts'
-import { mockIamLayer, testConfigLayer, fakeSession, protoMetadata } from '../../../helpers/mocks.ts'
+import { mockIamLayer, testConfigLayer, fakeSession, notFoundError, protoMetadata } from '../../../helpers/mocks.ts'
 
 /**
  * StaticKey is a NON-STANDARD API: the token is issued once via `Issue`
@@ -19,7 +19,7 @@ const keyProto = (id: string, name: string, parentId: string, labels: Record<str
 })
 
 describe('Nebius.iam.v1.StaticKey (Issue-only API)', () => {
-  test('precreate issues the key and captures the one-time token in output', async () => {
+  test('reconcile issues the key and captures the one-time token when there is no output', async () => {
     const svc = await resolveProvider(Module.NebiusStaticKey.Provider, Module.NebiusStaticKeyProvider)
 
     const issueCalls: Iam.IssueStaticKeyInput[] = []
@@ -34,12 +34,20 @@ describe('Nebius.iam.v1.StaticKey (Issue-only API)', () => {
       },
     })
 
+    // Creation lives in `reconcile` — NOT in a `precreate` — because `precreate` receives raw props
+    // (refs unresolved), so a key declared in the same deploy as its service account failed with
+    // `PropsValidationError: Expected string at ["serviceAccountId"]` (see TASKS.md §F). The
+    // one-time token capture is identical here: it rides on the `Issue` response. `Object.hasOwn`
+    // rather than `svc.precreate` — the latter is an unbound-method lint error.
+    expect(Object.hasOwn(svc, 'precreate')).toBe(false)
+
     const output = await runEffect(
-      svc.precreate!({
+      svc.reconcile({
         id: 'key_abc',
         fqn: 'key_abc',
         instanceId: 'inst',
         news: { serviceAccountId: 'serviceaccount-1', service: 'OBSERVABILITY' },
+        output: undefined,
         session: fakeSession,
         bindings: [],
       } as any).pipe(Effect.provide(layer), Effect.provide(testConfigLayer)),
@@ -51,7 +59,8 @@ describe('Nebius.iam.v1.StaticKey (Issue-only API)', () => {
     expect(output.serviceAccountId).toBe('serviceaccount-1')
     // The API used is `issue`, and the name is auto-generated from the id.
     expect(issueCalls).toHaveLength(1)
-    expect(issueCalls[0]!.metadata.name).toBe('sk-key-abc')  })
+    expect(issueCalls[0]!.metadata.name).toBe('sk-key-abc')
+  })
 
   test('reconcile preserves the token from output — reads do not overwrite it', async () => {
     const svc = await resolveProvider(Module.NebiusStaticKey.Provider, Module.NebiusStaticKeyProvider)
@@ -80,11 +89,12 @@ describe('Nebius.iam.v1.StaticKey (Issue-only API)', () => {
     expect(output.id).toBe('key-1')
   })
 
-  test('reconcile dies with a clear error when output is missing (token would be lost)', async () => {
+  test('reconcile dies with a clear error when the key disappeared (the token is unrecoverable)', async () => {
     const svc = await resolveProvider(Module.NebiusStaticKey.Provider, Module.NebiusStaticKeyProvider)
+    // The key is gone: `get` answers NOT_FOUND, which `reconcile` maps to `undefined`.
     const layer = mockIamLayer({
       staticKey: {
-        get: () => Effect.succeed(keyProto('key-1', 'sk-test', 'project-test-1')),
+        get: () => Effect.fail(notFoundError()),
         delete: () => Effect.void,
       },
     })
@@ -95,13 +105,13 @@ describe('Nebius.iam.v1.StaticKey (Issue-only API)', () => {
         fqn: 'sk_test',
         instanceId: 'inst',
         news: { serviceAccountId: 'serviceaccount-1', service: 'OBSERVABILITY' },
-        output: undefined,
+        output: { id: 'key-1', secretKey: 'one-time-token-xyz', accessKey: 'key-1' },
         session: fakeSession,
       } as any).pipe(Effect.provide(layer), Effect.exit),
     )
 
-    // Without precreate output the token is unrecoverable — must die, never silently re-issue.
+    // A vanished key cannot be re-issued without losing the token's meaning — die loudly instead.
     expect(Exit.isFailure(exit)).toBe(true)
-    expect(String(Exit.isFailure(exit) ? exit.cause : '')).toContain('precreate')
+    expect(String(Exit.isFailure(exit) ? exit.cause : '')).toContain('disappeared')
   })
 })
