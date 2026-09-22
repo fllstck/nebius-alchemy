@@ -357,10 +357,23 @@ describe('Nebius.vpc.v1.SecurityRule convergence', () => {
 // ---------------------------------------------------------------------------
 
 const NETWORK_ID = 'network-1'
-const networkProps = { parentId: 'project-test-1', name: 'my-net', ipv4PrivatePools: { pools: [{ id: 'pool-1' }] } }
+/**
+ * ⚠️ Live shape (probed 2026-09-22, `tests/resources/vpc/v1/subnet.integration.test.ts`):
+ * the API MATERIALIZES both optional pool structs into `spec` —
+ * `{ pools: [], useNetworkPools: true }`, i.e. "inherit from the project pool" — even when the
+ * props omit them. So the baseline omits them and the mocked live resource carries the echo.
+ * Comparing that echo against the omitted prop unguarded is an update on every reconcile (the
+ * bug this row now pins): the guard must be on the news side, like `routeTableId` below.
+ */
+const NETWORK_MATERIALIZED_POOLS = { pools: [], useNetworkPools: true }
+const networkProps = { parentId: 'project-test-1', name: 'my-net' }
 const networkLive = (): NebiusNetworkSchema.Network => ({
   metadata: protoMetadata(NETWORK_ID, 'my-net', 'project-test-1'),
-  spec: NebiusNetworkSchema.NetworkSpec.fromJSON(networkProps),
+  spec: NebiusNetworkSchema.NetworkSpec.fromJSON({
+    ...networkProps,
+    ipv4PrivatePools: NETWORK_MATERIALIZED_POOLS,
+    ipv4PublicPools: NETWORK_MATERIALIZED_POOLS,
+  }),
   status: undefined,
 })
 
@@ -378,6 +391,8 @@ describe('Nebius.vpc.v1.Network convergence', () => {
       ipv4PublicPools: { ipv4PublicPools: { pools: [{ id: 'pool-3' }] } },
     },
     declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    // An omitted pool struct must not look like drift against the API's materialized echo.
+    omits: ['ipv4PrivatePools', 'ipv4PublicPools'],
     live: networkLive(),
     liveId: NETWORK_ID,
     layerFor: (writes) =>
@@ -402,16 +417,28 @@ describe('Nebius.vpc.v1.Network convergence', () => {
 })
 
 const SUBNET_ID = 'subnet-1'
+/**
+ * Same live shape as `Network` (probed 2026-09-22): both pool structs are materialized into
+ * `spec` as `{ pools: [], useNetworkPools: true }` when the props omit them, so the baseline
+ * omits them while the live spec carries the echo. `routeTableId` stays pinned in the baseline
+ * — when no route table is requested the API leaves `spec.routeTableId` EMPTY (`""`) and puts
+ * the effective association in `status.routeTable.{id,default}` instead, which is why the
+ * pin-then-omit direction is the one the guard actually protects.
+ */
+const SUBNET_MATERIALIZED_POOLS = { pools: [], useNetworkPools: true }
 const subnetProps = {
   parentId: 'project-test-1',
   name: 'my-subnet',
   networkId: 'network-1',
-  ipv4PrivatePools: { pools: [{ cidrs: [{ cidr: '10.1.0.0/24' }] }] },
   routeTableId: 'routetable-1',
 }
 const subnetLive = (): NebiusSubnetSchema.Subnet => ({
   metadata: protoMetadata(SUBNET_ID, 'my-subnet', 'project-test-1'),
-  spec: NebiusSubnetSchema.SubnetSpec.fromJSON(subnetProps),
+  spec: NebiusSubnetSchema.SubnetSpec.fromJSON({
+    ...subnetProps,
+    ipv4PrivatePools: SUBNET_MATERIALIZED_POOLS,
+    ipv4PublicPools: SUBNET_MATERIALIZED_POOLS,
+  }),
   status: undefined,
 })
 
@@ -431,9 +458,11 @@ describe('Nebius.vpc.v1.Subnet convergence', () => {
       routeTableId: { routeTableId: 'routetable-2' },
     },
     declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
-    // The API assigns a default route table when none is given, so an omitted `routeTableId`
-    // must not look like drift against the assigned one.
-    omits: ['routeTableId'],
+    // An omitted optional prop must not look like drift against the value the API holds:
+    //   * `routeTableId` — when unrequested the spec field is `""`, but a PINNED route table
+    //     the user then drops from config must not be clobbered back to the network default;
+    //   * the pool structs — the API materializes `{ pools: [], useNetworkPools: true }`.
+    omits: ['routeTableId', 'ipv4PrivatePools', 'ipv4PublicPools'],
     live: subnetLive(),
     liveId: SUBNET_ID,
     layerFor: (writes) =>
@@ -2105,24 +2134,42 @@ describe('Nebius.iam.v1.Invitation convergence', () => {
 })
 
 const TRANSFER_ID = 'transfer-1'
+const transferSource = {
+  nebius: {
+    region: 'eu-north1',
+    bucketName: 'source-bucket',
+    // Required by the API although the proto marks it optional — see the props schema.
+    accessKey: { accessKeyId: 'AKIASOURCE', secretAccessKey: 'secret' },
+  },
+}
 const transferProps = {
   parentId: 'project-test-1',
   name: 'nightly-copy',
-  source: { nebius: { region: 'eu-north1', bucketName: 'source-bucket' } },
+  source: transferSource,
   destination: {
     s3Compatible: { endpoint: 'https://s3.example.com', region: 'us-east-1', bucketName: 'dest-bucket' },
   },
   stopCondition: { afterOneIteration: true },
   overwriteStrategy: 'NEVER',
 }
+/**
+ * ⚠️ Live shape (probed 2026-09-22): the API answers with its OWN defaults for fields the props
+ * omit — `limiters: {}` (bandwidth/requests unset ⇒ platform limits) and
+ * `interIterationInterval: 900s` — and it NEVER echoes a credential: the source/destination
+ * `secretAccessKey` comes back as `""`. Both are encoded here (they are what the provider's
+ * mirror and its `withoutCredentials` projection exist for): comparing this echo against the
+ * baseline props re-sent an update on every reconcile until those two were added.
+ */
 const transferLive = (): NebiusTransferSchema.Transfer => ({
   metadata: protoMetadata(TRANSFER_ID, 'nightly-copy', 'project-test-1'),
   spec: NebiusTransferSchema.TransferSpec.fromJSON({
-    source: transferProps.source,
+    source: { nebius: { ...transferSource.nebius, accessKey: { ...transferSource.nebius.accessKey, secretAccessKey: '' } } },
     destination: transferProps.destination,
     // The flat oneof arm the provider now sends (see `stopConditionFields`).
     afterOneIteration: {},
     overwriteStrategy: 'NEVER',
+    limiters: {},
+    interIterationInterval: { seconds: '900' },
   }),
   status: undefined,
 })
@@ -2137,7 +2184,7 @@ describe('Nebius.storage.v1.Transfer convergence', () => {
     change: {
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-copy' }, { action: 'replace' }),
-      source: { source: { nebius: { region: 'eu-west1', bucketName: 'source-bucket' } } },
+      source: { source: { nebius: { ...transferSource.nebius, region: 'eu-west1' } } },
       destination: {
         destination: {
           nebius: {
@@ -2155,6 +2202,9 @@ describe('Nebius.storage.v1.Transfer convergence', () => {
       interIterationIntervalSeconds: { interIterationIntervalSeconds: 60 },
     },
     declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    // The API materializes its own defaults for these (`limiters: {}`, 900s interval) — an
+    // omitted prop must not drive an update (see the mirror in the provider).
+    omits: ['limiters', 'interIterationIntervalSeconds', 'enableDeletesInDestination', 'touchUnmanaged'],
     live: transferLive(),
     liveId: TRANSFER_ID,
     layerFor: (writes) =>

@@ -196,6 +196,23 @@ export const convergenceSweep = <R extends ResourceLike>(config: ConvergenceSwee
     ).toBe(false)
   })
 
+  test(`${resource}: the baseline plans no change against structurally identical props`, async () => {
+    // A RE-APPLY of an unchanged config is the most common `alchemy deploy` there is, and the
+    // planner hands `diff` a fresh `news` object plus the persisted `olds` — structurally equal,
+    // but never the same reference. A provider that compares an OBJECT-valued prop by reference
+    // (`news.source !== olds.source`) therefore plans a replace on every deploy, and because the
+    // old generation still holds the identity (`Factory.replaceKeepingName` → create-first) the
+    // replacement dies with ALREADY_EXISTS. `storage/v1/transfer` did exactly that (found live
+    // 2026-09-22); the reconcile-only baseline row above cannot see it, because it never diffs.
+    const svc = await resolveProvider(config.provider, config.providerLayer)
+    // Plain-data clone: what the state store hands back, not the config object.
+    const olds: unknown = JSON.parse(JSON.stringify(config.props))
+    expect(
+      await runDiff(svc, config.props, olds),
+      `${resource}: an unchanged config plans a change. Compare object-valued props structurally (specDeepEqual), never by reference.`,
+    ).toBeUndefined()
+  })
+
   for (const [prop, entry] of Object.entries(config.change)) {
     test(`${resource}: a \`${prop}\` change is planned or written`, async () => {
       const patch = isPlanned(entry) ? entry.patch : entry

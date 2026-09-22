@@ -32,6 +32,75 @@ const stopConditionFields = (stop: TransferSchema.TransferProps['stopCondition']
   }
 }
 
+/** Blank the write-only secret of one credential pair — see {@link withoutCredentials}. */
+const blankCredentials = (
+  key: NebiusTransferSchema.TransferCredentialsAccessKey | undefined,
+): NebiusTransferSchema.TransferCredentialsAccessKey | undefined =>
+  key === undefined ? undefined : { ...key, secretAccessKey: '' }
+
+/**
+ * Blank every credential-valued field before comparing a spec — `accessKey` objects and the
+ * `secretAccessKey` inside them, for every source/destination arm that carries credentials.
+ *
+ * ⚠️ Live behaviour, probed 2026-09-22: the API **never echoes a secret**. A transfer created
+ * with a real destination/source key comes back with `secretAccessKey: ""`, so a whole-spec
+ * comparison against `desired` (which carries the real secret) ALWAYS differed and re-sent an
+ * update on every reconcile — the transfer's `resourceVersion` was 2 straight after a create
+ * that should have written once. Credentials cannot be a drift signal: they are write-only.
+ *
+ * No convergence is lost by ignoring them here: a change anywhere inside `source`/`destination`
+ * (a rotated key included) is planned as a REPLACE by `diff`, so it never reaches this update
+ * path.
+ *
+ * The clone is structural, not a JSON round-trip: `transferSpecDrifted` relies on
+ * `specDeepEqual` to normalize int64s, and that only happens while the `Long` instances are
+ * still `Long`s (the limiter/interval fields are `uint64`s, so the API's echo differs in the
+ * `unsigned` flag from a mirrored JSON zero — an equality `toJSON`-based comparison misses).
+ */
+export const withoutCredentials = (spec: NebiusTransferSchema.TransferSpec): NebiusTransferSchema.TransferSpec => {
+  const clone: NebiusTransferSchema.TransferSpec = { ...spec }
+
+  const source = spec.source
+  if (source !== undefined) {
+    clone.source = { ...source }
+    if (source.nebius !== undefined)
+      clone.source.nebius = { ...source.nebius, accessKey: blankCredentials(source.nebius.accessKey) }
+    if (source.s3Compatible !== undefined)
+      clone.source.s3Compatible = {
+        ...source.s3Compatible,
+        accessKey: blankCredentials(source.s3Compatible.accessKey),
+      }
+    if (source.azureBlobStorage !== undefined)
+      clone.source.azureBlobStorage = {
+        ...source.azureBlobStorage,
+        azureStorageAccount:
+          source.azureBlobStorage.azureStorageAccount === undefined
+            ? undefined
+            : { ...source.azureBlobStorage.azureStorageAccount, accessKey: '' },
+      }
+  }
+
+  const destination = spec.destination
+  if (destination !== undefined) {
+    clone.destination = { ...destination }
+    if (destination.nebius !== undefined)
+      clone.destination.nebius = { ...destination.nebius, accessKey: blankCredentials(destination.nebius.accessKey) }
+    if (destination.s3Compatible !== undefined)
+      clone.destination.s3Compatible = {
+        ...destination.s3Compatible,
+        accessKey: blankCredentials(destination.s3Compatible.accessKey),
+      }
+  }
+
+  return clone
+}
+
+/** Whole-spec drift check, credentials excluded (see {@link withoutCredentials}). */
+export const transferSpecDrifted = (
+  current: NebiusTransferSchema.TransferSpec,
+  desired: NebiusTransferSchema.TransferSpec,
+): boolean => !ResourceUtils.specDeepEqual(withoutCredentials(current), withoutCredentials(desired))
+
 export type NebiusTransfer = Alchemy.Resource<
   'Nebius.storage.v1.Transfer',
   TransferSchema.TransferProps,
@@ -92,7 +161,8 @@ export const NebiusTransferProvider: Layer.Layer<
         spec.interIterationInterval = { seconds: String(news.interIterationIntervalSeconds) }
       if (news.enableDeletesInDestination != null)
         spec.enableDeletesInDestination = news.enableDeletesInDestination
-      if (news.touchUnmanaged != null) spec.touchUnmanaged = news.touchUnmanaged
+      if (news.touchUnmanaged != null)
+        spec.touchUnmanaged = news.touchUnmanaged
 
       yield* session.note(`Creating Nebius.storage.v1.Transfer (${name})`)
       transfer = yield* svc.transfer.create({
@@ -108,17 +178,32 @@ export const NebiusTransferProvider: Layer.Layer<
       overwriteStrategy: news.overwriteStrategy,
       ...stopConditionFields(news.stopCondition),
     }
+    // The API answers fields the props omit with its OWN defaults — `limiters: {}` (an empty
+    // message: bandwidth/requests unset, so the platform limit applies) and
+    // `interIterationInterval: 900s`. Those are not in `desired`, so comparing the echoed spec
+    // against it re-sent an update on EVERY reconcile and never converged (probed live
+    // 2026-09-22, `tests/resources/storage/v1/transfer.integration.test.ts`). Mirror the live
+    // value into `desired` when the prop is omitted, exactly as `filesystem.blockSizeBytes`
+    // does — "omitted" then means "leave whatever the platform has" instead of "reset it".
     if (news.limiters) desiredSpec.limiters = news.limiters
+    else if (transfer.spec?.limiters !== undefined)
+      desiredSpec.limiters = {
+        bandwidthBytesPerSecond: transfer.spec.limiters.bandwidthBytesPerSecond.toString(),
+        requestsPerSecond: transfer.spec.limiters.requestsPerSecond.toString(),
+      }
     if (news.interIterationIntervalSeconds != null)
       desiredSpec.interIterationInterval = { seconds: String(news.interIterationIntervalSeconds) }
+    else if (transfer.spec?.interIterationInterval !== undefined)
+      desiredSpec.interIterationInterval = { seconds: transfer.spec.interIterationInterval.seconds.toString() }
     if (news.enableDeletesInDestination != null)
       desiredSpec.enableDeletesInDestination = news.enableDeletesInDestination
     if (news.touchUnmanaged != null) desiredSpec.touchUnmanaged = news.touchUnmanaged
 
     const desired = NebiusTransferSchema.TransferSpec.fromJSON(desiredSpec)
-    // `specDeepEqual`: `interIterationInterval` is a `Duration` (Long seconds) and
-    // the limiters carry int64s — invisible to `deepEqual` (see utilities.ts).
-    if (transfer.spec && !ResourceUtils.specDeepEqual(transfer.spec, desired)) {
+    // `transferSpecDrifted`: the API echoes `secretAccessKey: ""` (write-only), so credentials
+    // are stripped before comparing; `interIterationInterval` is a `Duration` (Long seconds)
+    // and the limiters carry int64s — invisible to `deepEqual` (see utilities.ts).
+    if (transfer.spec && transferSpecDrifted(transfer.spec, desired)) {
       yield* session.note(`Updating Nebius.storage.v1.Transfer (${transfer.metadata!.name})`)
       transfer = yield* svc.transfer.update({
         metadata: {
@@ -145,8 +230,18 @@ export const NebiusTransferProvider: Layer.Layer<
         Effect.catchTag('GrpcError', () => Effect.succeed(undefined)),
       )
     }
-    // Delete — the API handles stopping if still active
-    yield* svc.transfer.delete(output.id)
+    // Delete — the API handles stopping if still active.
+    //
+    // NOT_FOUND is success, exactly as in `makeCrudDelete`: the transfer may already be gone
+    // (cascaded away, or deleted by hand). Treating it as a failure is not cosmetic — a create
+    // that failed left a state row behind and the delete then failed, which BLOCKED the whole
+    // destroy plan (`Skipping delete — blocked by failed delete of Xfer`) and leaked the two
+    // buckets, the service account and the access key it depended on (observed live
+    // 2026-09-22). Idempotent deletes are the documented contract (AGENTS.md,
+    // agent-patterns/alchemy-test-patterns.md).
+    yield* svc.transfer.delete(output.id).pipe(
+      Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.void : Effect.fail(e))),
+    )
   }),
 
   read: Factory.makeCrudRead({
@@ -174,8 +269,16 @@ export const NebiusTransferProvider: Layer.Layer<
 
     // Plan-time props validation — fail `alchemy plan` fast, before any API call.
     yield* TransferSchema.validateTransferProps(news)
-    if (news.source !== olds?.source) return Factory.replaceKeepingName(news)
-    if (news.destination !== olds?.destination) return Factory.replaceKeepingName(news)
+    // ⚠️ Compare STRUCTURALLY, never by reference: `news.source` is a freshly built config object
+    // and `olds.source` comes back from the state store, so `news.source !== olds.source` is true
+    // on every single apply — an unchanged config then plans a replace, and because the old
+    // transfer still holds the destination (`Factory.replaceKeepingName` → create-first) the
+    // replacement dies with `6 ALREADY_EXISTS: Transfer with overlapping destination exists`.
+    // Found live 2026-09-22; pinned by the sweep's
+    // "baseline plans no change against structurally identical props" row.
+    if (!ResourceUtils.specDeepEqual(news.source, olds?.source)) return Factory.replaceKeepingName(news)
+    if (!ResourceUtils.specDeepEqual(news.destination, olds?.destination))
+      return Factory.replaceKeepingName(news)
     if (news.overwriteStrategy !== olds?.overwriteStrategy) return Factory.replaceKeepingName(news)
     return Factory.identityChangeRequiresReplace(news, olds)
   }),

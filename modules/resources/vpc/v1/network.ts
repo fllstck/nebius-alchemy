@@ -37,6 +37,33 @@ export const toFriendlyAttributes = (rawNetwork: NebiusNetworkSchema.Network): N
     resourceSchema: NebiusNetworkSchema.Network,
   })
 
+/**
+ * Compare the live spec against the desired one, keeping the **props** in the decision for
+ * every field whose omission must not read as drift.
+ *
+ * ⚠️ Live behaviour, probed 2026-09-22 (`tests/resources/vpc/v1/subnet.integration.test.ts`):
+ * the API **materializes** both pool structs into `spec` — `{ pools: [], useNetworkPools: true }`
+ * ("use the project pool") — when the props omit them, and echoes them back on every update.
+ * Comparing that echo against the omitted prop is not a one-off: `desired` never carries it,
+ * so EVERY reconcile wrote an update. Observed live as `metadata.resourceVersion` = 2 after a
+ * single create (create + a spurious update), i.e. an update loop with the platform's own
+ * default as the trigger — the same class as `subnet.routeTableId`
+ * (`disk.{sizeGibibytes,blockSizeBytes}`, `image.cpuArchitecture`, `filesystem.blockSizeBytes`).
+ *
+ * A pool struct is therefore compared only when the user pinned it; omitting it means "leave
+ * whatever the API has", exactly as omitting any other optional prop does
+ * (AGENTS.md §Convergence).
+ */
+export const networkSpecDrifted = (
+  current: NebiusNetworkSchema.NetworkSpec,
+  desired: NebiusNetworkSchema.NetworkSpec,
+  props: NetworkSchema.NetworkProps,
+): boolean =>
+  (props.ipv4PrivatePools !== undefined &&
+    !ResourceUtils.specDeepEqual(current.ipv4PrivatePools, desired.ipv4PrivatePools)) ||
+  (props.ipv4PublicPools !== undefined &&
+    !ResourceUtils.specDeepEqual(current.ipv4PublicPools, desired.ipv4PublicPools))
+
 // ----- PROVIDER
 
 export const NebiusNetworkProvider: Layer.Layer<
@@ -82,11 +109,7 @@ export const NebiusNetworkProvider: Layer.Layer<
     // 3. Sync — update if spec drifted from desired
     // fromJSON handles the Schema.Struct readonly → mutable conversion for us.
     const desired = NebiusNetworkSchema.NetworkSpec.fromJSON(news)
-    if (
-      network.spec &&
-      (!ResourceUtils.specDeepEqual(network.spec.ipv4PrivatePools, desired.ipv4PrivatePools) ||
-        !ResourceUtils.specDeepEqual(network.spec.ipv4PublicPools, desired.ipv4PublicPools))
-    ) {
+    if (network.spec && networkSpecDrifted(network.spec, desired, news)) {
       yield* session.note(`Updating Nebius.vpc.v1.Network (${network.metadata!.name})`)
       network = yield* vpcGrpcService.network.update({
         metadata: {

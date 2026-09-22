@@ -116,7 +116,14 @@ There is **one mechanism**: a table per resource that
   (`{ action: 'replace' }` = create-first vs `…deleteFirst: true` = delete-first);
 - carries an anti-loop row for optional props (`omits`: omitting one must write nothing) and a
   `declared` map with a **reason per non-converging prop** — the escape hatch that keeps the
-  table from rotting into "everything is declared".
+  table from rotting into "everything is declared";
+- carries **two baseline rows**: reconcile-noop, *and* **diff-noop against a structurally identical
+  `olds`** (a JSON clone of the baseline, which is what the state store hands `diff` on a
+  re-apply). The second is not redundant: the first never diffs, so it cannot see a provider that
+  compares an **object-valued prop by reference** (`news.source !== olds.source`) — which is true
+  on every apply, plans a replace on every deploy, and fails as `ALREADY_EXISTS` in the
+  create-first replacement while the old generation still holds the identity
+  (`storage/v1/transfer`, found live 2026-09-22, and the only one of the 38 resources it caught).
 
 The coverage test discovers all 38 providers from `modules/` and fails when one has no table, so
 a new resource cannot slip in unclassified; the table's own completeness check fails on a new
@@ -132,6 +139,38 @@ The sweep also caught four providers comparing an *optional* prop against the pl
 default — `subnet.routeTableId`, `disk.{sizeGibibytes,blockSizeBytes}`, `image.cpuArchitecture`,
 `filesystem.blockSizeBytes` — each of which re-issued an update on **every** reconcile. The
 `news.<field> !== undefined` guard is therefore part of the rule, not a style choice.
+
+**The mock can only ever say "the API echoes what I sent" — it must be told otherwise.** Every
+`live` fixture in the sweep is built *from the same props the provider sends*, so the sweep is
+blind to a whole class that live probes keep finding: the API answers something the props never
+contained. The three shapes seen so far, each with its own treatment (all found 2026-09-22):
+
+- **Materialized defaults**, i.e. fields the API fills in and echoes back, which `desired` will
+  never carry: the pools of `vpc/v1/{network,subnet}` come back as `{pools: [],
+  useNetworkPools: true}` (the network later gets real `vpcpool-` ids assigned into its spec), and
+  `storage/v1/transfer` gets `limiters: {}` plus `interIterationInterval: 900s`. Comparing the echo
+  against the omitted prop writes an update on every reconcile — the tell is
+  `metadata.resourceVersion` = 2 after a deploy that should have written once. Fix by guarding on
+  the news side (`news.<field> !== undefined && …`) or by mirroring the live value into `desired`
+  (as `filesystem.blockSizeBytes` does). Encode the echo in the table's `live` fixture and add the
+  prop to `omits`, or the pinned row is vacuous.
+- **Write-only fields never echoed**: `transfer`'s `secretAccessKey` comes back as `""`, so a
+  whole-spec comparison against `desired` (which holds the real secret) can never match. Strip
+  credentials from both sides before comparing (`withoutCredentials` in `storage/v1/transfer`,
+  noting it must return a *structural* clone so `Long`s are still `Long`s for `specDeepEqual`).
+  Nothing is lost by ignoring them: a change inside `source`/`destination` — a rotated key
+  included — is planned as a replace by `diff` and never reaches the update path.
+- **Effective value only in `status`**: a filesystem created without `blockSizeBytes` answers `0`
+  in `spec` and `4096` in `status`. Mirror whichever field the API actually answers with, and read
+  attributes knowing that `toFriendlyAttributes` merges `spec.toJSON`/`status.toJSON` — status
+  wins, and int64s arrive as strings (`FilesystemAttributes.blockSizeBytes` is typed `Finite` but
+  is `"4096"`; `RecordAttributes.ttl` models that correctly as a string).
+
+**A hand-written `delete` MUST treat `NOT_FOUND` as success**, exactly as `makeCrudDelete` does.
+This is not cosmetic: when a create fails, the leftover state row makes the delete fail, and the
+planner then skips every dependent (`Skipping delete — blocked by failed delete of <resource>`),
+leaking the parents. `storage/v1/transfer` leaked two buckets, a service account and an access key
+that way (live 2026-09-22).
 
 **A resource with no `Update` RPC MUST be tabulated prop by prop in the convergence sweep.**
 That is the only shape in which the silent-no-op class can survive. With an update RPC,
@@ -395,6 +434,14 @@ Some Nebius APIs don't follow the standard CRUD pattern:
 - **GroupMembership**: uses `listMembers` instead of `list`
 - **QuotaAllowance**: lacks stable `id` — use `(parentId, name, region)` as identity tuple
 - **ResourceAdvice**: virtual advisory resource with `id: ""` — list-only, no stable identifier
+- **Storage Transfer**: `source.nebius.accessKey` is **required by the API** even though the proto
+  marks it optional (without it `Create` answers a bare `3 INVALID_ARGUMENT: Invalid argument` for
+  every stop condition) — the props schema requires it, so it fails at plan time instead. The
+  destination/source `secretAccessKey` is never echoed (`""`), `limiters` and
+  `interIterationInterval` come back as platform defaults, and `stopCondition` is three **flat**
+  oneof fields (`afterOneIteration`/`afterNEmptyIterations`/`infinite`) with no `stopCondition`
+  message — `fromJSON` silently dropped the prop before 2026-09-21, so the transfer ran with the
+  server's default stop behaviour on create *and* update.
 
 ### Naming Conventions
 

@@ -20,7 +20,16 @@ const AccessKeyCredentialsSchema = Schema.Struct({
 const SourceNebiusSchema = Schema.Struct({
   region: Schema.String,
   bucketName: Schema.String,
-  accessKey: Schema.optional(AccessKeyCredentialsSchema),
+  /**
+   * AWS-format credentials the transfer service uses to READ the source bucket.
+   *
+   * **Required**, although the proto marks it optional — probed live 2026-09-22:
+   * `TransferService/Create` rejects a Nebius source without it with a bare
+   * `3 INVALID_ARGUMENT: Invalid argument` (no field detail) for *every* stop condition, while
+   * the identical request with the key succeeds. Requiring it at the props schema makes that a
+   * plan-time validation error instead of an opaque API failure at apply time.
+   */
+  accessKey: AccessKeyCredentialsSchema,
 })
 
 const SourceS3CompatibleSchema = Schema.Struct({

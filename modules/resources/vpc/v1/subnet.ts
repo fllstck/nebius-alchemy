@@ -44,12 +44,23 @@ const specDrifted = (
   props: SubnetSchema.SubnetProps,
 ): boolean =>
   current.networkId !== desired.networkId ||
-  !ResourceUtils.specDeepEqual(current.ipv4PrivatePools, desired.ipv4PrivatePools) ||
-  !ResourceUtils.specDeepEqual(current.ipv4PublicPools, desired.ipv4PublicPools) ||
-  // The API assigns a default route table when none is requested, so an omitted
-  // `routeTableId` encodes as `''` and would look like drift against the assigned one —
-  // re-issuing an update on every reconcile (found by the convergence sweep, §C1). Only
-  // compare it when the user pinned it.
+  // ⚠️ Live behaviour, probed 2026-09-22 (`tests/resources/vpc/v1/subnet.integration.test.ts`):
+  // the API MATERIALIZES both pool structs into `spec` — `{ pools: [], useNetworkPools: true }`
+  // ("use the network's pools") — when the props omit them, and echoes them back on every
+  // update. `desired` never carries them, so comparing that echo unguarded wrote an update on
+  // EVERY reconcile (observed live as `metadata.resourceVersion` = 2 after a single create:
+  // create + a spurious update). Only compare a pool struct the user pinned, exactly as for
+  // `routeTableId` below.
+  (props.ipv4PrivatePools !== undefined &&
+    !ResourceUtils.specDeepEqual(current.ipv4PrivatePools, desired.ipv4PrivatePools)) ||
+  (props.ipv4PublicPools !== undefined &&
+    !ResourceUtils.specDeepEqual(current.ipv4PublicPools, desired.ipv4PublicPools)) ||
+  // `routeTableId`: only compare it when the user pinned it. When no route table is requested
+  // the spec field stays empty (`""`) and the effective association is reported through
+  // `status.routeTable.{id,default}` — so the field the guard actually protects is a PINNED
+  // route table the user then drops from config: without the guard the live id is compared
+  // against the omitted prop's `""` and the update drops the association back to the network
+  // default on every reconcile.
   (props.routeTableId !== undefined && current.routeTableId !== desired.routeTableId)
 
 // ----- PROVIDER
