@@ -34,6 +34,7 @@ import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
 import type { PlatformError } from 'effect/PlatformError'
 import * as PlatformNode from '@effect/platform-node'
+import { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner'
 import {
   AuthError,
   AuthProviders,
@@ -190,6 +191,33 @@ const SETUP_SA_KEY = {
   privateKey: '-----BEGIN PRIVATE KEY-----\nBOOTSTRAPPED\n-----END PRIVATE KEY-----',
 }
 
+/**
+ * A fake `ChildProcessSpawner`, so the browser flow can never launch a real browser.
+ *
+ * `openUrl` spawns the platform opener (`open`, `xdg-open`) with the authorize URL. That matters
+ * far beyond this file: **the mutation campaign explores mutants that route a test into the
+ * browser OAuth flow**, and the first campaign over `AuthProvider.ts` opened dozens of real
+ * browser windows pointing at the loopback callback server — which is closed by then, so every
+ * window showed "connection refused". With the spawner faked, the spawn is recorded instead and
+ * the safety is structural rather than a promise to behave.
+ */
+const noBrowserSpawner = () => {
+  const spawned: Array<unknown> = []
+  // Only `exitCode` is read by `openUrl` (0 = the browser opened); the stdio members are never
+  // touched, so the service is a structural double and cast once below.
+  const handle = { pid: 1, exitCode: Effect.succeed(0), isRunning: Effect.succeed(false), kill: () => Effect.void }
+  return {
+    spawned,
+    layer: Layer.succeed(ChildProcessSpawner, {
+      spawn: (command: unknown) =>
+        Effect.sync(() => {
+          spawned.push(command)
+          return handle
+        }),
+    } as never),
+  }
+}
+
 const makeFakes = (options: { mintFails?: boolean; projectDetailsFail?: boolean } = {}) => {
   const minted: Array<SaToken.SaKey> = []
   const bootstrapped: Array<string> = []
@@ -278,6 +306,7 @@ const runFlow = async <A>(
 ) => {
   const interaction = scriptedInteraction(script)
   const fakes = makeFakes({ mintFails, projectDetailsFail })
+  const browser = noBrowserSpawner()
 
   const layer = Layer.mergeAll(AlchemyProfile.ProfileStoreLive, NebiusAuth).pipe(
     Layer.provide(AlchemyCredentials.CredentialsStoreLive.pipe(Layer.provide(PlatformNode.NodeServices.layer))),
@@ -285,6 +314,8 @@ const runFlow = async <A>(
       Layer.mergeAll(
         Layer.succeed(AuthProviders, {}),
         PlatformNode.NodeServices.layer,
+        // Overrides NodeServices' real spawner, so nothing in these flows can open a browser.
+        browser.layer,
         ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
         fakes.saTokenMinter,
         fakes.saBootstrap,
@@ -316,19 +347,24 @@ const runFlow = async <A>(
     }).pipe(Effect.provide(layer), Effect.result).pipe(Effect.orDie),
   )
 
-  return { result, interaction, fakes }
+  return { result, interaction, fakes, browser }
 }
 
 /** Run a flow expecting success, and return the outcome with its result unwrapped. */
 const runOk = async <A>(
   options: RunOptions,
   body: (auth: AuthFlows) => Effect.Effect<A, FlowError, Interaction>,
-): Promise<{ result: A; interaction: ReturnType<typeof scriptedInteraction>; fakes: ReturnType<typeof makeFakes> }> => {
-  const { result, interaction, fakes } = await runFlow(options, body)
+): Promise<{
+  result: A
+  interaction: ReturnType<typeof scriptedInteraction>
+  fakes: ReturnType<typeof makeFakes>
+  browser: ReturnType<typeof noBrowserSpawner>
+}> => {
+  const { result, interaction, fakes, browser } = await runFlow(options, body)
   if (result._tag === 'Failure') {
     throw new Error(`expected success, got ${result.failure._tag}: ${result.failure.message}`)
   }
-  return { result: result.success, interaction, fakes }
+  return { result: result.success, interaction, fakes, browser }
 }
 
 /** Run a flow expecting an `AuthError`. */
@@ -865,5 +901,55 @@ describe('bootstrap error mapping and file input', () => {
     // trailing newline must survive too.
     expect(typeof fakes.minted[0]?.privateKey).toBe('string')
     expect(fakes.minted[0]?.privateKey).toBe(pem)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The browser arm — reached, but never actually opened
+// ---------------------------------------------------------------------------
+
+describe('the OAuth browser arm', () => {
+  test('a valid stored token skips the browser entirely', async () => {
+    const profile = newProfile()
+    writeCredentialFixture(profile, OAUTH_KEY, {
+      type: 'oauth',
+      accessToken: 'token-still-valid',
+      expiresAt: Date.now() + 60_000,
+      tenantId: 'tenant-1',
+      projectId: 'project-1',
+    })
+
+    const { browser } = await runOk({}, (auth) => auth.login(profile, { method: 'oauth' }))
+
+    expect(browser.spawned).toEqual([])
+  })
+
+  test('an expired token reaches the browser step, and the spawn is intercepted', async () => {
+    const profile = newProfile()
+    writeCredentialFixture(profile, OAUTH_KEY, {
+      type: 'oauth',
+      accessToken: 'token-expired',
+      expiresAt: Date.now() - 1_000,
+      tenantId: 'tenant-1',
+      projectId: 'project-1',
+    })
+
+    // The flow races the loopback callback against a paste prompt; answering the prompt with a
+    // callback URL whose `state` does not match is the fastest way to drive it end to end without
+    // a browser (the PKCE check rejects it, so `login` fails — which is the assertion below).
+    const { browser, interaction, result } = await runFlow(
+      { script: { text: ['http://127.0.0.1:1/callback?code=abc&state=not-the-state'] } },
+      (auth) => auth.login(profile, { method: 'oauth' }),
+    )
+
+    // Exactly one spawn: the authorize URL, via the faked spawner — no real browser process.
+    expect(browser.spawned).toHaveLength(1)
+    // And the URL the user would open is narrated, so a headless run can still complete by hand.
+    const notes = interaction.notes.map((note) => note.message)
+    expect(notes.some((note) => note.includes('opening browser for OAuth login'))).toBe(true)
+    expect(notes.some((note) => note.startsWith('https://'))).toBe(true)
+
+    expect(result._tag).toBe('Failure')
+    if (result._tag === 'Failure') expect(result.failure.message).toBe('login failed')
   })
 })

@@ -44,6 +44,12 @@ export default {
   reporters: ['clear-text', 'json'],
   thresholds: { high: 90, low: 80, break: null },
   concurrency: 4,
+  // Module-init code (the `Schema.Struct`/`Literal` declarations and the constant tables built at
+  // import time) produced 112 "static" mutants: 10 % of the total but **81 % of the runtime**, and
+  // their verdict depends on perTest coverage attribution, which cannot see import-time code — so
+  // they mostly reported as unkillable survivors. Ignoring them makes the score reflect test
+  // strength instead of attribution luck, and makes a campaign about 4× faster.
+  ignoreStatic: true,
   // Work around Stryker's `TSConfigPreprocessor` being unconditional in a sandboxed run:
   // it dynamically imports `typescript` and calls `ts.parseConfigFileTextToJson`, which
   // TypeScript 7 (tsgo) does not export — the run dies before the initial test run. It
