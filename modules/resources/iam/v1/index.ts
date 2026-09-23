@@ -3,13 +3,33 @@ export {
   NebiusServiceAccountProvider as ServiceAccountProvider,
   type NebiusServiceAccount as ServiceAccountResource,
 } from './service-account.ts'
-export { ServiceAccountId } from './ids.ts'
+export {
+  ServiceAccountId,
+  StaticKeyId,
+  // Every other brand this version declares, so a consumer holding an id from *outside* a resource
+  // output (an env var, a config file) can brand it at that boundary — `Nebius.iam.GroupId.make(…)`.
+  // Reading ids off resource outputs needs none of this; constructing a prop from a literal does.
+  // AGENTS.md §"Branded IDs" states this as an invariant; until 2026-09-23 only two of the thirteen
+  // were reachable, which made `GroupMembership`/`AccessPermit`/`AuthPublicKey` props unconstructable
+  // from outside the package — found while writing `examples/mk8s.ts`. `tests/package-exports.test.ts`
+  // now enforces it.
+  GroupId,
+  FederationId,
+  FederationCertificateId,
+  AuthPublicKeyId,
+  AccessPermitId,
+  AccessPermitResourceId,
+  GroupMembershipId,
+  GroupMembershipMemberId,
+  InvitationId,
+  FederatedCredentialsId,
+  TenantUserAccountId,
+} from './ids.ts'
 export {
   NebiusStaticKey as StaticKey,
   NebiusStaticKeyProvider as StaticKeyProvider,
   type NebiusStaticKey as StaticKeyResource,
 } from './static-key.ts'
-export { StaticKeyId } from './ids.ts'
 export {
   NebiusFederation as Federation,
   NebiusFederationProvider as FederationProvider,

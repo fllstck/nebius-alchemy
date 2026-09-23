@@ -43,6 +43,10 @@ Creates a Secret with an initial version and payload, then adds a second version
 
 Dynamically looks up the latest Ubuntu 22.04 LTS image by family, creates a NETWORK_SSD boot disk from it, and launches a preemptible instance (`gpu-h200-sxm`) using that disk. Requires `SUBNET_ID` and `SERVICE_ACCOUNT_ID`; `IMAGE_FAMILY` and `DISK_SIZE_GB` are optional.
 
+### [mk8s.ts](mk8s.ts) — Managed Kubernetes cluster + one worker node
+
+Creates a working control plane and a real worker node: network → subnet → cluster, plus a service account with an `editor` grant (group → permit → membership) whose id the node template needs for registry pulls and API access, then a `cpu-d3` node group with a 64 GiB boot disk and cloud-init user-data. It is the example that shows the non-obvious parts: the parent is the **cluster** (no project fallback), `fixedNodeCount` and `autoscaling` are mutually exclusive and one is required, `os`/`driversPreset` come from `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix` rather than a local list, and `etcdClusterSize: 1` keeps the demo cheap (non-HA). The commented block in the node template lists the optional surface — `strategy`, `autoRepair`, node/instance labels, taints, `maxPods`, `preemptible`, filesystems, capacity reservations, GPU and NVLink — with the caveats for each. **⚠️ Provisions a real billable VM** and is the slowest stack here (a node group takes minutes to `RUNNING` and its delete waits for the VM).
+
 ## Discovery Actions
 
 ### [actions.ts](actions.ts) — Read-only list/get actions

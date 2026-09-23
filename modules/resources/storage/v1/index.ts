@@ -16,3 +16,6 @@ export {
   type PutObjectResult,
   type StorageError,
 } from './bindings.ts'
+// Branded ids as **values** (AGENTS.md §"Branded IDs") — a bucket referenced by an env-provided id
+// needs `Nebius.storage.BucketId` (a `Transfer`'s source/destination likewise).
+export { BucketId, TransferId } from './ids.ts'

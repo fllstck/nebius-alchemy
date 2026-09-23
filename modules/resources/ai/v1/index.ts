@@ -1,4 +1,7 @@
 export { NebiusJob as Job, NebiusJobProvider as JobProvider, type NebiusJob as JobResource } from './job.ts'
+// Branded ids as **values** (AGENTS.md §"Branded IDs"), for callers holding ids from outside a
+// resource output (`Nebius.ai.JobId.make(…)`, e.g. an id read from config or the CLI).
+export { JobId, EndpointId } from './ids.ts'
 export {
   NebiusEndpoint as Endpoint,
   NebiusEndpointProvider as EndpointProvider,

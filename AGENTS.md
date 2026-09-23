@@ -343,6 +343,16 @@ bare-string ID candidates). **13** remain (14 before `capacity/v1` landed its
 every one of them is an approved exception from the list above — the full classification
 lives in TASKS.md §"ID1 — Branded IDs".
 
+**Reachable as values, enforced.** Declaring a brand is not enough: it must also be re-exported by its
+service `index.ts`, or a consumer cannot brand an id it did not read off a resource output — and since a
+branded prop rejects a plain string, that resource becomes **unconstructable from outside the package**.
+That was true of **23 brands** across `iam/v1`, `iam/v2`, `kms/v1`, `storage/v1`, `ai/v1`, `dns/v1` and
+`mysterybox/v1` until 2026-09-23 (found while writing `examples/mk8s.ts`, which needs
+`AccessPermitResourceId` for a node group's service-account grant): e.g. `Nebius.iam.GroupMembership`'s
+`memberId`, `Nebius.iam.AccessPermit`'s `resourceId` and every `kmsKeyId` prop. `tests/package-exports.test.ts`
+walks each `ids.ts` and fails on a brand that is not reachable as `Nebius.<service>.<Brand>` — or that
+resolves to a different schema object.
+
 ### Replace ordering — create-first vs delete-first
 
 Alchemy's default replace is **create-first** (new generation created, then Phase-2 GC
