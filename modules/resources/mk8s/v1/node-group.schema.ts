@@ -132,8 +132,8 @@ const attachMode = Schema.Union([Schema.Literal('READ_ONLY'), Schema.Literal('RE
  * `Schema.Union` of structs — `agent-patterns/effect-schema.md`). The rest of the syntax (prefix,
  * 63-char limits, charset) is left to the API, whose message names the offending label.
  *
- * ⚠️ Like taints, label changes are **not** rolled out to existing nodes (measured live
- * 2026-09-24 — see the `cloudInitUserData` note on this same struct for the counter reading).
+ * ⚠️ Like taints, label changes are **not** rolled out to existing nodes (the proto says so; the
+ * *measurement* that repeated it is not established — see the `cloudInitUserData` note on this struct).
  */
 const labelMap = Schema.Record(Schema.String, Schema.String).check(
   Schema.makeFilter((labels: Record<string, string>) =>
@@ -544,9 +544,10 @@ const NodeGroupTemplateSchema = Schema.Struct({
    * Kubernetes taints, applied to Nodes created after the change (existing nodes keep theirs — see
    * {@link taintEffect}).
    *
-   * Measured live 2026-09-24: changing a taint's value was **accepted** and the new value landed in
-   * `spec`, while `status.outdatedNodeCount` stayed `0` and `node`/`readyNodeCount` stayed `1` for
-   * the whole 90 s window — the API does not roll the nodes out to apply it.
+   * The proto's claim was re-measured 2026-09-24 and the reading is **not trustworthy** — the taint
+   * value landed in `spec` while `status.outdatedNodeCount` stayed `0`, but that counter is not a
+   * witness (it stayed `0` across a *proven* node replacement too). See the `cloudInitUserData` note on
+   * this struct for the full caveat.
    */
   taints: Schema.optional(
     Schema.Array(
@@ -637,15 +638,20 @@ const NodeGroupTemplateSchema = Schema.Struct({
    * see `Validation.isNonEmptyString`. A composing `sshPublicKey` prop is a possible
    * later addition (it would then own its own merge/roll-out semantics).
    *
-   * ⚠️ **A change converges in `spec` but never reaches running nodes.** Measured live 2026-09-24
-   * (`spikes/mk8s-rollout-probe.ts`): an update that changed this string was accepted and the new
-   * value landed in `spec.template.cloudInitUserData` (echo length 31 → 46), while
+   * ⚠️ **A change converges in `spec`; whether it reaches running nodes is UNRESOLVED.** Measured live
+   * 2026-09-24 (`spikes/mk8s-rollout-probe.ts`): an update that changed this string was accepted and the
+   * new value landed in `spec.template.cloudInitUserData` (echo length 31 → 46), while
    * `status.outdatedNodeCount` stayed `0` and `node`/`readyNodeCount` stayed `1` for the full 180 s
-   * window. So the platform treats new user-data exactly like `taints` and `metadata.labels` — the
-   * operator rolls out for *infrastructure* changes (platform, preset, os, version), not for this
-   * one, and only freshly created nodes ever run it. To apply it to the nodes you have, change
-   * something the platform does roll out for, or recreate the group; a failed edit here is silent,
-   * which is the reason this paragraph exists.
+   * window. That reading said "sticky, like `taints` and `metadata.labels`" — but the **counter is not a
+   * witness**: the companion probe (`spikes/mk8s-rollout-control-probe.ts`) showed `outdatedNodeCount`
+   * reading `0` *before and after* a `template.resources.preset` change that provably replaced the node
+   * (different `computeinstance-…` id and name suffix), with the update call open ~9½ min — the
+   * operation covers the roll-out, so a replacement that completes inside the call is invisible to any
+   * sample taken afterwards. Whether user-data rolls nodes out is therefore **unmeasured**, and this
+   * paragraph is the placeholder until `spikes/mk8s-rollout-arms-probe.ts` answers it with the compute
+   * instance set as the witness. (The proto's stickiness claim for `taints`/labels is a *documentation*
+   * claim with the same caveat; the consequence for a user is unchanged either way — a spec-only edit is
+   * not something to rely on reaching existing nodes.)
    */
   cloudInitUserData: Schema.String.check(Validation.isNonEmptyString('template.cloudInitUserData')),
 })
@@ -757,7 +763,15 @@ export const NodeGroupAttributesSchema = Schema.Struct({
   nodeCount: Schema.optional(Schema.String),
   /** Nodes that joined the cluster and are ready to serve workloads. */
   readyNodeCount: Schema.optional(Schema.String),
-  /** Nodes whose configuration is outdated and which a roll-out will replace. */
+  /**
+   * Nodes whose configuration is outdated and which a roll-out will replace.
+   *
+   * ⚠️ **Do not use this to decide whether a change rolled the nodes out** — measured 2026-09-24 it read
+   * `0` both before and after a `template.resources.preset` change that provably replaced the node's
+   * compute instance (`spikes/mk8s-rollout-control-probe.ts`). The `UpdateNodeGroup` operation covers
+   * the roll-out, so its transient value is not observable from a caller. Witness a roll-out with the
+   * project's compute instance set instead; see `AGENTS.md` §mk8s.
+   */
   outdatedNodeCount: Schema.optional(Schema.String),
   /** `PROVISIONING` / `RUNNING` / `DELETING` (`STATE_UNSPECIFIED` maps to omitted). */
   state: Schema.optional(Schema.String),
@@ -774,9 +788,8 @@ const longToString = (value: { toString(): string } | undefined): string | undef
  * Friendly attributes for one NodeGroup.
  *
  * `requestedVersion` is read from `spec`, `version` from `status`; the counts are the
- * platform's view of the group's progress and are the useful signal while a roll-out
- * is in flight (`outdatedNodeCount` is what a user-data change shows up in — see
- * TASKS.md §N5, probe 2).
+ * platform's view of the group's progress. ⚠️ `outdatedNodeCount` is **not** a roll-out witness
+ * (measured 2026-09-24: it stayed `0` across a provably replaced node) — see its schema doc.
  */
 export const toFriendlyAttributes = (raw: NebiusNodeGroupSchema.NodeGroup): NodeGroupAttributes => {
   const spec = raw.spec
