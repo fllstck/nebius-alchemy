@@ -213,6 +213,25 @@ Publishing needs 2FA **or** a granular access token with *bypass 2FA*; the OTP p
 regressions (npm/cli#8208), so a token is the calmer choice for automation — but it is a *fallback*, not
 the fix for a 202 that is still queueing.
 
+## Re-run the smoke script locally after touching dependency/peer fields
+
+`.github/smoke/consumer.sh` derives its pins **from `package.json`**, so *moving* a field breaks it
+silently — and the failure names neither the field nor the file:
+
+```
+npm error code ETARGET
+npm error notarget No matching version found for alchemy@undefined.
+```
+
+That is 0.9.1 (2026-09-23): `alchemy` moved from `dependencies` to `peerDependencies`, the derivation
+still read `dependencies.alchemy`, `node -p` printed the string `undefined`, and the job installed
+`alchemy@undefined`. The packaged artifact was fine — but a red smoke job on a just-published version
+looks exactly like a broken release, so it is worth 1 minute to run the script locally (`bash
+.github/smoke/consumer.sh npm|bun <dir> <tarball>`, after `npm pack`) before publishing whenever a
+manifest field moves. The pin derivations now go through a `pinOf` guard that fails with
+`could not read the <label> pin from package.json (got 'undefined') — the field moved or was removed`
+(to **stderr**: inside `$( … )` a stdout message would be swallowed as the value).
+
 ## "Did it publish?" — the diagnostic ladder
 
 A release can *look* done — tag pushed, command exit 0 — while nothing reached
