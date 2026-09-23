@@ -685,21 +685,24 @@ Some Nebius APIs don't follow the standard CRUD pattern:
     returned, which is the window a completed roll-out hides in. The `spec`-echo half stands (the new
     values really do land in `spec`); "sticky" does not. Re-measurement with the instance witness:
     `spikes/mk8s-rollout-arms-probe.ts`.
-  * **`status.outdatedNodeCount` is NOT a witness for "did this change roll the nodes out"** — measured
-    2026-09-24 (`spikes/mk8s-rollout-control-probe.ts`). A `template.resources.preset` change
-    (`2vcpu-8gb` → `4vcpu-16gb`) **did** replace the node: the project's compute instance went from
-    `computeinstance-e00pzxz2wbe0ezfyde` (`…-m25v6-2ddxh`) to `computeinstance-e00c9g585aes307th2`
-    (`…-bh4qn-7tgt5`) — new id *and* new name suffix. Yet `status.outdatedNodeCount` read **`0` before
-    and after**, `nodeCount`/`readyNodeCount` stayed `1`, and `reconciling` stayed `false`; the update
-    call itself stayed open for **~9½ minutes**, i.e. the `UpdateNodeGroup` **operation covers the
-    roll-out** and the counter is back to `0` by the time a caller can act. The same run's filesystem
-    arm (adding `template.filesystems = [{attachMode: READ_WRITE, mountTag, existingFilesystem.id}]`)
-    changed the instance id again with the same all-zero counters. So: witness a roll-out with the
-    **compute instance set** (`compute.instance.list(project)`), sampled *while the update is in
-    flight* — the counters (`outdated`, `node`, `ready`, `target`) and `reconciling` are not
-    trustworthy evidence either way, and any earlier conclusion in this repo drawn from them needs
-    re-reading. Update-call latency is the secondary signal (a roll-out blocks the call; a sticky field
-    returns quickly), but it is a heuristic, not a witness.
+  * **`status.outdatedNodeCount` is only a witness *while the update call is still in flight*.** It is
+    **not** dead: `spikes/mk8s-rollout-arms-probe.ts` caught it moving `"0"` → `"1"`, with
+    `reconciling` `false` → `true` and state `RUNNING` → `PROVISIONING`, **17 s into** a
+    `cloudInitUserData` update — a reading a *post-call* sample can never see, because the operation
+    only returns once the roll-out has finished. Measured 2026-09-24; the post-hoc evidence that made
+    this look like a dead field is the control probe:
+    a `template.resources.preset` change (`2vcpu-8gb` → `4vcpu-16gb`) **did** replace the node: the
+    project's compute instance went from `computeinstance-e00pzxz2wbe0ezfyde` (`…-m25v6-2ddxh`) to
+    `computeinstance-e00c9g585aes307th2` (`…-bh4qn-7tgt5`) — new id *and* new name suffix. Yet
+    `status.outdatedNodeCount` read **`0` before and after**, `nodeCount`/`readyNodeCount` stayed `1`,
+    and `reconciling` stayed `false`; the update call itself stayed open for **~9½ minutes**, i.e. the
+    `UpdateNodeGroup` **operation covers the roll-out**. So: sample the counter *during* the call (from
+    a sibling fiber), or witness the replacement with the **compute instance set**
+    (`compute.instance.list(project)`) — a post-call reading of those counters is not evidence either
+    way, and any earlier conclusion in this repo drawn from one needs re-reading. Update-call latency is
+    the third signal (a roll-out blocks the call ~10 min; a sticky field returns in ~1 s — measured: a
+    `taints` change returned in 1 s with no replacement, a `cloudInitUserData` change did not return at
+    all until the node had been replaced).
   There is **no create-only template field** in the NodeGroup's arms 1–5 — the whole `template` is a
   roll-out, not a replace — so its only replaces are identity changes (`parentId` = the **cluster**,
   `name`), and `NodeGroup`'s drift check is the `pinnedSpecDeepEqual`/`protoPinnedFields` pair described
