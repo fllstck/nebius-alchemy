@@ -1,6 +1,7 @@
 import * as Schema from 'effect/Schema'
 
 import * as NebiusNodeGroupSchema from '../../../../schemas/nebius/mk8s/v1/node_group.ts'
+import { pricingMatchesPresenceOnlyPreemptible, PricingModelSchema } from '../../shared/pricing.schema.ts'
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
 import * as IamIds from '../../iam/v1/ids.ts'
@@ -485,6 +486,13 @@ const NetworkInterfaceSchema = Schema.Struct({
  * `template` itself is **required**: it carries the OS, the hardware and the boot
  * disk, and every measured live shape sets it.
  */
+// The arm shape, the exactly-one rule and the preemptible coupling are **shared** with the three other
+// `pricing_model` messages (compute Instance, ai Job/Endpoint) — see
+// `modules/resources/shared/pricing.schema.ts`. What stays here is the doc at the prop, because which
+// prop the arm couples to, and what a change does to this resource, are facts about this resource.
+export { PricingModelSchema, type PricingModel } from '../../shared/pricing.schema.ts'
+
+
 const NodeGroupTemplateSchema = Schema.Struct({
   /**
    * OS image version, e.g. `ubuntu24.04`.
@@ -587,6 +595,11 @@ const NodeGroupTemplateSchema = Schema.Struct({
     Schema.Boolean.check(Validation.presenceOnly('template.preemptible', 'node group')),
   ),
   /**
+   * How the nodes are priced (see {@link PricingModelSchema}) — omitted means the platform's default,
+   * `onDemand` for a non-preemptible group.
+   */
+  pricing: Schema.optional(PricingModelSchema),
+  /**
    * Passthrough local disks and how mk8s presents them (see {@link LocalDisksSchema}).
    */
   localDisks: Schema.optional(LocalDisksSchema),
@@ -652,7 +665,7 @@ const NodeGroupTemplateSchema = Schema.Struct({
    * operation covers the whole roll-out, so a post-call sample can never see it.
    */
   cloudInitUserData: Schema.String.check(Validation.isNonEmptyString('template.cloudInitUserData')),
-})
+}).check(pricingMatchesPresenceOnlyPreemptible('template.preemptible'))
 
 export const NodeGroupPropsSchema = Schema.Struct({
   /**

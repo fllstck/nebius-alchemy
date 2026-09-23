@@ -5,6 +5,10 @@ import * as Validation from '../../validation.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
 import * as MysteryboxIds from '../../mysterybox/v1/ids.ts'
+import {
+  pricingMatchesBooleanPreemptible,
+  PricingModelSchema,
+} from '../../shared/pricing.schema.ts'
 
 // ---------------------------------------------------------------------------
 // Shared nested sub-schemas (reused by endpoint.schema.ts)
@@ -158,6 +162,21 @@ export const JobPropsSchema = Schema.Struct({
   publicIp: Schema.Boolean,
   /** Whether to use a preemptible VM (cheaper, can be stopped by the platform). */
   preemptible: Schema.Boolean,
+  /**
+   * How the VM is priced. **Optional — omitting it is the platform's default** (`onDemand` for a
+   * non-preemptible job, which is why `preemptible: false` needs nothing else).
+   *
+   * **A deliberate reshape** (AGENTS.md §"Naming"): the proto carries pricing as a oneof of three
+   * siblings inside a `pricingModel` message, and `ts-proto` renders a oneof as flat optional fields with
+   * no accessor — so the prop picks one arm and `reconcile` nests it back under `pricingModel`. The arms
+   * and the exactly-one rule are shared (`modules/resources/shared/pricing.schema.ts`); the API's coupling
+   * ("Must match the preemptible flag") is enforced at plan time against this resource's `preemptible`.
+   *
+   * ⚠️ **A change REPLACES the job**, like every other spec prop here: this resource's `diff` plans
+   * `Factory.replaceKeepingName` for any spec difference, so there is no in-place path and nothing to
+   * compare in a drift list. That is the same treatment `preemptible` and `platform` already get.
+   */
+  pricing: Schema.optional(PricingModelSchema),
   /** Entrypoint command for the job's container. */
   containerCommand: Schema.optional(Schema.String),
   /** Arguments to pass to the entrypoint command. */
@@ -184,7 +203,7 @@ export const JobPropsSchema = Schema.Struct({
   injectedFiles: Schema.optional(Schema.Array(FileInjectionSchema)),
   /** Registry credentials for private Docker registries. */
   registryCredentials: Schema.optional(RegistryCredentialsSchema),
-})
+}).check(pricingMatchesBooleanPreemptible('preemptible'))
 
 export type JobProps = typeof JobPropsSchema.Type
 

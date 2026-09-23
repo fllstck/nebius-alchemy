@@ -209,6 +209,12 @@ const HOSTED_SPEC_KEYS = new Set(['main', 'handler', 'port', 'env', 'build', 'is
 export const hostedSpecInput = (news: InstanceSchema.InstanceProps, userData: string | undefined): Record<string, unknown> => {
   const spec: Record<string, unknown> = { ...news }
   for (const key of HOSTED_SPEC_KEYS) delete spec[key]
+  // The `pricing` prop is a **deliberate reshape of a flat oneof** (see `PricingModelSchema`): the wire has
+  // three siblings on `InstanceSpec` and no `pricing` message, so passing the prop through would be dropped
+  // **silently** by `fromJSON` — the `transfer.stopCondition` trap. Spread the arms onto the flat fields
+  // instead (nothing at all when the prop is omitted, which is the platform's default).
+  delete spec.pricing
+  Object.assign(spec, ResourceUtils.pricingModelFields(news.pricing))
   if (userData !== undefined) spec.cloudInitUserData = userData
   return spec
 }
@@ -230,6 +236,25 @@ const gpuClusterChanged = (news: { gpuCluster?: { id?: string } }, olds?: { gpuC
   (news.gpuCluster?.id ?? '') !== (olds?.gpuCluster?.id ?? '')
 
 /**
+ * Whether a **pinned** pricing arm differs from the live spec.
+ *
+ * The wire is flat — `InstanceSpec` carries `onDemand`/`followsSpotPrice`/`spotPricingPolicy` as
+ * siblings, not a `pricing` message — so this compares the arms the caller pinned against the matching
+ * live fields, one by one. An empty wire message decodes as `{}`, which is what a pinned `true` maps to
+ * (`ResourceUtils.pricingModelFields`), so "the arm is already set" and "the spec says nothing" stay
+ * distinguishable. Switching arms therefore reads as drift (the new arm is absent live), while leaving
+ * `pricing` out of the props compares nothing at all — see the caller for why that guard is load-bearing.
+ */
+const pricingDrifted = (
+  live: NebiusInstanceSchema.InstanceSpec | undefined,
+  pricing: NonNullable<InstanceSchema.InstanceProps['pricing']>,
+): boolean =>
+  (pricing.onDemand !== undefined && !ResourceUtils.specDeepEqual(live?.onDemand, {})) ||
+  (pricing.followsSpotPrice !== undefined && !ResourceUtils.specDeepEqual(live?.followsSpotPrice, {})) ||
+  (pricing.spotPricingPolicy !== undefined &&
+    !ResourceUtils.specDeepEqual(live?.spotPricingPolicy, { id: pricing.spotPricingPolicy.id }))
+
+/**
  * Which spec fields an in-place update converges.
  *
  * The engine plans an `action: "update"` for **any** props change a `diff`
@@ -240,6 +265,10 @@ const gpuClusterChanged = (news: { gpuCluster?: { id?: string } }, olds?: { gpuC
  *
  * Deliberately absent: `gpuCluster` (create-only → the diff replaces) and
  * `preemptible` (cannot be toggled → the diff replaces).
+ *
+ * `pricing` is present but **news-guarded** — the flat `pricing_model` arms are compared only when the
+ * caller pinned one, because the platform's materialization and in-place-mutability behaviour for them is
+ * unmeasured (see `pricingDrifted`).
  *
  * Exported for unit tests. The "guarded on the news side" entries exist because
  * the platform may answer an omitted optional message with a default —
@@ -265,7 +294,14 @@ export const instanceSpecDrifted = (
     live.cloudInitUserData !== desired.cloudInitUserData ||
     live.stopped !== desired.stopped ||
     live.recoveryPolicy !== desired.recoveryPolicy ||
-    live.hostname !== desired.hostname
+    live.hostname !== desired.hostname ||
+    // Guarded on the news side **because the platform's behaviour here is unmeasured**: whether a live VM
+    // accepts a pricing change in place, and whether the API materializes a default pricing into `spec`
+    // (which would differ from an omitted prop on every reconcile), were never probed — a live probe needs
+    // a preemptible VM, which this tenant's CPU platforms reject (`Preemptible is invalid`, measured
+    // 2026-09-10). Comparing only a **pinned** arm makes either answer a non-event rather than a permanent
+    // drift loop; the API adjudicates legality when `reconcile` sends the full desired spec.
+    (news.pricing !== undefined && pricingDrifted(live, news.pricing))
   )
 }
 

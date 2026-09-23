@@ -31,6 +31,67 @@ describe('Nebius.ai.v1.Job', () => {
     expect(Module.NebiusJobProvider).toBeDefined()
   })
 
+  describe('pricing (pricing_model)', () => {
+    // The proto carries pricing as a oneof of three flat siblings *inside* a `pricingModel` message, so the
+    // prop is a reshape — and a nested `pricing` key would be dropped silently by `fromJSON`. The
+    // preemptible coupling is the API's own rule ("Must match the preemptible flag").
+    const invalidPricing = (patch: Record<string, unknown>) =>
+      runEffect(SchemaModule.validateJobProps({ ...validJobProps, ...patch }).pipe(Effect.flip))
+    const validPricing = (patch: Record<string, unknown>) =>
+      runEffect(SchemaModule.validateJobProps({ ...validJobProps, ...patch }))
+
+    test('each arm is accepted on its matching preemptible flag', async () => {
+      // The baseline is not preemptible, so `onDemand` is the arm that needs nothing else.
+      await validPricing({ pricing: { onDemand: true } })
+      await validPricing({ preemptible: true, pricing: { followsSpotPrice: true } })
+      await validPricing({ preemptible: true, pricing: { spotPricingPolicy: { id: 'pricingpolicy-1' } } })
+      // Omitting it stays valid either way: the platform's default (preemptible's own is the spot arm).
+      await validPricing({})
+      await validPricing({ preemptible: true })
+    })
+
+    test('“exactly one arm” and the preemptible coupling are plan-time errors', async () => {
+      expect(String(await invalidPricing({ pricing: { onDemand: true, followsSpotPrice: true } }))).toContain(
+        'exactly one',
+      )
+      expect(String(await invalidPricing({ pricing: {} }))).toContain('exactly one')
+      expect(String(await invalidPricing({ preemptible: true, pricing: { onDemand: true } }))).toContain(
+        'Must match the preemptible flag',
+      )
+      expect(String(await invalidPricing({ pricing: { followsSpotPrice: true } }))).toContain('requires `preemptible`')
+      // A `false` switch is not transmittable — the wire arm is an empty message.
+      expect(String(await invalidPricing({ pricing: { onDemand: false } }))).toContain('can only be set to true')
+    })
+
+    test('jobSpecInput nests the arms under `pricingModel`, and leaves no `pricing` key', () => {
+      const onDemand = Module.jobSpecInput({ ...validJobProps, pricing: { onDemand: true } } as never)
+      expect(onDemand.pricing).toBeUndefined()
+      expect(onDemand.pricingModel).toEqual({ onDemand: {} })
+
+      const policy = Module.jobSpecInput({
+        ...validJobProps,
+        preemptible: true,
+        pricing: { spotPricingPolicy: { id: 'pricingpolicy-1' } },
+      } as never)
+      expect(policy.pricingModel).toEqual({ spotPricingPolicy: { id: 'pricingpolicy-1' } })
+
+      // Omitted: nothing travels at all.
+      const omitted = Module.jobSpecInput(validJobProps as never)
+      expect(omitted.pricing).toBeUndefined()
+      expect(omitted.pricingModel).toBeUndefined()
+    })
+
+    test('the nested message survives InstanceSpec-style decoding (fromJSON)', async () => {
+      // The reshape's whole purpose: `{pricingModel: {onDemand: {}}}` has to decode into the proto's
+      // `PricingModelSpec`, which flat `fromPartial`-style passing would not do.
+      const decoded = await import('../../../../schemas/nebius/ai/v1/job.ts').then((schema) =>
+        schema.JobSpec.fromJSON(Module.jobSpecInput({ ...validJobProps, pricing: { onDemand: true } } as never)),
+      )
+      expect(decoded.pricingModel?.onDemand).toBeDefined()
+      expect(decoded.pricingModel?.followsSpotPrice).toBeUndefined()
+    })
+  })
+
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusJob.Provider, Module.NebiusJobProvider)

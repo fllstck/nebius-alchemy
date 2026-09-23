@@ -6,6 +6,8 @@ import Long from 'long'
 import * as Module from '../../../../modules/resources/mk8s/v1/node-group.ts'
 import * as SchemaModule from '../../../../modules/resources/mk8s/v1/node-group.schema.ts'
 import * as CapacityIds from '../../../../modules/resources/capacity/v1/ids.ts'
+import * as BillingIds from '../../../../modules/resources/billing/v1/ids.ts'
+import * as ResourceUtils from '../../../../modules/resources/utilities.ts'
 import * as NebiusNodeGroupSchema from '../../../../schemas/nebius/mk8s/v1/node_group.ts'
 import {
   instanceIdLayer,
@@ -1040,6 +1042,173 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
         }),
       })
       expect(Module.nodeGroupSpecDrifted(live.spec, desiredFor(validProps))).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // pricing — the `pricing_model` oneof (schema pin bumped 2026-09-24)
+  // -------------------------------------------------------------------------
+  //
+  // The proto's oneof is **flat** on `NodeTemplate` (`on_demand` / `follows_spot_price` /
+  // `spot_pricing_policy{id}`), so there is no single wire field: the props reshape it into one
+  // three-arm prop and `pricingModelFields` spreads it back. The API also *couples* the arm to
+  // `preemptible` ("Must match the preemptible flag"), which is enforced at plan time.
+
+  describe('pricing (pricing_model)', () => {
+    const invalidTemplate = (patch: Record<string, unknown>) =>
+      runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, ...patch },
+        }).pipe(Effect.flip),
+      )
+    const validTemplate = (patch: Record<string, unknown>) =>
+      runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, ...patch },
+        }),
+      )
+    const pricingPolicyId = BillingIds.PricingPolicyId.make('pricingpolicy-1')
+
+    test('omitting it is valid, with or without preemptible — that is the platform default', async () => {
+      await validTemplate({})
+      await validTemplate({ preemptible: true })
+    })
+
+    test('the three arms are accepted on their matching preemptible flag', async () => {
+      // onDemand on a non-preemptible group, and both spot arms on a preemptible one.
+      await validTemplate({ pricing: { onDemand: true } })
+      await validTemplate({ preemptible: true, pricing: { followsSpotPrice: true } })
+      await validTemplate({ preemptible: true, pricing: { spotPricingPolicy: { id: pricingPolicyId } } })
+    })
+
+    test('"exactly one arm" is a plan-time error, not a silent strip', async () => {
+      // A `Schema.Union` of three structs would decode `{onDemand, followsSpotPrice}` to `{onDemand}` —
+      // the measured strip-don't-reject behaviour (agent-patterns/effect-schema.md) — so the prop is one
+      // struct plus a filter, exactly like `PercentOrCount`.
+      expect(String(await invalidTemplate({ pricing: { onDemand: true, followsSpotPrice: true } }))).toContain(
+        'exactly one',
+      )
+      expect(String(await invalidTemplate({ pricing: {} }))).toContain('exactly one')
+      expect(
+        String(
+          await invalidTemplate({
+            pricing: { onDemand: true, spotPricingPolicy: { id: pricingPolicyId } },
+          }),
+        ),
+      ).toContain('exactly one')
+    })
+
+    test('the arm must match preemptible, both directions', async () => {
+      // The API's own rule: on_demand for non-preemptible VMs, the spot arms for preemptible ones.
+      expect(
+        String(await invalidTemplate({ preemptible: true, pricing: { onDemand: true } })),
+      ).toContain('Must match the preemptible flag')
+      expect(String(await invalidTemplate({ pricing: { followsSpotPrice: true } }))).toContain(
+        'requires `template.preemptible`',
+      )
+      expect(
+        String(await invalidTemplate({ pricing: { spotPricingPolicy: { id: pricingPolicyId } } })),
+      ).toContain('requires `template.preemptible`')
+    })
+
+    test('the presence switches reject `false`', async () => {
+      // `false` is not transmittable: the wire arm is an empty message, so "off" is an omission — and
+      // `trueOnly` (not `presenceOnly`) is used because this oneof's arm can be *switched*, which
+      // `presenceOnly`'s "no way to disable it, short of recreating" wording would misdescribe.
+      expect(String(await invalidTemplate({ pricing: { onDemand: false } }))).toContain('can only be set to true')
+      expect(
+        String(await invalidTemplate({ preemptible: true, pricing: { followsSpotPrice: false } })),
+      ).toContain('can only be set to true')
+    })
+
+    test('pricingModelFields maps each arm onto its flat field, and nothing else', () => {
+      expect(ResourceUtils.pricingModelFields(undefined)).toEqual({})
+      expect(ResourceUtils.pricingModelFields({ onDemand: true })).toEqual({ onDemand: {} })
+      expect(ResourceUtils.pricingModelFields({ followsSpotPrice: true })).toEqual({ followsSpotPrice: {} })
+      expect(ResourceUtils.pricingModelFields({ spotPricingPolicy: { id: pricingPolicyId } })).toEqual({
+        spotPricingPolicy: { id: 'pricingpolicy-1' },
+      })
+    })
+
+    test('desiredSpec carries exactly one flat arm, and none when the prop is omitted', () => {
+      const withPricing = desiredFor({
+        ...validProps,
+        template: { ...validProps.template, pricing: { followsSpotPrice: true } },
+      })
+      expect(withPricing.template?.followsSpotPrice).toBeDefined()
+      // The other two arms must NOT be sent: they are siblings of the same oneof.
+      expect(withPricing.template?.onDemand).toBeUndefined()
+      expect(withPricing.template?.spotPricingPolicy).toBeUndefined()
+
+      const without = desiredFor(validProps)
+      expect(without.template?.onDemand).toBeUndefined()
+      expect(without.template?.followsSpotPrice).toBeUndefined()
+      expect(without.template?.spotPricingPolicy).toBeUndefined()
+    })
+
+    test('the policy id survives the trip as a plain string on the wire', () => {
+      const spec = desiredFor({
+        ...validProps,
+        template: {
+          ...validProps.template,
+          preemptible: true,
+          pricing: { spotPricingPolicy: { id: pricingPolicyId } },
+        },
+      })
+      expect(spec.template?.spotPricingPolicy?.id).toBe('pricingpolicy-1')
+      // …and the JSON rendering (what the API and the probes print) agrees.
+      expect(
+        (NebiusNodeGroupSchema.NodeTemplate.toJSON(spec.template!) as { spotPricingPolicy?: { id?: string } })
+          .spotPricingPolicy?.id,
+      ).toBe('pricingpolicy-1')
+    })
+
+    test('a pinned pricing arm drifts, an omitted one does not', () => {
+      const desiredWith = desiredFor({
+        ...validProps,
+        template: { ...validProps.template, pricing: { onDemand: true } },
+      })
+      // The live group carries no pricing (the platform's default is not written back), so pinning one
+      // is a real change that `reconcile` must write.
+      expect(Module.nodeGroupSpecDrifted(nodeGroupProto().spec, desiredWith)).toBe(true)
+
+      // The anti-loop direction: a live group that *does* carry it, against props that omit it. Omitting
+      // must not write — otherwise every apply of a config without `pricing` re-issues an update forever.
+      const liveWithPricing = nodeGroupProto({
+        spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
+          version: '1.35',
+          fixedNodeCount: '2',
+          template: {
+            os: 'ubuntu24.04',
+            resources: { platform: 'cpu-d3', preset: '2vcpu-8gb' },
+            bootDisk: { sizeGibibytes: '64', blockSizeBytes: '4096', type: 'NETWORK_SSD' },
+            networkInterfaces: [{ subnetId: 'vpcsubnet-1' }],
+            serviceAccountId: 'serviceaccount-abc123',
+            cloudInitUserData: '#cloud-config\n',
+            onDemand: {},
+          },
+        }),
+      })
+      expect(Module.nodeGroupSpecDrifted(liveWithPricing.spec, desiredFor(validProps))).toBe(false)
+      // …while pinning the *same* arm keeps it converged.
+      expect(Module.nodeGroupSpecDrifted(liveWithPricing.spec, desiredWith)).toBe(false)
+    })
+
+    test('reconcile writes the flat arm in place', async () => {
+      const svc = await resolveNodeGroupProvider()
+      const writes: Array<unknown> = []
+      const props = {
+        ...validProps,
+        template: { ...validProps.template, pricing: { onDemand: true } },
+      }
+      await runReconcile(svc, props, { id: NODE_GROUP_ID }, validProps, Effect.provide(mocks(writes)) as never)
+      expect(writes).toHaveLength(1)
+      const request = writes[0] as { spec: NebiusNodeGroupSchema.NodeGroupSpec }
+      expect(request.spec.template?.onDemand).toBeDefined()
+      expect(request.spec.template?.followsSpotPrice).toBeUndefined()
+      expect(request.spec.template?.spotPricingPolicy).toBeUndefined()
     })
   })
 

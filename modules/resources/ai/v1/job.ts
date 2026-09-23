@@ -24,6 +24,18 @@ export const NebiusJob = Alchemy.Resource<NebiusJob>('Nebius.ai.v1.Job')
 // ----- HELPERS
 
 /**
+ * The spec input for a create: the props with the reshaped `pricing` prop replaced by its wire form.
+ *
+ * `JobSpec` carries pricing as a oneof of three flat siblings **inside** a `pricingModel` message, so a
+ * nested `pricing` prop handed straight to `fromJSON` would be dropped **silently** (the
+ * `transfer.stopCondition` trap). Exported for the unit test.
+ */
+export const jobSpecInput = (news: JobSchema.JobProps): Record<string, unknown> => {
+  const { pricing, ...rest } = news
+  return pricing === undefined ? rest : { ...rest, pricingModel: ResourceUtils.pricingModelFields(pricing) }
+}
+
+/**
  * Flatten a protobuf {@link NebiusJobSchema.Job} (metadata + spec + status)
  * into {@link JobSchema.JobAttributes}.
  */
@@ -75,7 +87,7 @@ export const NebiusJobProvider: Layer.Layer<
           // Specs carry enum fields (port protocol, volume mount mode, disk
           // type) — fromJSON maps enum strings to int32, fromPartial would
           // pass them through and serialize NaN.
-          spec: NebiusJobSchema.JobSpec.fromJSON(news),
+          spec: NebiusJobSchema.JobSpec.fromJSON(jobSpecInput(news)),
         })
         .pipe(
           // Create can time out client-side while the backend still starts the

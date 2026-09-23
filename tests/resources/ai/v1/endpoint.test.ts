@@ -31,6 +31,53 @@ describe('Nebius.ai.v1.Endpoint', () => {
     expect(Module.NebiusEndpointProvider).toBeDefined()
   })
 
+  describe('pricing (pricing_model)', () => {
+    // Same shape as the Job's (they share the `pricingModel` message and the arm rules): the prop is a
+    // reshape of a flat oneof, nested back under `pricingModel` by `endpointSpecInput`, and the arm is
+    // coupled to `preemptible` ("Must match the preemptible flag").
+    const invalidPricing = (patch: Record<string, unknown>) =>
+      runEffect(SchemaModule.validateEndpointProps({ ...validEndpointProps, ...patch }).pipe(Effect.flip))
+    const validPricing = (patch: Record<string, unknown>) =>
+      runEffect(SchemaModule.validateEndpointProps({ ...validEndpointProps, ...patch }))
+
+    test('each arm is accepted on its matching preemptible flag', async () => {
+      await validPricing({ pricing: { onDemand: true } })
+      await validPricing({ preemptible: true, pricing: { followsSpotPrice: true } })
+      await validPricing({ preemptible: true, pricing: { spotPricingPolicy: { id: 'pricingpolicy-1' } } })
+      await validPricing({})
+      await validPricing({ preemptible: true })
+    })
+
+    test('“exactly one arm” and the preemptible coupling are plan-time errors', async () => {
+      expect(String(await invalidPricing({ pricing: { onDemand: true, followsSpotPrice: true } }))).toContain(
+        'exactly one',
+      )
+      expect(String(await invalidPricing({ pricing: {} }))).toContain('exactly one')
+      expect(String(await invalidPricing({ preemptible: true, pricing: { onDemand: true } }))).toContain(
+        'Must match the preemptible flag',
+      )
+      expect(String(await invalidPricing({ pricing: { followsSpotPrice: true } }))).toContain('requires `preemptible`')
+      expect(String(await invalidPricing({ pricing: { onDemand: false } }))).toContain('can only be set to true')
+    })
+
+    test('endpointSpecInput nests the arms under `pricingModel`, and leaves no `pricing` key', () => {
+      const onDemand = Module.endpointSpecInput({ ...validEndpointProps, pricing: { onDemand: true } } as never)
+      expect(onDemand.pricing).toBeUndefined()
+      expect(onDemand.pricingModel).toEqual({ onDemand: {} })
+
+      const policy = Module.endpointSpecInput({
+        ...validEndpointProps,
+        preemptible: true,
+        pricing: { spotPricingPolicy: { id: 'pricingpolicy-1' } },
+      } as never)
+      expect(policy.pricingModel).toEqual({ spotPricingPolicy: { id: 'pricingpolicy-1' } })
+
+      const omitted = Module.endpointSpecInput(validEndpointProps as never)
+      expect(omitted.pricing).toBeUndefined()
+      expect(omitted.pricingModel).toBeUndefined()
+    })
+  })
+
   describe('diff', () => {
     test('name change requires replace', async () => {
       const svc = await resolveProvider(Module.NebiusEndpoint.Provider, Module.NebiusEndpointProvider)

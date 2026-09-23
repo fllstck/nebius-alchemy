@@ -119,6 +119,36 @@ export const pinnedSpecDeepEqual = (live: unknown, desired: unknown): boolean =>
  * `isNonEmptyString`/`≥ 1`/enum filters on the mk8s template do (`fixedNodeCount: 0`,
  * `os: ""` and `bootDisk.type: 0` are plan-time errors, not silent no-ops).
  */
+/**
+ * Reshape a `pricing` prop onto the **flat** `pricing_model` oneof the wire actually carries.
+ *
+ * The API declares pricing as a oneof of three siblings — `on_demand`, `follows_spot_price`,
+ * `spot_pricing_policy{id}` — and `ts-proto` renders a oneof as flat optional fields with no accessor,
+ * so there is no `pricing` message on the wire for a nested prop to mirror. A props-level prop therefore
+ * has to be reshaped, exactly as `storage/v1 transfer.stopCondition` does for its own flat oneof; passing
+ * a nested object straight to `fromJSON` would drop it **silently** (`InstanceSpec` has no `pricing`
+ * field), which is the bug class this helper exists to prevent.
+ *
+ * Shared because the same oneof appears on four messages — `compute/v1 InstanceSpec`, `mk8s/v1
+ * NodeTemplate` (both flat, spread with `...`), and `ai/v1 {JobSpec,EndpointSpec}.pricingModel` (one
+ * message field, so the result is nested under `pricingModel` instead). The property names are the
+ * wire's own, so the parameter type is structural rather than a per-resource alias.
+ *
+ * `{}` for an omitted prop: nothing travels, and the platform keeps its own default (`on_demand`).
+ * The last branch is unreachable through any of the props schemas (their exactly-one filter guarantees an
+ * arm is set); it is a total function, not a silent `?.` default.
+ */
+export const pricingModelFields = (pricing?: {
+  onDemand?: boolean
+  followsSpotPrice?: boolean
+  spotPricingPolicy?: { id: string }
+}): Record<string, unknown> => {
+  if (pricing === undefined) return {}
+  if (pricing.onDemand !== undefined) return { onDemand: {} }
+  if (pricing.followsSpotPrice !== undefined) return { followsSpotPrice: {} }
+  return pricing.spotPricingPolicy === undefined ? {} : { spotPricingPolicy: { id: pricing.spotPricingPolicy.id } }
+}
+
 export const protoPinnedFields = <T>(message: T): T => {
   const cleaned = cleanProtoDefaults(message)
   return (cleaned === undefined ? {} : cleaned) as T

@@ -9,7 +9,11 @@ import * as mysterybox from './resources/mysterybox/v1/index.ts'
 import * as kms from './resources/kms/v1/index.ts'
 import * as quotas from './resources/quotas/v1/index.ts'
 import * as capacity from './resources/capacity/v1/index.ts'
+// Billing ships **references only** today (`PricingPolicyId`): the `pricing_model` oneof on compute
+// Instance / mk8s NodeGroup / ai Job+Endpoint names a Pricing Policy, and a brand is what keeps that id
+// from travelling as a bare string. No provider — see `resources/billing/v1/index.ts`.
+import * as billing from './resources/billing/v1/index.ts'
 import * as ai from './resources/ai/v1/index.ts'
 import * as mk8s from './resources/mk8s/v1/index.ts'
 
-export { storage, iam, vpc, compute, dns, mysterybox, kms, quotas, capacity, ai, mk8s }
+export { storage, iam, vpc, compute, dns, mysterybox, kms, quotas, capacity, billing, ai, mk8s }

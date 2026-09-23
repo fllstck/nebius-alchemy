@@ -29,6 +29,7 @@ describe('package namespace exports every branded id', () => {
   /** Service **path** (`<service>/<version>`) → the namespace object a consumer reaches it through. */
   const namespaces: Record<string, Record<string, unknown>> = {
     'ai/v1': Package.ai,
+    'billing/v1': Package.billing,
     'capacity/v1': Package.capacity,
     'compute/v1': Package.compute,
     'dns/v1': Package.dns,

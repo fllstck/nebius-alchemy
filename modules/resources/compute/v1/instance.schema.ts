@@ -6,6 +6,7 @@ import * as IamIds from '../../iam/v1/ids.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
 import * as CapacityIds from '../../capacity/v1/ids.ts'
+import { pricingMatchesPresenceOnlyPreemptible, PricingModelSchema } from '../../shared/pricing.schema.ts'
 
 // ---------------------------------------------------------------------------
 // Nested sub-schemas
@@ -225,6 +226,13 @@ const PreemptibleSchema = Schema.Struct({
   onPreemption: Schema.Literal('STOP'),
 })
 
+// The arm shape, the exactly-one rule and the preemptible coupling are **shared** with the three other
+// `pricing_model` messages (compute Instance, ai Job/Endpoint) — see
+// `modules/resources/shared/pricing.schema.ts`. What stays here is the doc at the prop, because which
+// prop the arm couples to, and what a change does to this resource, are facts about this resource.
+export { PricingModelSchema, type PricingModel } from '../../shared/pricing.schema.ts'
+
+
 /**
  * Shared-filesystem attachment. `AttachedFilesystemSpec` in the proto reuses the
  * disk attach modes (READ_ONLY/READ_WRITE) and requires both the mount tag and
@@ -351,6 +359,10 @@ export const InstancePropsSchema = Schema.Struct({
   recoveryPolicy: Schema.optional(RecoveryPolicySchema),
   /** Set to create a preemptible VM (cheaper, can be stopped by platform). */
   preemptible: Schema.optional(PreemptibleSchema),
+  /**
+   * How the VM is priced (see {@link PricingModelSchema}) — omitted means the platform's default.
+   */
+  pricing: Schema.optional(PricingModelSchema),
   /** Whether the instance should be created in stopped state. */
   stopped: Schema.optional(Schema.Boolean),
   /** Hostname for the VM. Used for internal DNS: <hostname>.<network_id>.compute.internal. */
@@ -382,7 +394,7 @@ export const InstancePropsSchema = Schema.Struct({
    * assets bucket + identity Outputs (resolved by the engine at apply time).
    */
   hosted: Schema.optional(Schema.Unknown),
-}).check(bootDiskImageRequired)
+}).check(bootDiskImageRequired).check(pricingMatchesPresenceOnlyPreemptible('preemptible'))
 
 export type InstanceProps = typeof InstancePropsSchema.Type
 

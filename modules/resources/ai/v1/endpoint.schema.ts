@@ -5,6 +5,7 @@ import * as JobSchema from './job.schema.ts'
 import * as Validation from '../../validation.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
+import { pricingMatchesBooleanPreemptible, PricingModelSchema } from '../../shared/pricing.schema.ts'
 
 // ---------------------------------------------------------------------------
 // Endpoint Props (user input)
@@ -39,6 +40,20 @@ export const EndpointPropsSchema = Schema.Struct({
   publicIp: Schema.Boolean,
   /** Whether to use a preemptible VM (cheaper, can be stopped by the platform). */
   preemptible: Schema.Boolean,
+  /**
+   * How the VM is priced. **Optional — omitting it is the platform's default** (`onDemand` for a
+   * non-preemptible endpoint).
+   *
+   * **A deliberate reshape** (AGENTS.md §"Naming"): the proto carries pricing as a oneof of three
+   * siblings inside a `pricingModel` message, and `ts-proto` renders a oneof as flat optional fields with
+   * no accessor — so the prop picks one arm and the spec builder nests it back under `pricingModel`. Arms
+   * and the exactly-one rule are shared (`modules/resources/shared/pricing.schema.ts`); the API's coupling
+   * ("Must match the preemptible flag") is enforced at plan time against this resource's `preemptible`.
+   *
+   * ⚠️ **A change REPLACES the endpoint**, like every other spec prop here (this resource's `diff` plans
+   * `Factory.replaceKeepingName` for any spec difference) — the same treatment `preemptible` gets.
+   */
+  pricing: Schema.optional(PricingModelSchema),
   /** Entrypoint command for the endpoint's container. */
   containerCommand: Schema.optional(Schema.String),
   /** Arguments to pass to the entrypoint command. */
@@ -69,7 +84,7 @@ export const EndpointPropsSchema = Schema.Struct({
   authToken: Schema.optional(Schema.String),
   /** Secret storing the authentication token. Mutually exclusive with `authToken`. */
   authTokenMysteryboxSecret: Schema.optional(JobSchema.MysteryBoxSecretRefSchema),
-}).check(authTokenValid)
+}).check(authTokenValid).check(pricingMatchesBooleanPreemptible('preemptible'))
 
 export type EndpointProps = typeof EndpointPropsSchema.Type
 

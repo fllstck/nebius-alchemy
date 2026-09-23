@@ -1199,6 +1199,11 @@ describe('Nebius.compute.v1.Instance convergence', () => {
       gpuCluster: { gpuCluster: { id: 'gpucluster-abc123' } },
       recoveryPolicy: { recoveryPolicy: 'FAIL' },
       preemptible: { preemptible: { onPreemption: 'STOP' } },
+      // The pricing arm is coupled to `preemptible` (the API: "Must match the preemptible flag"), and this
+      // table's baseline is **not** preemptible, so the row pins `onDemand`. The arm's wire shape is flat
+      // (`onDemand`/`followsSpotPrice`/`spotPricingPolicy` on `InstanceSpec`), so the mocked `live` below
+      // never carries a `pricing` key at all — that flatness is the reshape `pricingModelFields` performs.
+      pricing: { pricing: { onDemand: true } },
       stopped: { stopped: true },
       hostname: { hostname: 'my-instance.example.com' },
       cloudInitUserData: { cloudInitUserData: '#cloud-config\nruncmd: []' },
@@ -1217,6 +1222,11 @@ describe('Nebius.compute.v1.Instance convergence', () => {
       bucket: 'hosted S3 asset bucket, not an InstanceSpec field',
       hosted: 'hosted sub-resources (service account, key, bucket), not an InstanceSpec field',
     },
+    // The anti-loop row that matters most for `pricing`: whether the platform *materializes* a default
+    // pricing into `spec` is unmeasured, so the drift check is news-guarded — omitting the prop must write
+    // nothing even against a live spec that carries an arm (this row's mocked `live` does not, so the unit
+    // tests pin the materialized case directly).
+    omits: ['pricing'],
     live: NebiusInstanceSchema.InstanceSpec.fromJSON(instanceProps),
     liveId: INSTANCE_ID,
     probe: async (svc, news, baseline) =>
@@ -2300,6 +2310,11 @@ const AI_CHANGES: Record<string, unknown> = {
   subnetId: planned({ subnetId: 'subnet-def456' }, { action: 'replace', deleteFirst: true }),
   publicIp: planned({ publicIp: false }, { action: 'replace', deleteFirst: true }),
   preemptible: planned({ preemptible: true }, { action: 'replace', deleteFirst: true }),
+  // The pricing arm is coupled to `preemptible` (the API: "Must match the preemptible flag") and the
+  // shared baseline is **not** preemptible, so the row pins `onDemand`. A change replaces the resource
+  // like every other spec prop here — these two resources plan `replaceKeepingName` for *any* spec
+  // difference, which is why there is no drift list to extend for them.
+  pricing: planned({ pricing: { onDemand: true } }, { action: 'replace', deleteFirst: true }),
   containerCommand: planned({ containerCommand: 'python' }, { action: 'replace', deleteFirst: true }),
   args: planned({ args: 'main.py' }, { action: 'replace', deleteFirst: true }),
   workingDir: planned({ workingDir: '/srv' }, { action: 'replace', deleteFirst: true }),

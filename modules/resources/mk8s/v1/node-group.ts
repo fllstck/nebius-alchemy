@@ -146,6 +146,10 @@ export const desiredSpec = (news: NodeGroupSchema.NodeGroupProps): NebiusNodeGro
         : {}),
       // Presence is the switch: the proto models preemptible nodes as an empty message.
       ...(news.template.preemptible ? { preemptible: {} } : {}),
+      // The pricing oneof is **flat** on `NodeTemplate` — three sibling fields, and ts-proto emits no
+      // `oneof` accessor — so the prop's arms spread straight onto them. An omitted prop sends nothing
+      // (the platform's default), which is what makes the `omits` row in the convergence table hold.
+      ...ResourceUtils.pricingModelFields(news.template.pricing),
       ...(news.template.localDisks !== undefined
         ? {
             localDisks: {

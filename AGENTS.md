@@ -285,8 +285,13 @@ casing truth**. Never re-case a name to satisfy a style guide.
   `MysteryBoxGrpcService` (the schema spells `MysteryBox` in `EndpointSpec_MysteryBoxSecretRef`),
   `vpc` → `VpcGrpcService`, `ai` → `AiGrpcService`.
 - A *deliberate reshape* is not a rename for style and is allowed — but it **MUST** be
-  documented at the field: the `google.protobuf.Duration` → `…Seconds` mapping and
-  `storage/v1/transfer`'s `stopCondition` union are the two existing examples.
+  documented at the field: the `google.protobuf.Duration` → `…Seconds` mapping,
+  `storage/v1/transfer`'s `stopCondition` union, and the `pricing` prop on
+  `compute/v1 Instance` + `mk8s/v1 NodeTemplate` + `ai/v1 {Job,Endpoint}` (a flat `pricing_model`
+  oneof of three siblings, reshaped into one prop and spread back by
+  `ResourceUtils.pricingModelFields` — the shared arm schema, exactly-one rule and
+  preemptible coupling live in `modules/resources/shared/pricing.schema.ts`) are the existing
+  examples.
 - File names are kebab-case for multi-word resources (`route-table.ts`,
   `nvl-instance-group.ts`); the proto's own file name stays lowercase in `schemas/`.
 

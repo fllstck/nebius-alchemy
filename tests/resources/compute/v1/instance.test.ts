@@ -7,6 +7,7 @@ import * as Hosted from '../../../../modules/resources/compute/v1/hosted.ts'
 import * as SchemaModule from '../../../../modules/resources/compute/v1/instance.schema.ts'
 import * as IamIds from '../../../../modules/resources/iam/v1/ids.ts'
 import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
+import * as BillingIds from '../../../../modules/resources/billing/v1/ids.ts'
 import { GpuClusterId } from '../../../../modules/resources/compute/v1/ids.ts'
 import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
 import { readInput, resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
@@ -358,6 +359,143 @@ describe('Nebius.compute.v1.Instance', () => {
       // "Guarded on the news side": no loop when the platform answers a default.
       const live = liveSpec({ localDisks: { passthroughGroup: { requested: false } } })
       expect(Module.instanceSpecDrifted(live, desiredFrom({}), {} as never)).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // pricing — the `pricing_model` oneof (schema pin bumped 2026-09-24)
+  // -------------------------------------------------------------------------
+  //
+  // The proto's oneof is **flat** on `InstanceSpec` (`on_demand` / `follows_spot_price` /
+  // `spot_pricing_policy{id}`), so there is no `pricing` message to mirror: the prop is a reshape, and
+  // `hostedSpecInput` spreads it back. The API also couples the arm to `preemptible`
+  // ("Must match the preemptible flag"), which is a plan-time error here.
+
+  describe('pricing (pricing_model)', () => {
+    /** The live/desired pair the drift assertions use — the same shape as the drift describe above. */
+    const liveSpec = (overrides: Record<string, unknown> = {}) =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        serviceAccountId: 'serviceaccount-abc123',
+        bootDisk: { attachMode: 'READ_WRITE', managedDisk: { spec: { type: 'NETWORK_SSD', sizeGibibytes: '64' } } },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+        ...overrides,
+      })
+    const desiredFrom = (props: Record<string, unknown>) =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        serviceAccountId: 'serviceaccount-abc123',
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        bootDisk: { attachMode: 'READ_WRITE', managedDisk: { spec: { type: 'NETWORK_SSD', sizeGibibytes: '64' } } },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+        ...props,
+      })
+    const invalidPricing = (patch: Record<string, unknown>) =>
+      runEffect(
+        SchemaModule.validateInstanceProps({ ...validInstanceProps, ...patch }).pipe(Effect.flip),
+      )
+    const validPricing = (patch: Record<string, unknown>) =>
+      runEffect(SchemaModule.validateInstanceProps({ ...validInstanceProps, ...patch }))
+    const pricingPolicyId = BillingIds.PricingPolicyId.make('pricingpolicy-1')
+
+    test('each arm is accepted on its matching preemptible flag', async () => {
+      // The baseline is not preemptible, so `onDemand` is the arm that needs nothing else.
+      await validPricing({ pricing: { onDemand: true } })
+      await validPricing({ preemptible: { onPreemption: 'STOP' }, pricing: { followsSpotPrice: true } })
+      await validPricing({
+        preemptible: { onPreemption: 'STOP' },
+        pricing: { spotPricingPolicy: { id: pricingPolicyId } },
+      })
+      // Omitting it stays valid either way — that is the platform's default, not a gap.
+      await validPricing({})
+      await validPricing({ preemptible: { onPreemption: 'STOP' } })
+    })
+
+    test('"exactly one arm" is a plan-time error, not a silent strip', async () => {
+      // A `Schema.Union` of three structs would strip the surplus key (measured 2026-09-23), so the prop
+      // is one struct plus a filter — the `PercentOrCount` lesson.
+      expect(String(await invalidPricing({ pricing: { onDemand: true, followsSpotPrice: true } }))).toContain(
+        'exactly one',
+      )
+      expect(String(await invalidPricing({ pricing: {} }))).toContain('exactly one')
+    })
+
+    test('the arm must match preemptible, both directions', async () => {
+      expect(
+        String(
+          await invalidPricing({ preemptible: { onPreemption: 'STOP' }, pricing: { onDemand: true } }),
+        ),
+      ).toContain('Must match the preemptible flag')
+      expect(String(await invalidPricing({ pricing: { followsSpotPrice: true } }))).toContain(
+        'requires `preemptible`',
+      )
+      expect(
+        String(await invalidPricing({ pricing: { spotPricingPolicy: { id: pricingPolicyId } } })),
+      ).toContain('requires `preemptible`')
+    })
+
+    test('the presence switches reject `false`', async () => {
+      expect(String(await invalidPricing({ pricing: { onDemand: false } }))).toContain('can only be set to true')
+      expect(
+        String(
+          await invalidPricing({
+            preemptible: { onPreemption: 'STOP' },
+            pricing: { followsSpotPrice: false },
+          }),
+        ),
+      ).toContain('can only be set to true')
+    })
+
+    test('hostedSpecInput reshapes the prop onto the flat wire fields', () => {
+      // A nested `pricing` key would be dropped **silently** by `InstanceSpec.fromJSON` — the
+      // `transfer.stopCondition` trap — so this is the assertion that the reshape happened at all.
+      const onDemand = Module.hostedSpecInput(
+        { ...validInstanceProps, pricing: { onDemand: true } } as never,
+        undefined,
+      )
+      expect(onDemand.pricing).toBeUndefined()
+      expect(onDemand.onDemand).toEqual({})
+      expect(onDemand.followsSpotPrice).toBeUndefined()
+
+      const policy = Module.hostedSpecInput(
+        {
+          ...validInstanceProps,
+          preemptible: { onPreemption: 'STOP' },
+          pricing: { spotPricingPolicy: { id: pricingPolicyId } },
+        } as never,
+        undefined,
+      )
+      expect(policy.spotPricingPolicy).toEqual({ id: 'pricingpolicy-1' })
+      expect(policy.onDemand).toBeUndefined()
+
+      // Omitted: nothing at all travels, and no `pricing` key is left behind.
+      const omitted = Module.hostedSpecInput({ ...validInstanceProps } as never, undefined)
+      expect(omitted.pricing).toBeUndefined()
+      expect(omitted.onDemand).toBeUndefined()
+      expect(omitted.followsSpotPrice).toBeUndefined()
+      expect(omitted.spotPricingPolicy).toBeUndefined()
+    })
+
+    test('a pinned arm drifts; an omitted one does not, even against a materialized echo', () => {
+      const props = { ...validInstanceProps, pricing: { onDemand: true } }
+      const desired = desiredFrom({ onDemand: {} })
+      // The live VM carries no pricing, so pinning one is a real change `reconcile` must write.
+      expect(Module.instanceSpecDrifted(liveSpec(), desired, props as never)).toBe(true)
+
+      // The anti-loop direction. The platform's materialization behaviour is **unmeasured**, so this uses
+      // the shape that would loop if the comparison were unconditional: a live spec that answers the arm.
+      const liveWithArm = liveSpec({ onDemand: {} })
+      expect(Module.instanceSpecDrifted(liveWithArm, desired, props as never)).toBe(false)
+      // …and omitting the prop compares nothing at all, whatever the live spec carries.
+      const omitted = { ...validInstanceProps } as never
+      const desiredOmitted = desiredFrom({})
+      expect(Module.instanceSpecDrifted(liveSpec(), desiredOmitted, omitted)).toBe(false)
+      expect(Module.instanceSpecDrifted(liveWithArm, desiredOmitted, omitted)).toBe(false)
+
+      // Switching arms reads as drift: the newly pinned arm is absent from the live spec.
+      const switched = { ...validInstanceProps, pricing: { followsSpotPrice: true } }
+      expect(Module.instanceSpecDrifted(liveWithArm, desiredFrom({ followsSpotPrice: {} }), switched as never)).toBe(
+        true,
+      )
     })
   })
 
