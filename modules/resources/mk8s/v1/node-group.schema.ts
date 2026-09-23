@@ -228,6 +228,86 @@ const ReservationPolicySchema = Schema.Struct({
   )
 
 /**
+ * GPU-related settings for a node group.
+ *
+ * `driversPreset` names a predefined set of drivers baked into the node image, and the catalogue is a
+ * **live query** (it depends on the platform *and* the Kubernetes version) — the same authority as
+ * `template.os`: `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix`. Omit it for a **driverless**
+ * image, which is what a DRA-enabled group wants (the proto: "Leave empty for GPU nodes that do not
+ * have preinstalled drivers, including DRA-enabled node groups").
+ *
+ * `dra` can only be `true`: it enables Dynamic Resource Allocation (the proto: it disables the legacy
+ * NVIDIA device plugin for images that do carry drivers, and advertises RDMA through the managed DRANet
+ * DaemonSet for groups attached to a Compute GPU cluster). A `false` is not a request — it is
+ * indistinguishable from an absent field, and with no `FieldMask` absent means "leave unchanged".
+ *
+ * ⚠️ The Nebius solutions library additionally requires a **driverfull** image and no MIG/NUMA
+ * partitioning for the GB300-class groups that also use `nvlink`. Those two are not checkable from here
+ * (nothing in the API expresses a MIG/NUMA profile), so they stay guidance rather than filters.
+ */
+const GpuSettingsSchema = Schema.Struct({
+  /** Driver preset name, e.g. `cuda12.8`. Omit for a driverless image (see the block note). */
+  driversPreset: Schema.optional(Schema.String.check(Validation.isNonEmptyString('template.gpuSettings.driversPreset'))),
+  /** Enable Dynamic Resource Allocation. **Presence is the switch** — see the block note. */
+  dra: Schema.optional(Schema.Boolean.check(Validation.trueOnly('template.gpuSettings.dra', 'omit the field instead of setting it to `false`'))),
+}).check(
+  Schema.makeFilter((value: { driversPreset?: string; dra?: boolean }) =>
+    value.driversPreset === undefined && value.dra !== true
+      ? 'template.gpuSettings must set driversPreset or dra — omit the block entirely for a CPU node group'
+      : undefined,
+  ),
+)
+
+/**
+ * The Compute GPU cluster to attach the nodes to (for RDMA / InfiniBand membership).
+ *
+ * The id is a branded `GpuClusterId`, obtained from a `Nebius.compute.GpuCluster` resource in the same
+ * stack — which is how the fabric (a physical, Nebius-provided resource) reaches the node group.
+ */
+const GpuClusterSchema = Schema.Struct({ id: ComputeIds.GpuClusterId })
+
+/**
+ * NVLink node group membership (`GB200`/`GB300` racks).
+ *
+ * ⚠️ The generated CLI omits `--template-nvlink-nvl-instance-group-id` from `node-group update`, the
+ * usual create-only tell — but the field is **not** create-only, which took two probes to establish:
+ * `PreflightCheck` answered `requiresUserApproval: true` with a roll-out warning rather than an
+ * immutability refusal, and `spikes/mk8s-nvlink-probe.ts` sent an update adding this field with a
+ * well-formed, non-existent id and got `NotFound: nvl instance group not found by id
+ * "computenvlinstancegroup-…"` — i.e. the API took the field and asked the compute service to resolve
+ * the reference. So a change is a roll-out, not a replace, and it converges in place like every other
+ * template field.
+ *
+ * The id must be `computenvlinstancegroup-…`-shaped (the API enforces that prefix; the brand in
+ * `compute/v1/ids.ts` deliberately carries no refinement, so a mistyped prefix fails at apply time).
+ * Unverified here: a *successful* change needs a real `NVLInstanceGroup`, which needs the `GB200`/`GB300`
+ * entitlement this tenant lacks.
+ */
+const NVLinkSchema = Schema.Struct({ nvlInstanceGroupId: ComputeIds.NVLInstanceGroupId })
+
+/**
+ * The preconditions the Nebius solutions library encodes for `nvlink` groups, as far as they are
+ * checkable from props: **fixed sizing** and **not preemptible**.
+ *
+ * Provenance matters here, so the messages say it: the solutions library is the only reference
+ * implementation of NVLink node groups, and the proto independently notes the count "can be changed
+ * manually at any time, except for a node group with NVLink" (so an autoscaler cannot own it either).
+ * The remaining GB300 preconditions — driverfull image, no MIG/NUMA — are not expressible in these props
+ * and are documented at {@link GpuSettingsSchema} instead of guessed at.
+ */
+const nvLinkPreconditions = Schema.makeFilter((props: {
+  autoscaling?: unknown
+  template?: { nvlink?: unknown; preemptible?: boolean }
+}) => {
+  if (props.template?.nvlink === undefined) return undefined
+  if (props.autoscaling !== undefined)
+    return 'template.nvlink requires fixed sizing: an NVLink node group cannot autoscale (the solutions library encodes this as a precondition, and the proto says the count cannot be changed for such a group)'
+  if (props.template.preemptible === true)
+    return 'template.nvlink requires non-preemptible nodes (the solutions library encodes this as a precondition; a reclaimed node would break the NVLink group)'
+  return undefined
+})
+
+/**
  * `fixedNodeCount` and `autoscaling` are mutually exclusive **and** one of them is required.
  *
  * Both halves are the API's rule, not a preference: the proto documents the two as alternatives,
@@ -503,6 +583,18 @@ const NodeGroupTemplateSchema = Schema.Struct({
    */
   localDisks: Schema.optional(LocalDisksSchema),
   /**
+   * Driver preset and DRA for GPU nodes (see {@link GpuSettingsSchema}).
+   */
+  gpuSettings: Schema.optional(GpuSettingsSchema),
+  /**
+   * The Compute GPU cluster whose RDMA fabric the nodes join (see {@link GpuClusterSchema}).
+   */
+  gpuCluster: Schema.optional(GpuClusterSchema),
+  /**
+   * NVLink rack membership (see {@link NVLinkSchema}).
+   */
+  nvlink: Schema.optional(NVLinkSchema),
+  /**
    * Maximum pods per node. Omit it to let the platform choose (it documents `110`, and assigns the
    * pod CIDR from it) — the API **accepts** the omission, which is why this is optional despite the
    * proto marking it required. The documented default is **not written back into `spec`**: measured
@@ -593,9 +685,11 @@ export const NodeGroupPropsSchema = Schema.Struct({
   strategy: Schema.optional(StrategySchema),
   /** Which node conditions, held for how long, trigger a repair. */
   autoRepair: Schema.optional(AutoRepairSchema),
-  /** What to run: OS, hardware, boot disk, network, user-data. */
+  /** What to run: OS, hardware, boot disk, network, cloud-init, GPU/NVLink placement. */
   template: NodeGroupTemplateSchema,
-}).check(exactlyOneSizing)
+})
+  .check(exactlyOneSizing)
+  .check(nvLinkPreconditions)
 
 export type NodeGroupProps = typeof NodeGroupPropsSchema.Type
 

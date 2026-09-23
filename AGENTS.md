@@ -644,9 +644,16 @@ Some Nebius APIs don't follow the standard CRUD pattern:
     Sending `autoscaling` alone dropped `fixedNodeCount` from `spec`, and the reverse did the same — so
     the swap is a **valid in-place update** (no replace, same id, `resourceVersion` +1, no roll-out) and
     `diff` is right to leave it to `reconcile`.
-  * A scalar that is *not* part of such a pair is **not** measured either way; do not generalise from
-    these two rows.
-  There is **no create-only template field** in the NodeGroup's arms 1–4 — the whole `template` is a
+  * **`template.nvlink` is create-*oriented*, not create-only**, despite the CLI omitting its flag from
+    `node-group update`: an update adding it with a well-formed non-existent id is answered
+    `NotFound: nvl instance group not found by id …`, i.e. the field is taken and the *compute* service
+    resolves the reference (and `PreflightCheck` answered a roll-out warning, not an immutability
+    refusal). A change is a roll-out, so it is not planned as a replace. The id must be
+    `computenvlinstancegroup-…`-shaped — the API enforces that prefix while the brand deliberately does
+    not (`compute/v1/ids.ts`), so a mistyped prefix fails at apply time.
+  * An ordinary scalar that is *not* part of such a pair is **not** measured either way; do not
+    generalise from these rows.
+  There is **no create-only template field** in the NodeGroup's arms 1–5 — the whole `template` is a
   roll-out, not a replace — so its only replaces are identity changes (`parentId` = the **cluster**,
   `name`), and `NodeGroup`'s drift check is the `pinnedSpecDeepEqual`/`protoPinnedFields` pair described
   in §"Resource provider patterns".

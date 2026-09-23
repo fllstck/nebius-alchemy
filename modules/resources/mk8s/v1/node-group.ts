@@ -164,6 +164,21 @@ export const desiredSpec = (news: NodeGroupSchema.NodeGroupProps): NebiusNodeGro
           }
         : {}),
       ...(news.template.maxPods !== undefined ? { maxPods: news.template.maxPods } : {}),
+      ...(news.template.gpuSettings !== undefined
+        ? {
+            gpuSettings: {
+              ...(news.template.gpuSettings.driversPreset !== undefined
+                ? { driversPreset: news.template.gpuSettings.driversPreset }
+                : {}),
+              // A presence switch in the proto's terms: enabling DRA is the only thing `true` can mean.
+              ...(news.template.gpuSettings.dra ? { dra: true } : {}),
+            },
+          }
+        : {}),
+      ...(news.template.gpuCluster !== undefined ? { gpuCluster: { id: news.template.gpuCluster.id } } : {}),
+      ...(news.template.nvlink !== undefined
+        ? { nvlink: { nvlInstanceGroupId: news.template.nvlink.nvlInstanceGroupId } }
+        : {}),
       ...(news.template.reservationPolicy !== undefined
         ? {
             reservationPolicy: {
@@ -348,18 +363,27 @@ export const NebiusNodeGroupProvider: Layer.Layer<
         // Plan-time props validation — fail `alchemy plan` fast, before any API call.
         yield* NodeGroupSchema.validateNodeGroupProps(news)
 
-        // Arm 1 has **no** create-only spec field: every prop here (`version`, the sizing pair, the
-        // whole template) is updatable in place, and the API applies template changes as a roll-out
-        // per the deployment strategy. The sizing swap is **measured** to be in-place too
+        // Every arm's spec field is updatable in place: the API applies template changes as a roll-out
+        // per the deployment strategy, and the sizing swap is **measured** to be in-place too
         // (2026-09-23: sending one side clears the other, the id is kept and `resourceVersion` moves by
-        // one — see AGENTS.md §"Non-standard APIs" and the live test), which is why it is not planned
-        // as a replace. So the only replace is a changed identity — parent cluster or physical name —
-        // which is create-first because a different identity is a different resource.
+        // one — see AGENTS.md §"Non-standard APIs" and the live test).
         //
-        // ⚠️ `template.nvlink` is the one exception the arms add later: the CLI omits it
-        // from `node-group update`, and probe 1 of TASKS.md §N5 (adding a synthetic id and
-        // reading the error) is what will settle whether it is immutable or merely
-        // create-oriented before it is planned as a replace.
+        // `template.nvlink` is in the same class, which was **not** obvious and is why a replace branch
+        // used to live here: the generated CLI omits `--template-nvlink-nvl-instance-group-id` from
+        // `node-group update` (the usual create-only tell). Two probes settled it the other way —
+        // `spikes/mk8s-nvlink-probe.ts` sent an update adding `nvlink` with a well-formed, non-existent
+        // id and the API answered `NotFound: nvl instance group not found by id
+        // "computenvlinstancegroup-…"`, i.e. it took the field and asked the compute service to resolve
+        // the reference; and the earlier `PreflightCheck` run answered `requiresUserApproval: true` with
+        // a roll-out warning rather than an immutability refusal. A change is therefore a roll-out, and
+        // the pinned comparison converges it in place.
+        //
+        // Residual uncertainty, stated rather than hidden: a *successful* nvlink change could not be
+        // exercised here (this tenant has no `GB200`/`GB300` entitlement and so no real
+        // `NVLInstanceGroup` to point at). What is measured is that the field is not refused.
+        //
+        // So the only replace is a changed identity — parent cluster or physical name — which is
+        // create-first because a different identity is a different resource.
         return Factory.identityChangeRequiresReplace(news, olds)
       }),
     })

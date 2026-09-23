@@ -441,6 +441,63 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
         }),
       )
     })
+
+    // ── arms 3 + 5: GPU settings, GPU cluster, NVLink ──────────────────────
+
+    test('gpuSettings: a non-empty preset or dra: true, never an empty block or dra: false', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, gpuSettings: { driversPreset: 'cuda12.8', dra: true } },
+        }),
+      )
+      // Driverless/DRA-only is `{dra: true}` with no preset — the form the proto documents for
+      // "GPU nodes that do not have preinstalled drivers, including DRA-enabled node groups".
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, gpuSettings: { dra: true } },
+        }),
+      )
+      expect(String(await invalidTemplate({ gpuSettings: {} }))).toContain('must set driversPreset or dra')
+      expect(String(await invalidTemplate({ gpuSettings: { dra: false } }))).toContain('can only be set to true')
+      expect(String(await invalidTemplate({ gpuSettings: { driversPreset: '' } }))).toContain('must not be empty')
+    })
+
+    test('gpuCluster needs the id (`GpuCluster` is the only member)', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, gpuCluster: { id: 'gpucluster-abc1' } },
+        }),
+      )
+      expect(String(await invalidTemplate({ gpuCluster: {} }))).toContain('id')
+    })
+
+    test('nvlink requires the instance-group id, fixed sizing and non-preemptible nodes', async () => {
+      const nvlink = { nvlInstanceGroupId: 'nvlinstancegroup-abc1' }
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, nvlink },
+        }),
+      )
+      expect(String(await invalidTemplate({ nvlink: {} }))).toContain('nvlInstanceGroupId')
+      // The solutions library's preconditions, checkable from props: an NVLink group cannot autoscale…
+      expect(
+        String(
+          await invalid({
+            fixedNodeCount: undefined,
+            autoscaling: { minNodeCount: 1, maxNodeCount: 1 },
+            template: { ...validProps.template, nvlink },
+          }),
+        ),
+      ).toContain('requires fixed sizing')
+      // …and its nodes cannot be preemptible.
+      expect(
+        String(await invalidTemplate({ nvlink, preemptible: true })),
+      ).toContain('non-preemptible')
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -676,8 +733,7 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
       expect(Module.nodeGroupSpecDrifted(liveWithEcho.spec, desiredFor(validProps))).toBe(false)
     })
 
-    test('a pinned drainTimeout that the live spec holds differently drifts', () => {
-      const live = nodeGroupProto({
+    test('a pinned drainTimeout that the live spec holds differently drifts', () => {      const live = nodeGroupProto({
         spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
           version: '1.35',
           fixedNodeCount: '2',
@@ -907,6 +963,87 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
   })
 
   // -------------------------------------------------------------------------
+  // arms 3 + 5 — GPU settings, GPU cluster, NVLink
+  // -------------------------------------------------------------------------
+
+  describe('arms 3 + 5 (gpuSettings, gpuCluster, nvlink)', () => {
+    const gpuProps = {
+      ...validProps,
+      template: {
+        ...validProps.template,
+        gpuSettings: { driversPreset: 'cuda12.8', dra: true },
+        gpuCluster: { id: 'gpucluster-abc1' },
+      },
+    }
+
+    test('the GPU block reaches the wire as a preset plus a presence flag', () => {
+      const spec = desiredFor(gpuProps)
+      expect(spec.template!.gpuSettings!.driversPreset).toBe('cuda12.8')
+      expect(spec.template!.gpuSettings!.dra).toBe(true)
+      expect(spec.template!.gpuCluster!.id).toBe('gpucluster-abc1')
+    })
+
+    test('a driverless GPU group sends no preset at all', () => {
+      const spec = desiredFor({
+        ...validProps,
+        template: { ...validProps.template, gpuSettings: { dra: true } },
+      })
+      // Empty string and absent are the same bytes: the proto's "leave empty" is "do not send it".
+      expect(spec.template!.gpuSettings!.driversPreset).toBe('')
+      expect(spec.template!.gpuSettings!.dra).toBe(true)
+      // And it is *not compared*, because nothing was pinned (the `protoPinnedFields` rule).
+      expect(
+        Module.nodeGroupSpecDrifted(
+          nodeGroupProto().spec,
+          desiredFor({ ...validProps, template: { ...validProps.template, gpuSettings: { dra: true } } }),
+        ),
+      ).toBe(true)
+    })
+
+    test('nvlink reaches the wire as its instance-group id', () => {
+      const spec = desiredFor({
+        ...validProps,
+        template: { ...validProps.template, nvlink: { nvlInstanceGroupId: 'nvlinstancegroup-abc1' } },
+      })
+      expect(spec.template!.nvlink!.nvlInstanceGroupId).toBe('nvlinstancegroup-abc1')
+    })
+
+    test('a pinned GPU/NVLink change drifts', () => {
+      const live = nodeGroupProto().spec
+      expect(Module.nodeGroupSpecDrifted(live, desiredFor(gpuProps))).toBe(true)
+      expect(
+        Module.nodeGroupSpecDrifted(
+          live,
+          desiredFor({
+            ...validProps,
+            template: { ...validProps.template, nvlink: { nvlInstanceGroupId: 'nvlinstancegroup-abc1' } },
+          }),
+        ),
+      ).toBe(true)
+    })
+
+    test('an NVLink id that only the API holds is never compared (the anti-loop direction)', () => {
+      // `diff` plans a replace when the *props* change, but reconcile must not chase a value the props
+      // never pinned: that would be an update loop against a field the API may not accept at all.
+      // Built *from* the main fixture through its JSON rendering, so every pinned field is identical to
+      // the baseline by construction and only the unpinned NVLink/GPU fields differ — otherwise this
+      // would silently test a pinned change (a different `blockSizeBytes` did exactly that, first try).
+      const baseJson = NebiusNodeGroupSchema.NodeGroupSpec.toJSON(nodeGroupProto().spec!) as Record<string, unknown>
+      const live = nodeGroupProto({
+        spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
+          ...baseJson,
+          template: {
+            ...(baseJson.template as Record<string, unknown>),
+            nvlink: { nvlInstanceGroupId: 'nvlinstancegroup-abc1' },
+            gpuSettings: { driversPreset: 'cuda12.8' },
+          },
+        }),
+      })
+      expect(Module.nodeGroupSpecDrifted(live.spec, desiredFor(validProps))).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
   // Attributes
   // -------------------------------------------------------------------------
 
@@ -1032,6 +1169,36 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
       expect(await runDiff(await resolveNodeGroupProvider(), { ...validProps, name: 'nodes-2' }, validProps)).toEqual({
         action: 'replace',
       })
+    })
+
+    test('an nvlink change is NOT a replace: the field is updatable (measured)', async () => {
+      // Not obvious, and the first implementation got it wrong: the CLI omits the flag from
+      // `node-group update`, but the API accepts the field on an update — with a well-formed,
+      // non-existent id it answered `NotFound: nvl instance group not found by id …`, i.e. it handed the
+      // reference to the compute service to resolve (`spikes/mk8s-nvlink-probe.ts`, 2026-09-23). So a
+      // change is an ordinary template roll-out that `reconcile` converges in place.
+      const nvlinkProps = {
+        ...validProps,
+        template: { ...validProps.template, nvlink: { nvlInstanceGroupId: 'computenvlinstancegroup-abc1' } },
+      }
+      expect(await runDiff(await resolveNodeGroupProvider(), nvlinkProps, validProps)).toBeUndefined()
+      // Removing it is also an in-place change (the spec merge clears it, like the sizing pair).
+      expect(await runDiff(await resolveNodeGroupProvider(), validProps, nvlinkProps)).toBeUndefined()
+    })
+
+    test('a GPU change is NOT a replace: it is a template roll-out', async () => {
+      // Only `nvlink` is planned as a replace. `gpuSettings`/`gpuCluster` are ordinary template fields,
+      // and the API rolls the group out per the deployment strategy (the `PreflightCheck` warning).
+      expect(
+        await runDiff(
+          await resolveNodeGroupProvider(),
+          {
+            ...validProps,
+            template: { ...validProps.template, gpuSettings: { driversPreset: 'cuda12.8' } },
+          },
+          validProps,
+        ),
+      ).toBeUndefined()
     })
 
     test('arm 1 has no create-only spec field: template and sizing changes plan an update', async () => {
