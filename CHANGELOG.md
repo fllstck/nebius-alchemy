@@ -7,6 +7,15 @@
   breaking changes (seven attribute types, `transfer.source.nebius.accessKey`, `AuthPublicKey`
   RSA-4096, the security-rule match block). The same list is now in the README
   (§*Upgrading from 0.8.x*), because npm shows the README and not this file.
+* **`alchemy` is now a peer dependency, pinned to the exact beta (`2.0.0-beta.79`).** It was a
+  `dependencies` entry, which meant a consumer on a different alchemy beta silently got **two** copies —
+  their CLI on theirs, this package's providers on ours, each with its own Effect instance. The peer
+  makes that a loud `ERESOLVE … peer alchemy@\"2.0.0-beta.79\"` instead. Both installers satisfy it
+  automatically (npm 7+ and bun both auto-install peers), and the README's install line names it too.
+* **No TypeScript dependency or peer is declared any more.** The `>=6 <8` *optional* peer made
+  `npm install` fail once `alchemy` was a root peer: alchemy's optional frontend chains (`octane`,
+  `@xata.io/client`) pull TypeScript 5.x, and an optional peer is still validated when the package *is*
+  present. Bring your own compiler — 6 or 7 is verified (6.0.3, 7.0.2).
 * **This package no longer ships `@effect/sql-d1`, `@effect/sql-sqlite-do` or `@effect/vitest`.** They are
   **alchemy's** dependencies — on the Effect 4 line (`4.0.0-rc.115+`), which alchemy installs itself —
   while this package's copies pinned the **Effect 3** line (`^0.50.0` / `^0.30.0`). Every consumer
@@ -19,6 +28,9 @@
 
 * **deps:** drop the Effect-3 copies of `@effect/sql-d1`, `@effect/sql-sqlite-do` and `@effect/vitest` —
   an install is now one `@effect/*` line with no `ERESOLVE` warnings
+* **deps:** declare `alchemy` as an exact peer instead of a dependency, so a version mismatch fails the
+  install instead of silently duplicating it (and drop the `typescript` peer, which broke `npm install`
+  as a result)
 * **readme:** document the 0.9.0 consumer-visible changes where consumers actually look
 
 ## [0.9.0](https://github.com/fllstck/nebius-alchemy/compare/v0.8.3...v0.9.0) (2026-09-22)

@@ -508,6 +508,28 @@ nebius storage bucket list
 - Use sequential `stack.deploy()` calls for quota-sensitive resources
 - Not all API responses echo back provided fields — don't assert all input fields in output
 
+### Package manifest — framework = peer, SDKs = dependencies
+
+Alchemy's own convention, which this package follows: the **shared framework is a peer dependency**
+(`alchemy` itself declares `effect` and `@effect/platform-*` as peers, `@distilled.cloud/core` declares
+`effect` as a peer, `@alchemy.run/cloudflare-runtime` declares `effect` + platform peers), while
+**service SDKs and internal packages are dependencies** (`@distilled.cloud/*`, `@aws-sdk/*`,
+`@alchemy.run/node-utils`). Both installers auto-install peers (npm 7+; bun ignores their *ranges* but
+does install them), so a peer costs nothing — and it is what makes a version mismatch **loud** instead of
+silently installing two copies: until 0.9.1 `alchemy` was a dependency here, so a consumer on a different
+beta got two `alchemy` installs (their CLI on one, our providers on the other, each with its own Effect
+instance) with no warning.
+
+Two corollaries, both learned the hard way:
+
+- **Never declare a compiler (or other tool) *range* as a peer.** The `typescript >=6 <8` optional peer
+  broke `npm install` the moment `alchemy` became a root peer: alchemy's optional frontend chains
+  (`octane`, `@xata.io/client`) install TypeScript 5.x, and an `optional` peer is still validated when the
+  package is present. Compilers are consumer-provided; the README says which ones are verified.
+- **A peer that is a shared *framework* is exact-pinned here**, not ranged (alchemy uses ranges): alchemy
+  pins the Effect release it compiles against, so a different beta is a different Effect line — the
+  mismatch the exact-pin doctrine exists to surface.
+
 ### Non-standard APIs
 
 Some Nebius APIs don't follow the standard CRUD pattern:

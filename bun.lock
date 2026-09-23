@@ -8,7 +8,6 @@
         "@bradenmacdonald/s3-lite-client": "1.0.0",
         "@bufbuild/protobuf": "2.13.0",
         "@grpc/grpc-js": "^1.14.5",
-        "alchemy": "2.0.0-beta.79",
         "long": "5.3.2",
       },
       "devDependencies": {
@@ -19,6 +18,7 @@
         "@hughescr/stryker-bun-runner": "1.4.0",
         "@stryker-mutator/core": "10.0.0",
         "@types/bun": "1.4.2",
+        "alchemy": "2.0.0-beta.79",
         "conventional-changelog-cli": "^5.0.0",
         "effect": "4.0.0-rc.117",
         "oxlint": "1.83.0",
@@ -29,12 +29,9 @@
         "@effect/platform-bun": "4.0.0-rc.117",
         "@effect/platform-node": "4.0.0-rc.117",
         "@effect/platform-node-shared": "4.0.0-rc.117",
+        "alchemy": "2.0.0-beta.79",
         "effect": "4.0.0-rc.117",
-        "typescript": ">=6 <8",
       },
-      "optionalPeers": [
-        "typescript",
-      ],
     },
   },
   "packages": {

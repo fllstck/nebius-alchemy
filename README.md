@@ -39,7 +39,10 @@ bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.117 @effect/platform-bun@4.0.0-rc.
 > re-audit after every bump — see `agent-patterns/effect-versioning.md`.
 >
 > **Avoid `alchemy@next`.** The `next` dist-tag currently points at an _older_
-> beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.79`).
+> beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.79`). Since 0.9.1 `alchemy` is a **peer** of this
+> package, pinned to the exact beta — so installing a different one now fails loudly
+> (`ERESOLVE … peer alchemy@"2.0.0-beta.79"`) instead of silently installing two copies, where the
+> CLI and the providers would each use their own `alchemy` and their own Effect instance.
 >
 > **Type checking with `tsc`?** This package ships raw TypeScript (bun-first, no build step). If you typecheck with `tsc`, enable `allowImportingTsExtensions` (requires `noEmit`), e.g. `"moduleResolution": "bundler", "allowImportingTsExtensions": true, "noEmit": true`.
 
@@ -141,9 +144,12 @@ The older `$STAGE` variable is **no longer consulted**.
 
 The package ships raw TypeScript source and requires these peer dependencies in your project.
 
-`typescript` is the exception to the exact-pin rule below, and deliberately so: pinning a TypeScript
-*version* as a required peer makes a plain `npm install` fail, because npm tries to place that version
-next to alchemy's optional `typescript@^6` chain. Marked optional, npm leaves the choice to you.
+`typescript` is the exception to the exact-pin rule below, and deliberately so: declaring a compiler
+*range* as a peer makes a plain `npm install` fail, because npm then has to place a compiler version
+next to alchemy's optional frontend chains (`octane`, `@xata.io/client`, …), which ask for TypeScript
+5.x — `ERESOLVE … peerOptional typescript@">=6 <8"`. So this package declares **no** TypeScript
+dependency or peer at all: **bring your own** compiler (6 or 7 is verified: 6.0.3, 7.0.2), configured
+as shown in § tsconfig.json.
 Versions are **pinned exactly** — alchemy and Effect move together, so a mismatched pair fails
 at import (see _Install Dependencies_ above):
 
@@ -153,8 +159,8 @@ at import (see _Install Dependencies_ above):
 | `@effect/platform-bun`         | Yes      | `4.0.0-rc.117`                                                                            |
 | `@effect/platform-node`        | Yes      | `4.0.0-rc.117` — required by the Alchemy CLI                                              |
 | `@effect/platform-node-shared` | Yes      | `4.0.0-rc.117` — declared exact so npm resolves the whole `@effect/*` family consistently |
-| `typescript`                   | Optional | TypeScript 6 or 7 (verified: 6.0.3, 7.0.2) — declared `>=6 <8` and marked **optional** so npm never tries to install a compiler version for you. Non-optional, npm auto-installs the newest match and collides with alchemy's optional `typescript@^6` chain (`ERESOLVE`). Install `typescript` in your own project. |
-| `alchemy`                      | Yes      | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which points at an _older_ beta      |
+| `typescript`                   | Not declared | Bring TypeScript 6 or 7 (verified: 6.0.3, 7.0.2). It was a `>=6 <8` **optional** peer until 0.9.1, which made `npm install` fail against alchemy's optional TypeScript-5 chains (`ERESOLVE … peerOptional typescript`) — a compiler range here can only break installs, so the choice is yours. |
+| `alchemy`                      | Yes (peer, exact) | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which is an _older_ beta. Exact on purpose: the CLI and this package's providers must share one `alchemy` (and one Effect instance), so a mismatch is an install error rather than two copies |
 
 ### Upgrading from 0.8.x
 

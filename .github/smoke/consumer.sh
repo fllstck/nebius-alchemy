@@ -36,7 +36,10 @@ PIN="$(node -p "require('$ROOT/package.json').peerDependencies.effect")"
 ALCHEMY_PIN="$(node -p "require('$ROOT/package.json').dependencies.alchemy")"
 BUN_PEER="$(node -p "require('$ROOT/package.json').peerDependencies['@effect/platform-bun']")"
 NODE_PEER="$(node -p "require('$ROOT/package.json').peerDependencies['@effect/platform-node']")"
-TS_PEER="$(node -p "require('$ROOT/package.json').peerDependencies.typescript")"
+# 0.9.1 dropped the `typescript` peer: a compiler *range* as a peer makes npm fail against alchemy's
+# optional TypeScript-5 chains (`octane`, `@xata.io`) — the 0.8.0 failure mode, re-triggered by alchemy
+# becoming a root peer. The compiler is consumer-provided, so pin the documented line for this check.
+TS_PEER=">=6 <8"
 
 rm -rf "$DIR"
 mkdir -p "$DIR"
