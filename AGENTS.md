@@ -668,23 +668,24 @@ Some Nebius APIs don't follow the standard CRUD pattern:
     scalars, and the exclusive sizing pair above is the exception, not the rule. (An update that omits
     a prop the group already pinned is therefore a no-op in the cloud; only a replace, or a change the
     API acts on, moves it.)
-  * **Node-level runtime fields are accepted but not rolled out.** The same probe changed, one per
-    arm, `template.taints`, `metadata.labels`, `instanceMetadata.labels` and `cloudInitUserData`: each
-    update was **accepted** and the new value landed in `spec` (user-data grew 31 → 46 bytes), while
-    `status.outdatedNodeCount` stayed `0`, `nodeCount`/`readyNodeCount` stayed `1` and
-    `reconciling` stayed `false` for the whole window (90 s; 180 s for user-data). The proto states
-    this for taints and labels ("applied only to Kubernetes Nodes created after the field change") and
-    the same is now measured for **cloud-init user-data**, which the TASKS notes had only inferred
-    from the solutions library. The operator rolls out for *infrastructure* changes (platform, preset,
-    os, version — the `PreflightCheck` rows above), not for these — so a user-data edit converges in
-    `spec`, is invisible to running nodes, and is documented at the field rather than planned as a
-    replace (deleting and recreating a whole node group to apply a cloud-init nuance is not a trade
-    any provider should make silently).
-    ⚠️ **This bullet's verdict is NOT established** — it was read from a counter that the next bullet
-    proves is blind to exactly this question, and the samples were taken *after* the update call
-    returned, which is the window a completed roll-out hides in. The `spec`-echo half stands (the new
-    values really do land in `spec`); "sticky" does not. Re-measurement with the instance witness:
-    `spikes/mk8s-rollout-arms-probe.ts`.
+  * **Node-level fields: two are sticky, one rolls the group out** (measured 2026-09-24,
+    `spikes/mk8s-rollout-arms-probe.ts`, one node group, with the preset control in the same run reading
+    `replaced = true` so the negatives mean something):
+    * **`template.taints` — sticky.** A value change was accepted, landed in `spec`, and the update
+      returned in **1 s** with no compute instance replaced and `outdatedNodeCount` never non-zero. The
+      proto is right: "applied only to Kubernetes Nodes created after the field change", so existing
+      nodes keep the old taint until you `kubectl taint` them yourself. **`template.metadata.labels`
+      (and its `instanceMetadata` sibling) behave identically** — 1 s, not replaced.
+    * **`template.cloudInitUserData` — ROLLS OUT.** The same shape of edit took **562 s**, and the node
+      **was** replaced: `outdatedNodeCount` `0 → 1` 17 s in, the old compute instance deleted, the
+      replacement booted and joined. So the soperator-derived "sticky, like taints" claim is **wrong** —
+      cloud-init runs at node creation, and the platform recreates the node to apply it. A one-line
+      user-data edit therefore drains every node in the group; the `PreflightCheck` disruption signal
+      above would report it as a roll-out.
+    * Neither class is planned as a **replace**: an in-place update is what the API expects, and for
+      user-data a replace would delete the node group to avoid a roll-out the API performs anyway. Each
+      field's own doc states its verdict (they are neighbours in the same `template` message, and
+      nothing in the props hints at the difference).
   * **`status.outdatedNodeCount` is only a witness *while the update call is still in flight*.** It is
     **not** dead: `spikes/mk8s-rollout-arms-probe.ts` caught it moving `"0"` → `"1"`, with
     `reconciling` `false` → `true` and state `RUNNING` → `PROVISIONING`, **17 s into** a

@@ -132,9 +132,10 @@ const attachMode = Schema.Union([Schema.Literal('READ_ONLY'), Schema.Literal('RE
  * `Schema.Union` of structs — `agent-patterns/effect-schema.md`). The rest of the syntax (prefix,
  * 63-char limits, charset) is left to the API, whose message names the offending label.
  *
- * ⚠️ Like taints, label changes are **not** rolled out to existing nodes — the proto says so, and the
- * measured verdict (same witness as `taints`, `spikes/mk8s-rollout-arms-probe.ts`) is recorded at the
- * `taints` field on this struct.
+ * ⚠️ Like taints, label changes are **not** rolled out to existing nodes. Measured live 2026-09-24
+ * (`spikes/mk8s-rollout-arms-probe.ts`): a node-label change was accepted, landed in `spec`, and the
+ * update returned in **1 s** with `replacedTheNode: false` and `outdatedNodeCount` never non-zero. So
+ * the proto's claim holds — existing Nodes keep the old labels until something else recreates them.
  */
 const labelMap = Schema.Record(Schema.String, Schema.String).check(
   Schema.makeFilter((labels: Record<string, string>) =>

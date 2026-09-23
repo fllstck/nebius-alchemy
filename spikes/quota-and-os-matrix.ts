@@ -66,7 +66,10 @@ const program = Effect.gen(function* () {
   console.log(`\nquota allowances: ${allowances.length}`)
   // One raw row first: `spec.limit` came back `undefined` for all 61 in the first run, so the field
   // must be read from wherever the API actually puts it rather than assumed.
-  console.log('\nfirst row, verbatim:', JSON.stringify(QuotaSchema.QuotaAllowance.toJSON(allowances[0]), null, 2))
+  console.log(
+    '\nfirst row, verbatim:',
+    JSON.stringify(allowances[0] === undefined ? null : QuotaSchema.QuotaAllowance.toJSON(allowances[0]), null, 2),
+  )
   const gpuIsh = /gpu|b200|b300|h100|h200|l40|rtx|infini/i
   for (const allowance of allowances) {
     const name = allowance.metadata?.name ?? '?'
