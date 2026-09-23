@@ -143,6 +143,46 @@ Rules this earned:
 4. **Verify by name from the registry**, not only the packed tarball — 0.8.0's
    publish-time breakage was invisible to a local-tarball install.
 
+## "Publishing…" + exit 0 is NOT a publish — verify the registry, every time
+
+Learned the hard way at 0.9.0 (2026-09-23). `npm publish` printed:
+
+```
+npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access
+npm notice Your package is being processed and may take a few minutes to become available.
+http fetch PUT 202 https://registry.npmjs.org/@fllstck%2fnebius-alchemy
+verbose exit 0
+info ok
+```
+
+…and **nothing was ever published**: half an hour later `GET /@fllstck%2fnebius-alchemy/0.9.0` was still
+404, the tarball URL was 404 and `dist-tags` still said `latest: 0.8.3`. A **202** means *queued*, and
+when the queued publish is dropped the CLI says nothing — it exits **0**. (Same class as npm/cli#8936
+and npm/npm#20077; the OTP path additionally regressed in npm/cli#8208.)
+
+So never read success off the notice, and never off `exit 0`. Ask the registry, in the same breath:
+
+```bash
+npm publish
+sleep 20   # a real publish lands in seconds; 202's "few minutes" is the tell that it did not
+curl -s -o /dev/null -w 'version:   %{http_code}\n' "https://registry.npmjs.org/@fllstck%2fnebius-alchemy/0.9.0"   # want 200
+curl -s -o /dev/null -w 'tarball:   %{http_code}\n' "https://registry.npmjs.org/@fllstck/nebius-alchemy/-/nebius-alchemy-0.9.0.tgz"   # want 200
+curl -s "https://registry.npmjs.org/-/package/@fllstck%2fnebius-alchemy/dist-tags"                              # want latest: 0.9.0
+```
+
+`npm view <pkg>@<version>` is the same ground truth (its packument read can lag the CDN; the
+per-version and tarball URLs do not). A retry is always safe while the version is absent — and once it
+is present, a retry fails loudly with `403 You cannot publish over the previously published versions`,
+which is the *good* failure mode.
+
+**Why it was queued-and-dropped:** publishing requires either 2FA (OTP) or a **granular access token
+with "bypass 2FA"** enabled. This account publishes with `auth-type=web` (browser login) plus
+`--otp`, and that path can 202 silently. The reliable path is the token: npmjs.com → Access Tokens →
+Granular, *Read and write* on the scope, **bypass 2FA** ticked, written to `~/.npmrc` as
+`//registry.npmjs.org/:_authToken=…`. Note that with `auth-type=web` set, npm prefers the **keychain**,
+so a fresh file token can be shadowed by a stale keychain entry — `npm logout --auth-type=web` (or
+delete the "npm" keychain item) before switching to the token.
+
 ## "Did it publish?" — the diagnostic ladder
 
 A release can *look* done — tag pushed, command exit 0 — while nothing reached
