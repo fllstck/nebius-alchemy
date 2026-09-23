@@ -11,6 +11,7 @@ import * as DnsGrpc from './api-client/dns.ts'
 import * as MysteryBoxGrpc from './api-client/mysterybox.ts'
 import * as KmsGrpc from './api-client/kms.ts'
 import * as QuotasGrpc from './api-client/quotas.ts'
+import * as BillingGrpc from './api-client/billing.ts'
 import * as CapacityGrpc from './api-client/capacity.ts'
 import * as AiGrpc from './api-client/ai.ts'
 import * as Mk8sGrpc from './api-client/mk8s.ts'
@@ -41,6 +42,7 @@ import * as SecretVersionResource from './resources/mysterybox/v1/secret-version
 import * as SymmetricKeyResource from './resources/kms/v1/symmetric-key.ts'
 import * as AsymmetricKeyResource from './resources/kms/v1/asymmetric-key.ts'
 import * as QuotaAllowanceResource from './resources/quotas/v1/quota-allowance.ts'
+import * as PricingPolicyResource from './resources/billing/v1/pricing-policy.ts'
 import * as JobResource from './resources/ai/v1/job.ts'
 import * as EndpointResource from './resources/ai/v1/endpoint.ts'
 import * as ServiceAccountResource from './resources/iam/v1/service-account.ts'
@@ -99,6 +101,7 @@ const resources = AlchemyProvider.collection([
   SymmetricKeyResource.NebiusSymmetricKey,
   AsymmetricKeyResource.NebiusAsymmetricKey,
   QuotaAllowanceResource.NebiusQuotaAllowance,
+  PricingPolicyResource.NebiusPricingPolicy,
   JobResource.NebiusJob,
   EndpointResource.NebiusEndpoint,
   // mk8s: the node group is parented by a **cluster**, not the project (see its
@@ -169,6 +172,9 @@ export const providers = () =>
     Layer.provideMerge(Mk8sGrpc.Mk8sGrpcServiceLive),
     Layer.provideMerge(Mk8sClusterResource.NebiusClusterProvider),
     Layer.provideMerge(Mk8sNodeGroupResource.NebiusNodeGroupProvider),
+    // Billing joined here rather than in the chain above, which is already at the 20-function limit.
+    Layer.provideMerge(BillingGrpc.BillingGrpcServiceLive),
+    Layer.provideMerge(PricingPolicyResource.NebiusPricingPolicyProvider),
   ).pipe(
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),
     Layer.provideMerge(Credentials.fromAuthProvider),

@@ -97,6 +97,9 @@ import * as EndpointModule from '../modules/resources/ai/v1/endpoint.ts'
 import * as EndpointSchema from '../modules/resources/ai/v1/endpoint.schema.ts'
 import * as JobModule from '../modules/resources/ai/v1/job.ts'
 import * as JobSchema from '../modules/resources/ai/v1/job.schema.ts'
+import * as PricingPolicyModule from '../modules/resources/billing/v1/pricing-policy.ts'
+import * as PricingPolicySchema from '../modules/resources/billing/v1/pricing-policy.schema.ts'
+import * as NebiusPricingPolicySchema from '../schemas/nebius/billing/v1/pricing_policy.ts'
 import * as NebiusInstanceSchema from '../schemas/nebius/compute/v1/instance.ts'
 import * as NebiusNvlSchema from '../schemas/nebius/compute/v1/nvlinstancegroup.ts'
 import * as NebiusAccessPermitSchema from '../schemas/nebius/iam/v1/access_permit.ts'
@@ -2617,5 +2620,76 @@ describe('Nebius.mk8s.v1.NodeGroup convergence', () => {
           }),
         ),
       ),
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Nebius.billing.v1.PricingPolicy
+// ---------------------------------------------------------------------------
+//
+// The one billing resource: a project-scoped auction bid (platform + max price per GPU hour) that the
+// `pricing_model` oneof's `spot_pricing_policy { id }` arm names.
+//
+// **`diff` is the only convergence path**, like every resource without an `Update` RPC — and here the
+// update path is not merely unused but *unimplemented on the wire*: every documented shape of
+// `UpdatePricingPolicyRequest` answers a bare `3 INVALID_ARGUMENT: Request validation error` (seven
+// variants probed 2026-09-24, `spikes/billing-update-shape-probe.ts`, including a byte-identical spec
+// with a freshly read `resourceVersion`). So every spec change is a replace, and a prop this `diff`
+// ignores would be lost silently — which is exactly what the table below probes.
+//
+// The baseline pins `name`, so a spec-only replace is **delete-first** (`Factory.replaceKeepingName`):
+// the identity `(parent, name)` is reused and a create-first replacement would hit `ALREADY_EXISTS`
+// while the old generation still holds the name. Identity changes (`name`, `parentId`) stay create-first
+// — a different name or parent can coexist.
+
+const PRICING_POLICY_ID = 'pricingpolicy-1'
+const pricingPolicyProps = {
+  parentId: 'project-test-1',
+  name: 'gpu-bids',
+  platform: 'gpu-h100-sxm',
+  maxPrice: '3.000',
+} as const
+
+const pricingPolicyLive = (): NebiusPricingPolicySchema.PricingPolicy => ({
+  metadata: protoMetadata(PRICING_POLICY_ID, pricingPolicyProps.name, pricingPolicyProps.parentId),
+  // `fromJSON` (not `fromPartial`) so `runningVmCount` arrives as a real `Long` — the shape the
+  // api-client returns — and so the nested spec is built the way the provider builds it.
+  spec: NebiusPricingPolicySchema.PricingPolicySpec.fromJSON({
+    computeInstanceSpec: { v1: { platform: pricingPolicyProps.platform } },
+    pricing: { maxPriceV1: { maxPrice: '3' } },
+  }),
+  status: NebiusPricingPolicySchema.PricingPolicyStatus.fromJSON({
+    state: 'ACTIVE',
+    skuId: 'sku-1',
+    schedulingState: 'SCHEDULING_STATE_ALLOWED',
+    runningVmCount: '0',
+    currency: 'usd',
+  }),
+})
+
+describe('Nebius.billing.v1.PricingPolicy convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.billing.v1.PricingPolicy',
+    provider: PricingPolicyModule.NebiusPricingPolicy.Provider,
+    providerLayer: PricingPolicyModule.NebiusPricingPolicyProvider,
+    propsSchema: PricingPolicySchema.PricingPolicyPropsSchema,
+    props: pricingPolicyProps,
+    change: {
+      // Identity: a different project, or a different physical name. Both create-first — the new
+      // generation can coexist with the old one, which still holds its own identity.
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'gpu-bids-2' }, { action: 'replace' }),
+      // Spec-only changes replace in place of an update, because there is no usable `Update` RPC; the
+      // pinned name makes them delete-first.
+      platform: planned({ platform: 'gpu-h200-sxm' }, { action: 'replace', deleteFirst: true }),
+      maxPrice: planned({ maxPrice: '3.500' }, { action: 'replace', deleteFirst: true }),
+    },
+    declared: {
+      labels:
+        'the service accepts and DISCARDS metadata.labels (measured live 2026-09-24: three labels sent, `{}` stored and still `{}` 5 s later — spikes/billing-labels-probe.ts); with no update RPC there is nothing to attach them to, and every read is therefore reported `Unowned`. Kept as a prop for the fleet-wide shape and asserted in the live test, so a service fix is visible',
+    },
+    live: pricingPolicyLive(),
+    liveId: PRICING_POLICY_ID,
+    probe: async (svc, news, baseline) => (await runDiff(svc, news, baseline)) !== undefined,
   })
 })

@@ -17,6 +17,7 @@ import * as Quotas from '../../modules/api-client/quotas.ts'
 import * as Compute from '../../modules/api-client/compute.ts'
 import * as Storage from '../../modules/api-client/storage.ts'
 import * as Capacity from '../../modules/api-client/capacity.ts'
+import * as Billing from '../../modules/api-client/billing.ts'
 import * as Dns from '../../modules/api-client/dns.ts'
 import * as Vpc from '../../modules/api-client/vpc.ts'
 import * as Kms from '../../modules/api-client/kms.ts'
@@ -135,6 +136,10 @@ export const mockStorageLayer = (partial: unknown) =>
 /** Build a CapacityGrpcService layer with only the sub-services under test. */
 export const mockCapacityLayer = (partial: unknown) =>
   Layer.succeed(Capacity.CapacityGrpcService, partial as Capacity.CapacityGrpcServiceShape)
+
+/** Build a BillingGrpcService layer with only the sub-services under test. */
+export const mockBillingLayer = (partial: unknown) =>
+  Layer.succeed(Billing.BillingGrpcService, partial as Billing.BillingGrpcServiceShape)
 
 /** Build a DnsGrpcService layer with only the sub-services under test. */
 export const mockDnsLayer = (partial: unknown) =>
