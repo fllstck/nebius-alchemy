@@ -135,3 +135,25 @@ const PercentOrCount = Schema.Struct({
 Use a `Union` for *shape* alternatives whose members are mutually exclusive by structure (a class
 vs a literal), not for "one of these two keys" — that is a filter's job in this codebase (see
 `Validation.presenceOnly`, `percentOrCount` in `modules/resources/mk8s/v1/node-group.schema.ts`).
+
+### `Schema.Record`'s **key** schema silently drops non-matching keys too — measured 2026-09-23
+
+```ts
+const Labels = Schema.Record(Schema.NonEmptyString, Schema.String)
+decodeUnknownSync(Labels)({ '': 'worker' })   // → {}   (the entry is GONE, not an error)
+```
+
+The same strip-don't-reject behaviour, one level down: a *key* schema that rejects a key removes
+that entry from the decoded map, so a caller's typo (an empty key) becomes an invisible deletion.
+Validate maps with a **filter over the decoded record** when the keys matter, so the error can be
+reported instead of swallowed:
+
+```ts
+Schema.Record(Schema.String, Schema.String).check(
+  Schema.makeFilter((labels: Record<string, string>) =>
+    Object.keys(labels).some((key) => key.trim().length === 0)
+      ? 'label keys must not be empty'
+      : undefined,
+  ),
+)
+```

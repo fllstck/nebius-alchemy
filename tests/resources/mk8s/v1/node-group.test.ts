@@ -5,6 +5,7 @@ import Long from 'long'
 
 import * as Module from '../../../../modules/resources/mk8s/v1/node-group.ts'
 import * as SchemaModule from '../../../../modules/resources/mk8s/v1/node-group.schema.ts'
+import * as CapacityIds from '../../../../modules/resources/capacity/v1/ids.ts'
 import * as NebiusNodeGroupSchema from '../../../../schemas/nebius/mk8s/v1/node_group.ts'
 import {
   instanceIdLayer,
@@ -296,6 +297,150 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
         }),
       )
     })
+
+    // ── arm 4: labels, taints, filesystems, local disks, preemptible, maxPods, reservations ──
+
+    test('the two label maps are separate and a label key cannot be empty', async () => {
+      // `template.metadata.labels` = Kubernetes node labels; `template.instanceMetadata.labels` =
+      // the compute instance's metadata. Two maps in one template.
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: {
+            ...validProps.template,
+            metadata: { labels: { 'node-role': 'worker' } },
+            instanceMetadata: { labels: { team: 'platform' } },
+          },
+        }),
+      )
+      expect(String(await invalidTemplate({ metadata: { labels: { '': 'worker' } } }))).toContain('metadata')
+    })
+
+    test('taints need a key and a real effect; the value may be empty', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: {
+            ...validProps.template,
+            // An empty taint *value* is legal and common (`kubectl taint key:NoSchedule`).
+            taints: [{ key: 'dedicated', value: '', effect: 'NO_SCHEDULE' }],
+          },
+        }),
+      )
+      expect(
+        String(await invalidTemplate({ taints: [{ key: '', value: 'x', effect: 'NO_SCHEDULE' }] })),
+      ).toContain('must not be empty')
+      expect(
+        String(await invalidTemplate({ taints: [{ key: 'k', value: 'v', effect: 'EFFECT_UNSPECIFIED' }] })),
+      ).toContain('effect')
+    })
+
+    test('a filesystem attachment needs a mode, a mount tag and an existing filesystem', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: {
+            ...validProps.template,
+            filesystems: [
+              { attachMode: 'READ_WRITE', mountTag: 'data', existingFilesystem: { id: 'computefilesystem-1' } },
+            ],
+          },
+        }),
+      )
+      // The mount tag cap is the proto's: 1-37 characters.
+      expect(
+        String(
+          await invalidTemplate({
+            filesystems: [
+              {
+                attachMode: 'READ_WRITE',
+                mountTag: 'x'.repeat(38),
+                existingFilesystem: { id: 'computefilesystem-1' },
+              },
+            ],
+          }),
+        ),
+      ).toContain('37')
+    })
+
+    test('preemptible is a presence-only switch', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, preemptible: true },
+        }),
+      )
+      expect(String(await invalidTemplate({ preemptible: false }))).toContain('can only be turned ON')
+    })
+
+    test('local disks: true-only flags, one config arm, and no empty block', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: {
+            ...validProps.template,
+            localDisks: { passthroughGroup: { requested: true }, config: { kubeletEphemeral: true } },
+          },
+        }),
+      )
+      expect(String(await invalidTemplate({ localDisks: {} }))).toContain('must set passthroughGroup or config')
+      expect(
+        String(await invalidTemplate({ localDisks: { passthroughGroup: { requested: false } } })),
+      ).toContain('can only be set to true')
+      expect(
+        String(await invalidTemplate({ localDisks: { config: { none: true, kubeletEphemeral: true } } })),
+      ).toContain('takes one arm')
+      expect(String(await invalidTemplate({ localDisks: { config: { none: false } } }))).toContain(
+        'can only be set to true',
+      )
+    })
+
+    test('maxPods is optional but cannot be 0', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, maxPods: 110 },
+        }),
+      )
+      expect(String(await invalidTemplate({ maxPods: 0 }))).toContain('positive integer')
+    })
+
+    test('reservationPolicy: AUTO is not offered, FORBID takes no ids, ids need a policy', async () => {
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: {
+            ...validProps.template,
+            reservationPolicy: {
+              policy: 'STRICT',
+              reservationIds: [CapacityIds.CapacityBlockGroupId.make('capacityblockgroup-1')],
+            },
+          },
+        }),
+      )
+      // AUTO is the proto's zero value: it cannot be sent as a change, and omitting `policy` is what
+      // "prefer my reservations, then PAYG" means — so it is not a value a caller can pick.
+      expect(String(await invalidTemplate({ reservationPolicy: { policy: 'AUTO' } }))).toContain('policy')
+      // The API rejects ids with FORBID, so the filter does too.
+      expect(
+        String(
+          await invalidTemplate({
+            reservationPolicy: { policy: 'FORBID', reservationIds: ['capacityblockgroup-1'] },
+          }),
+        ),
+      ).toContain('rejects reservationIds together with policy FORBID')
+      expect(String(await invalidTemplate({ reservationPolicy: {} }))).toContain('must set policy')
+      // Ids alone are the AUTO-with-preference case.
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: {
+            ...validProps.template,
+            reservationPolicy: { reservationIds: [CapacityIds.CapacityBlockGroupId.make('capacityblockgroup-1')] },
+          },
+        }),
+      )
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -304,14 +449,15 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
 
   describe('nodeGroupSpecDrifted', () => {
     test('the baseline does not drift, even though the live spec carries more than the props', () => {
-      // The live fixture holds the platform's `maxPods: 110`, empty `taints`/`filesystems`
-      // and a `blockSizeBytes` echo. All unpinned → invisible.
+      // The live fixture holds the API's own echo (`maxPods: 0` from a live run, the empty
+      // `taints`/`filesystems`, a `blockSizeBytes` default) — all unpinned → invisible.
       expect(Module.nodeGroupSpecDrifted(nodeGroupProto().spec, desiredFor(validProps))).toBe(false)
     })
 
-    test('the platform-materialized maxPods cannot loop', () => {
-      // The specific hazard: the API assigns a default the props never carried. A
-      // whole-spec comparison would write on every reconcile, forever.
+    test('the maxPods default cannot loop even if a platform wrote it into the spec', () => {
+      // The hazard this covers: a platform that materializes a default the props never carried would
+      // make a whole-spec comparison write on every reconcile, forever. `nodeGroupProto` holds 110
+      // on purpose (the *stronger* case — a live run measured the real echo as `0`).
       const live = nodeGroupProto().spec!
       expect(live.template!.maxPods.toString()).toBe('110')
       expect(Module.nodeGroupSpecDrifted(live, desiredFor(validProps))).toBe(false)
@@ -591,6 +737,172 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
       const desired = desiredFor(validProps)
       expect(Module.nodeGroupSpecDrifted(settled.spec, desired)).toBe(false)
       expect(Module.nodeGroupSpecDrifted(midRollout.spec, desired)).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // arm 4 — labels, taints, filesystems, local disks, preemptible, maxPods, reservations
+  // -------------------------------------------------------------------------
+
+  describe('arm 4 props (labels, taints, filesystems, local disks, preemptible, maxPods)', () => {
+    /** A live spec built from `validProps`' template plus whatever the platform adds. */
+    const liveWith = (template: Record<string, unknown> = {}, extraSpec: Record<string, unknown> = {}) =>
+      nodeGroupProto({
+        spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
+          version: '1.35',
+          fixedNodeCount: '2',
+          ...extraSpec,
+          template: {
+            os: 'ubuntu24.04',
+            resources: { platform: 'cpu-d3', preset: '2vcpu-8gb' },
+            bootDisk: { sizeGibibytes: '64', blockSizeBytes: '4096', type: 'NETWORK_SSD' },
+            networkInterfaces: [{ subnetId: 'vpcsubnet-1' }],
+            serviceAccountId: 'serviceaccount-abc123',
+            cloudInitUserData: '#cloud-config\n',
+            // The API's own echo for a field nobody pinned: measured live 2026-09-23, an omitted
+            // `maxPods` comes back as `0` — the documented `110` default is *not* written into
+            // `spec`. Kept in the fixture because an unpinned field with a value is exactly what a
+            // whole-message comparison would trip over (and it is the case the 110-variant test
+            // below makes stronger on purpose).
+            maxPods: '0',
+            ...template,
+          },
+        }),
+      })
+
+    test('the enum-valued props reach the wire as ints, not strings', () => {
+      const spec = desiredFor({
+        ...validProps,
+        template: {
+          ...validProps.template,
+          taints: [{ key: 'dedicated', value: '', effect: 'NO_SCHEDULE' }],
+          filesystems: [
+            { attachMode: 'READ_WRITE', mountTag: 'data', existingFilesystem: { id: 'computefilesystem-1' } },
+          ],
+        },
+      })
+      // `fromJSON`, not `fromPartial`: a string in an int32 field serializes as NaN.
+      expect(spec.template!.taints[0]!.effect).toBe(NebiusNodeGroupSchema.NodeTaint_Effect.NO_SCHEDULE)
+      expect(spec.template!.taints[0]!.effect).toBe(2)
+      expect(spec.template!.filesystems[0]!.attachMode).toBe(
+        NebiusNodeGroupSchema.AttachedFilesystemSpec_AttachMode.READ_WRITE,
+      )
+      expect(spec.template!.filesystems[0]!.mountTag).toBe('data')
+      expect(spec.template!.filesystems[0]!.existingFilesystem!.id).toBe('computefilesystem-1')
+    })
+
+    test('presence-shaped props are built as messages or booleans', () => {
+      const spec = desiredFor({
+        ...validProps,
+        template: {
+          ...validProps.template,
+          preemptible: true,
+          localDisks: { passthroughGroup: { requested: true }, config: { kubeletEphemeral: true } },
+          maxPods: 110,
+          reservationPolicy: { policy: 'STRICT', reservationIds: ['capacityblockgroup-1'] },
+        },
+      })
+      // Preemptible is an **empty message**: presence is the switch, so `{}` is the whole payload.
+      expect(spec.template!.preemptible).toEqual({})
+      expect(spec.template!.localDisks!.passthroughGroup!.requested).toBe(true)
+      expect(spec.template!.localDisks!.config!.kubeletEphemeral).toBe(true)
+      expect(spec.template!.localDisks!.config!.none).toBeUndefined()
+      expect(spec.template!.maxPods.toString()).toBe('110')
+      expect(spec.template!.reservationPolicy!.policy).toBe(
+        NebiusNodeGroupSchema.ReservationPolicy_Policy.STRICT,
+      )
+      expect(spec.template!.reservationPolicy!.reservationIds).toEqual(['capacityblockgroup-1'])
+    })
+
+    test('the two label maps stay distinct, and are copies', () => {
+      const nodeLabels = { 'node-role': 'worker' }
+      const spec = desiredFor({
+        ...validProps,
+        template: {
+          ...validProps.template,
+          metadata: { labels: nodeLabels },
+          instanceMetadata: { labels: { team: 'platform' } },
+        },
+      })
+      expect(spec.template!.metadata!.labels).toEqual({ 'node-role': 'worker' })
+      expect(spec.template!.instanceMetadata!.labels).toEqual({ team: 'platform' })
+      // A copy: mutating the props afterwards must not reach the message we already built.
+      nodeLabels['node-role'] = 'changed'
+      expect(spec.template!.metadata!.labels['node-role']).toBe('worker')
+    })
+
+    test('the platform-materialized maxPods cannot loop, but a pinned one is compared', () => {
+      // The API's real echo keeps `0` here (measured live 2026-09-23) — no materialization. The
+      // fixture deliberately uses the *stronger* hypothetical instead: even a platform that wrote
+      // its documented `110` default into `spec` must not cause drift while nobody pinned it, which
+      // is the property that makes this design different from a whole-message comparison.
+      const materialized = liveWith({ maxPods: '110' })
+      expect(Module.nodeGroupSpecDrifted(materialized.spec, desiredFor(validProps))).toBe(false)
+      // The real shape too, for good measure.
+      expect(Module.nodeGroupSpecDrifted(liveWith().spec, desiredFor(validProps))).toBe(false)
+      // Pinned to the same value → still no drift…
+      expect(
+        Module.nodeGroupSpecDrifted(
+          materialized.spec,
+          desiredFor({ ...validProps, template: { ...validProps.template, maxPods: 110 } }),
+        ),
+      ).toBe(false)
+      // …and pinned to a different one → drift, so the change is written.
+      expect(
+        Module.nodeGroupSpecDrifted(
+          materialized.spec,
+          desiredFor({ ...validProps, template: { ...validProps.template, maxPods: 64 } }),
+        ),
+      ).toBe(true)
+    })
+
+    test('labels compare by the keys the caller pinned, not whole-map', () => {
+      // The platform adds its own node labels (`kubernetes.io/*`); a whole-map comparison would call
+      // that drift on every reconcile.
+      const live = liveWith({ metadata: { labels: { 'node-role': 'worker', 'kubernetes.io/hostname': 'n1' } } })
+      expect(
+        Module.nodeGroupSpecDrifted(
+          live.spec,
+          desiredFor({ ...validProps, template: { ...validProps.template, metadata: { labels: { 'node-role': 'worker' } } } }),
+        ),
+      ).toBe(false)
+      // A pinned key whose value moved is real drift.
+      expect(
+        Module.nodeGroupSpecDrifted(
+          live.spec,
+          desiredFor({ ...validProps, template: { ...validProps.template, metadata: { labels: { 'node-role': 'gpu' } } } }),
+        ),
+      ).toBe(true)
+    })
+
+    test('taints, filesystems, preemptible, localDisks and reservations all drift when pinned', () => {
+      const live = liveWith()
+      const pinned = (template: Record<string, unknown>) =>
+        Module.nodeGroupSpecDrifted(live.spec, desiredFor({ ...validProps, template: { ...validProps.template, ...template } }))
+
+      expect(pinned({ taints: [{ key: 'dedicated', value: 'gpu', effect: 'NO_SCHEDULE' }] })).toBe(true)
+      expect(
+        pinned({
+          filesystems: [
+            { attachMode: 'READ_ONLY', mountTag: 'data', existingFilesystem: { id: 'computefilesystem-1' } },
+          ],
+        }),
+      ).toBe(true)
+      // Presence switch: live has none, the props ask for preemptible nodes.
+      expect(pinned({ preemptible: true })).toBe(true)
+      expect(pinned({ localDisks: { config: { none: true } } })).toBe(true)
+      expect(pinned({ reservationPolicy: { policy: 'FORBID' } })).toBe(true)
+      // Ids without a policy are the AUTO-with-preference case (and still a pinned change).
+      expect(pinned({ reservationPolicy: { reservationIds: ['capacityblockgroup-1'] } })).toBe(true)
+      // Nothing pinned → nothing compared, even though live carries the API's own echo values.
+      expect(Module.nodeGroupSpecDrifted(live.spec, desiredFor(validProps))).toBe(false)
+    })
+
+    test('an unpinned preemptible echo cannot loop', () => {
+      // The reverse direction: live has preemptible, the props do not ask for it (and it cannot be
+      // turned off without recreating the group).
+      const live = liveWith({ preemptible: {} })
+      expect(Module.nodeGroupSpecDrifted(live.spec, desiredFor(validProps))).toBe(false)
     })
   })
 

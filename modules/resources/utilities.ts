@@ -44,10 +44,11 @@ export const specDeepEqual = (a: unknown, b: unknown): boolean =>
  *      `""`/`0` and "absent" are the same bytes. Comparing an omitted prop against a
  *      live value is drift on every reconcile, forever (AGENTS.md §Convergence).
  *   2. **The platform materializes defaults into the message it echoes** — the pools of
- *      `vpc/v1 Network`, `transfer.limiters`, `Pool.cidrs[].state`, and (a risk this helper
- *      is what makes harmless rather than a bet) mk8s `template.maxPods`, which the proto
- *      documents as defaulting to `110` — so `specDeepEqual(live, desired)` can never match
- *      when the caller pinned nothing there.
+ *      `vpc/v1 Network`, `transfer.limiters`, `Pool.cidrs[].state`. (Not, it turns out, every
+ *      documented default: the mk8s node-group echo keeps `template.maxPods` at `0` and
+ *      `spec.version` at `""` — measured live 2026-09-23 — so server-side defaulting is
+ *      per-field and cannot be reasoned about from the proto's prose. Anything not pinned is
+ *      ignored either way.)
  *
  * So compare only what the caller pinned: a key present in `desired` is compared (with
  * {@link specDeepEqual} at the leaves, so int64s stay visible), and a key absent from

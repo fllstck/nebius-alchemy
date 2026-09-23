@@ -76,8 +76,11 @@ These rules are hard requirements. Violations must be corrected immediately.
 
   Two properties a hand-written guard list cannot offer: a prop that reaches `desired` is
   compared automatically (so it cannot be forgotten), and a field the platform *materializes*
-  into the echo — mk8s `maxPods: 110`, `vpc/v1 Network`'s pools, `transfer.limiters` — can
-  never loop, because it is exactly a field nobody pinned. `tests/resources/utilities.test.ts`
+  into the echo — `vpc/v1 Network`'s pools, `transfer.limiters`, `Pool.cidrs[].state` — can
+  never loop, because it is exactly a field nobody pinned. Note that not every documented default
+  is materialized: the mk8s node-group echo keeps an unpinned `template.maxPods` at `0` and
+  `spec.version` at `""` (measured live 2026-09-23), so this is a *risk* the design removes rather
+  than a claim about any particular field. `tests/resources/utilities.test.ts`
   pins both helpers; the resource's own convergence table and unit tests pin the per-field
   behaviour.
 
@@ -649,6 +652,11 @@ Some Nebius APIs don't follow the standard CRUD pattern:
   *effective* values there (`maxUnavailable: {count: 1}`, `maxSurge: {count: 0}`,
   `drainTimeout: 600s`), and the proto documents those defaults as **migrating during Q3 2026** —
   so nothing may compare `status` for this resource (the drift check reads `spec` only).
+  Finally, **three template fields are sticky**: a change to `cloudInitUserData`, to `taints` or to
+  `metadata.labels` is *not* propagated to nodes that already exist (the proto says so for taints and
+  labels — "will be applied only to Kubernetes Nodes created after the field change" — and soperator's
+  README for user-data). Documented at each field; they are real spec changes, so they converge in the
+  spec and simply have to wait for new nodes.
 - **`template.cloudInitUserData` is required but its SSH key is NOT validated** — the proto says it
   "should contain at least one SSH key" and the solutions library enforces that, but the **API does
   not**: the 2026-09-23 write probe created a node group with `'#cloud-config\n'` and no key. A

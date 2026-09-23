@@ -120,6 +120,62 @@ export const desiredSpec = (news: NodeGroupSchema.NodeGroupProps): NebiusNodeGro
         : {}),
       serviceAccountId: news.template.serviceAccountId,
       cloudInitUserData: news.template.cloudInitUserData,
+      // Kubernetes node labels and the compute instance's own metadata labels — two distinct maps.
+      ...(news.template.metadata !== undefined ? { metadata: { labels: { ...news.template.metadata.labels } } } : {}),
+      ...(news.template.instanceMetadata !== undefined
+        ? { instanceMetadata: { labels: { ...news.template.instanceMetadata.labels } } }
+        : {}),
+      ...(news.template.taints !== undefined
+        ? {
+            taints: news.template.taints.map((taint) => ({
+              key: taint.key,
+              value: taint.value,
+              // String enum → int32 (`fromJSON`, not `fromPartial`).
+              effect: taint.effect,
+            })),
+          }
+        : {}),
+      ...(news.template.filesystems !== undefined
+        ? {
+            filesystems: news.template.filesystems.map((filesystem) => ({
+              attachMode: filesystem.attachMode,
+              mountTag: filesystem.mountTag,
+              existingFilesystem: { id: filesystem.existingFilesystem.id },
+            })),
+          }
+        : {}),
+      // Presence is the switch: the proto models preemptible nodes as an empty message.
+      ...(news.template.preemptible ? { preemptible: {} } : {}),
+      ...(news.template.localDisks !== undefined
+        ? {
+            localDisks: {
+              ...(news.template.localDisks.passthroughGroup !== undefined
+                ? { passthroughGroup: { requested: true } }
+                : {}),
+              ...(news.template.localDisks.config !== undefined
+                ? {
+                    config: {
+                      ...(news.template.localDisks.config.none ? { none: true } : {}),
+                      ...(news.template.localDisks.config.kubeletEphemeral ? { kubeletEphemeral: true } : {}),
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
+      ...(news.template.maxPods !== undefined ? { maxPods: news.template.maxPods } : {}),
+      ...(news.template.reservationPolicy !== undefined
+        ? {
+            reservationPolicy: {
+              ...(news.template.reservationPolicy.policy !== undefined
+                ? { policy: news.template.reservationPolicy.policy }
+                : {}),
+              ...(news.template.reservationPolicy.reservationIds !== undefined
+                ? { reservationIds: [...news.template.reservationPolicy.reservationIds] }
+                : {}),
+            },
+          }
+        : {}),
     },
   })
 

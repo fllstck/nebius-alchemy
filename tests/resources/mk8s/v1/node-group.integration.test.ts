@@ -7,6 +7,7 @@ import { integrationTest } from '../../../helpers/gate.ts'
 import { safeDestroy } from '../../../helpers/cleanup.ts'
 import * as Mk8sGrpc from '../../../../modules/api-client/mk8s.ts'
 import * as Ids from '../../../../modules/resources/iam/v1/ids.ts'
+import * as NebiusNodeGroupSchema from '../../../../schemas/nebius/mk8s/v1/node_group.ts'
 
 // ── Integration: Nebius.mk8s.v1.NodeGroup, live ────────────────────────────
 //
@@ -23,9 +24,13 @@ import * as Ids from '../../../../modules/resources/iam/v1/ids.ts'
 //
 // The convergence sweep proves the drift list is wired up; only a real API can show it does
 // not **loop**. `NodeGroup` is the resource where that risk is highest: `NodeTemplate` is 17
-// fields of 12 nested messages, the API has **no `FieldMask`**, and it answers with its own
-// materialized values (`maxPods: 110` per the proto). A drift list that compared the whole
-// template would write on every reconcile, forever.
+// fields of 12 nested messages and the API has **no `FieldMask`**, so an unpinned field that the
+// platform fills in or normalizes would be drift on every reconcile, forever.
+//
+// Two echoes are **printed rather than pinned**, because they are questions, not contracts —
+// measured 2026-09-23 the API kept both at their defaults (`template.maxPods: 0`,
+// `spec.version: ""`), i.e. it does *not* write the documented `110` pod default or the inherited
+// version back into `spec`. All it takes is one field that behaves the other way.
 //
 // So the second deploy changes `labels` — a props change `diff` ignores, which therefore runs
 // `reconcile` — and asserts `metadata.resourceVersion` did not move. `resourceVersion` is a
@@ -82,6 +87,15 @@ integrationTest(
               networkInterfaces: [{ subnetId: subnet.id }],
               serviceAccountId: sa.id,
               cloudInitUserData: '#cloud-config\n',
+              // ── arm 4: the cheap, verifiable half of the remaining template surface ──
+              //
+              // Node labels and instance-metadata labels are **two different maps**, pinned
+              // together here so the live echo shows they stay distinct.
+              metadata: { labels: { 'alchemy-test-node': 'true' } },
+              instanceMetadata: { labels: { 'alchemy-test-instance': 'true' } },
+              // A taint with a **value** and a non-default effect: `NO_SCHEDULE` is wire value 2, so
+              // a mapping that passed the string through would show up here as NaN.
+              taints: [{ key: 'alchemy.test/dedicated', value: 'yes', effect: 'NO_SCHEDULE' }],
             },
             ...(labels === undefined ? {} : { labels }),
           })
@@ -109,6 +123,21 @@ integrationTest(
       const createdVersion = created.metadata?.resourceVersion?.toString()
       expect(createdVersion).toBe('1')
 
+      // ── arm 4: the pinned template fields survived the round trip ───────────
+      // `spec.template` is what the drift check will compare against on the next reconcile, so
+      // these assertions are also what proves the *comparison* has something to match: the enum
+      // arrived as `NO_SCHEDULE` (2, not the string, and not 0), and the two label maps are still
+      // separate.
+      const liveTemplate = created.spec?.template
+      expect(liveTemplate?.metadata?.labels['alchemy-test-node']).toBe('true')
+      // An **empty** repeated field comes back as `[]` (never `undefined`), which is exactly why a
+      // repeated field needs no news-side guard: `[]` and "absent" are the same bytes on the wire.
+      expect(liveTemplate?.filesystems).toEqual([])
+      expect(liveTemplate?.instanceMetadata?.labels['alchemy-test-instance']).toBe('true')
+      expect(liveTemplate?.taints[0]?.key).toBe('alchemy.test/dedicated')
+      expect(liveTemplate?.taints[0]?.value).toBe('yes')
+      expect(liveTemplate?.taints[0]?.effect).toBe(NebiusNodeGroupSchema.NodeTaint_Effect.NO_SCHEDULE)
+
       console.log(
         `PROBE mk8s node group: id=${nodeGroup.id} state=${nodeGroup.state} ` +
           `requestedVersion=${nodeGroup.requestedVersion ?? '(omitted)'} version=${nodeGroup.version} ` +
@@ -118,9 +147,12 @@ integrationTest(
       // The platform's own view of the spec, which is what the drift check compares against.
       // **Print values, not just keys** — the first run of this test printed
       // `Object.keys`-style output and therefore could not say whether the API had filled in
-      // `template.maxPods` (the proto documents `110`) or `spec.version` (which appears in the
-      // echo even when the props omit it). Every field here that the props did not pin is
-      // evidence for the `pinnedSpecDeepEqual` design.
+      // `template.maxPods` (the proto documents `110`, and the echo keeps `0`) or `spec.version`
+      // (which the echo keeps `""` even though the nodes run the cluster's version). Every field
+      // here that the props did not pin is evidence for the `pinnedSpecDeepEqual` design, so both
+      // are left **unpinned on purpose**: reading an echo is safe, whereas pinning a value the
+      // platform normalizes would fail the forced-reconcile assertion below (and that is a
+      // calibration signal, not a bug to fix here).
       const render = (value: unknown): string =>
         // `spec` is a **proto message**: `spec.toJSON()` is the JSON rendering the API and
         // `toFriendlyAttributes` use (Long → decimal string, enum → name). Longs nested in
@@ -152,7 +184,7 @@ integrationTest(
         afterReconcile.metadata?.resourceVersion?.toString(),
         'reconcile re-wrote the node group: a drift-list entry is comparing an omitted prop against ' +
           'the API echo (see AGENTS.md §Convergence, and the `omits`/unit-test rows for ' +
-          '`blockSizeBytes`, `resources.preset`, `networkInterfaces` and the materialized `maxPods`)',
+          '`blockSizeBytes`, `resources.preset`, `networkInterfaces` and the unpinned `maxPods`)',
       ).toBe('1')
       // Same node group — no replace was planned either.
       expect(afterReconcile.metadata?.id).toBe(nodeGroup.id)

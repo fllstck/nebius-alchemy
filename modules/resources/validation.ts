@@ -265,6 +265,18 @@ export const presenceOnly = (prop: string, subject: string) =>
   )
 
 /**
+ * A boolean prop whose only transmittable value is `true`, for a field that is **not** an empty
+ * message (so {@link presenceOnly}'s wording would be wrong) but behaves the same way: the proto
+ * documents "enabled only when this field is explicitly set" (`LocalDisksSpec.passthroughGroup`),
+ * and `false` is indistinguishable from an absent field — with no `FieldMask`, absent means "leave
+ * unchanged", so a `false` here is a silent no-op that reads like a request.
+ */
+export const trueOnly = (prop: string, reason: string) =>
+  Schema.makeFilter((value: boolean) =>
+    value === true ? undefined : `${prop} can only be set to true: ${reason}`,
+  )
+
+/**
  * Reject `""` for a **required** string prop.
  *
  * proto3 scalars have no presence, so `""` and "field absent" are the same bytes on

@@ -4,6 +4,8 @@ import * as NebiusNodeGroupSchema from '../../../../schemas/nebius/mk8s/v1/node_
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
 import * as IamIds from '../../iam/v1/ids.ts'
+import * as ComputeIds from '../../compute/v1/ids.ts'
+import * as CapacityIds from '../../capacity/v1/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
 
 // ---------------------------------------------------------------------------
@@ -100,6 +102,130 @@ const conditionStatus = Schema.Union([
   Schema.Literal('FALSE'),
   Schema.Literal('UNKNOWN'),
 ])
+
+/**
+ * K8s taint effect. `EFFECT_UNSPECIFIED` is not offered — it is the wire's "the platform decides".
+ *
+ * ⚠️ The proto is explicit that taints are **not** rolled out: "change will not be propagated to
+ * existing nodes, so will be applied only to Kubernetes Nodes created after the field change… you
+ * will need to manually set them to existing nodes". Same stickiness class as
+ * `cloudInitUserData`, documented rather than worked around.
+ */
+const taintEffect = Schema.Union([
+  Schema.Literal('NO_EXECUTE'),
+  Schema.Literal('NO_SCHEDULE'),
+  Schema.Literal('PREFER_NO_SCHEDULE'),
+])
+
+/** Filesystem attach mode. `UNSPECIFIED` is not offered (the proto documents no default for it). */
+const attachMode = Schema.Union([Schema.Literal('READ_ONLY'), Schema.Literal('READ_WRITE')])
+
+/**
+ * A Kubernetes node-label map, or the compute instance-metadata one.
+ *
+ * Keys and values must follow Kubernetes label syntax (the proto links the spec), and the platform
+ * **ignores** any key containing `kubernetes.io` or `k8s.io` — so a `kubernetes.io/hostname` entry
+ * here is accepted and silently dropped by the API, which is worth knowing before debugging it.
+ * A map with an empty key is rejected by a filter on the whole map — **not** by
+ * `Schema.Record(Schema.NonEmptyString, …)`, whose key schema *silently drops* the offending entry
+ * (measured 2026-09-23: `{'': 'worker'}` decodes to `{}`, the same strip-don't-reject behaviour as
+ * `Schema.Union` of structs — `agent-patterns/effect-schema.md`). The rest of the syntax (prefix,
+ * 63-char limits, charset) is left to the API, whose message names the offending label.
+ *
+ * ⚠️ Like taints, label changes are **not** rolled out to existing nodes.
+ */
+const labelMap = Schema.Record(Schema.String, Schema.String).check(
+  Schema.makeFilter((labels: Record<string, string>) =>
+    Object.keys(labels).some((key) => key.trim().length === 0)
+      ? 'label keys must not be empty: Kubernetes has no such label, and an empty key would be silently dropped'
+      : undefined,
+  ),
+)
+
+/**
+ * Passthrough local disks (`GB200`/`GB300`-class platforms) and what mk8s does with them.
+ *
+ * Both booleans can only be `true`: the proto enables passthrough "only when this field is
+ * explicitly set", and `false` cannot be transmitted as a change (proto3 + no `FieldMask`). The two
+ * `config` arms are mutually exclusive — `none` means "leave the disks alone" while
+ * `kubeletEphemeral` (the platform's own default when `config` is unset) combines them into
+ * kubelet's ephemeral storage — so setting both is rejected rather than resolved by field order.
+ */
+const LocalDisksSchema = Schema.Struct({
+  passthroughGroup: Schema.optional(
+    Schema.Struct({
+      requested: Schema.Boolean.check(
+        Validation.trueOnly(
+          'template.localDisks.passthroughGroup.requested',
+          'the proto enables passthrough only when the field is explicitly set, and a `false` cannot be transmitted (an absent field means "leave unchanged")',
+        ),
+      ),
+    }),
+  ),
+  config: Schema.optional(
+    Schema.Struct({
+      /** "do nothing" — local disks are provisioned as on a regular compute instance. */
+      none: Schema.optional(
+        Schema.Boolean.check(
+          Validation.trueOnly('template.localDisks.config.none', 'omit the arm instead of setting it to `false`'),
+        ),
+      ),
+      /** Combine all local disks into one volume and use it as kubelet's ephemeral storage. */
+      kubeletEphemeral: Schema.optional(
+        Schema.Boolean.check(
+          Validation.trueOnly(
+            'template.localDisks.config.kubeletEphemeral',
+            'omit the arm instead of setting it to `false`',
+          ),
+        ),
+      ),
+    }).check(
+      Schema.makeFilter((value: { none?: boolean; kubeletEphemeral?: boolean }) =>
+        value.none === true && value.kubeletEphemeral === true
+          ? 'template.localDisks.config takes one arm: `none` (leave the disks alone) or `kubeletEphemeral` (combine them for kubelet), not both'
+          : undefined,
+      ),
+    ),
+  ),
+}).check(
+  Schema.makeFilter((value: { passthroughGroup?: unknown; config?: unknown }) =>
+    value.passthroughGroup === undefined && value.config === undefined
+      ? 'template.localDisks must set passthroughGroup or config — omit the block to leave local disks unmanaged'
+      : undefined,
+  ),
+)
+
+/**
+ * Capacity reservations to spend, in priority order.
+ *
+ * `policy` deliberately **omits `AUTO`**: it is the proto's zero value, so it can neither be sent
+ * (a zero enum encodes as an absent field → "leave unchanged") nor compared — and it is already
+ * expressible by omitting `policy`, which is what "prefer my reservations, then pay-as-you-go"
+ * means. `FORBID` and `STRICT` are the two values that actually *select* something, and the API
+ * rejects `reservationIds` alongside `FORBID` ("It is an error to provide reservation_ids with
+ * policy = FORBID"), which is a filter here rather than an apply-time surprise.
+ *
+ * The ids are branded `CapacityBlockGroupId`s — obtained from
+ * `Nebius.capacity.action.ListCapacityBlockGroups`, which is why that discovery slice exists.
+ */
+const ReservationPolicySchema = Schema.Struct({
+  policy: Schema.optional(Schema.Union([Schema.Literal('FORBID'), Schema.Literal('STRICT')])),
+  reservationIds: Schema.optional(Schema.Array(CapacityIds.CapacityBlockGroupId)),
+})
+  .check(
+    Schema.makeFilter((value: { policy?: string; reservationIds?: ReadonlyArray<unknown> }) =>
+      value.policy === 'FORBID' && (value.reservationIds?.length ?? 0) > 0
+        ? 'template.reservationPolicy: the API rejects reservationIds together with policy FORBID (FORBID means "on-demand capacity only")'
+        : undefined,
+    ),
+  )
+  .check(
+    Schema.makeFilter((value: { policy?: string; reservationIds?: ReadonlyArray<unknown> }) =>
+      value.policy === undefined && (value.reservationIds?.length ?? 0) === 0
+        ? 'template.reservationPolicy must set policy (FORBID or STRICT) or reservationIds — omit the block for the platform default (AUTO)'
+        : undefined,
+    ),
+  )
 
 /**
  * `fixedNodeCount` and `autoscaling` are mutually exclusive **and** one of them is required.
@@ -312,6 +438,81 @@ const NodeGroupTemplateSchema = Schema.Struct({
    * then places the node in the control-plane subnet with no public address).
    */
   networkInterfaces: Schema.optional(Schema.Array(NetworkInterfaceSchema)),
+  /**
+   * **Kubernetes node labels** (`metadata.labels` on the Node object).
+   *
+   * Not to be confused with {@link instanceMetadata}, which is the **compute instance's** own
+   * metadata — two different maps in the same template, and a label written into the wrong one is
+   * invisible from the other side.
+   */
+  metadata: Schema.optional(
+    Schema.Struct({
+      labels: labelMap,
+    }),
+  ),
+  /**
+   * **Compute instance metadata** labels, propagated onto the VMs of this group. Provider-managed
+   * labels take precedence over user-provided ones here (the proto says so explicitly).
+   */
+  instanceMetadata: Schema.optional(
+    Schema.Struct({
+      labels: labelMap,
+    }),
+  ),
+  /**
+   * Kubernetes taints, applied to Nodes created after the change (existing nodes keep theirs — see
+   * {@link taintEffect}).
+   */
+  taints: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        /** Taint key, following Kubernetes syntax. */
+        key: Schema.String.check(Validation.isNonEmptyString('template.taints[].key')),
+        /** Taint value. **May be empty** (a taint without a value is legal and common). */
+        value: Schema.String,
+        effect: taintEffect,
+      }),
+    ),
+  ),
+  /**
+   * Shared compute filesystems to attach to every node.
+   *
+   * The proto's only source is `existingFilesystem`, so it is required here: there is no way to
+   * create a filesystem from a node group. `mountTag` is the device identifier the guest mounts,
+   * capped at 37 characters (`Validation.isValidMountTag`).
+   */
+  filesystems: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        attachMode,
+        mountTag: Schema.String.check(Validation.isValidMountTag),
+        existingFilesystem: Schema.Struct({ id: ComputeIds.FilesystemId }),
+      }),
+    ),
+  ),
+  /**
+   * Preemptible nodes. **Presence is the switch** (the proto: "Set to empty value to enable
+   * preemptible nodes"), so `true` sends `{}` and `false` is a plan-time error — see
+   * `Validation.presenceOnly`.
+   */
+  preemptible: Schema.optional(
+    Schema.Boolean.check(Validation.presenceOnly('template.preemptible', 'node group')),
+  ),
+  /**
+   * Passthrough local disks and how mk8s presents them (see {@link LocalDisksSchema}).
+   */
+  localDisks: Schema.optional(LocalDisksSchema),
+  /**
+   * Maximum pods per node. Omit it to let the platform choose (it documents `110`, and assigns the
+   * pod CIDR from it) — the API **accepts** the omission, which is why this is optional despite the
+   * proto marking it required. The documented default is **not written back into `spec`**: measured
+   * live 2026-09-23, an omitted `maxPods` echoes as `0`.
+   */
+  maxPods: Schema.optional(Schema.Finite.check(positiveCount('template.maxPods'))),
+  /**
+   * Which capacity reservations to spend, in priority order (see {@link ReservationPolicySchema}).
+   */
+  reservationPolicy: Schema.optional(ReservationPolicySchema),
   /**
    * The service account whose credentials are available on the nodes — for the Nebius
    * CLI/API and for container-registry pulls. It needs

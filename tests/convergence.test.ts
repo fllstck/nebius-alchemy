@@ -2491,6 +2491,11 @@ describe('Nebius.mk8s.v1.Cluster convergence', () => {
 //      repeated fields, a `blockSizeBytes` echo). Those are precisely what a whole-message
 //      comparison would trip over on the first reconcile, so they belong in the fixture:
 //      without them the `omits` rows and the baseline row prove nothing.
+//
+//      ⚠️ The `110` is the **stronger hypothetical**, not the measurement: the arm-4 live run
+//      (2026-09-23) showed this API keeps an unpinned `maxPods` at `0` and an unpinned
+//      `spec.version` at `""`, i.e. it does *not* materialize those documented defaults into
+//      `spec`. Fields that do are `vpc/v1 Network`'s pools and `transfer.limiters`.
 //   4. **`status.strategy` is never compared** — and it must not be. With `strategy` omitted the API
 //      answers its own *effective* values there, and the proto documents those defaults as migrating
 //      during Q3 2026, so anything reading `status` would report drift on a resource nobody touched.
