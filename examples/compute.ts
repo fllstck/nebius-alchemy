@@ -1,16 +1,19 @@
 /**
  * ─────────────────────────────────────────────────────────────────────────────
- * Compute — Image → Disk → Instance
+ * Compute — Image → Disk → Filesystem → Instance
  *
  * Dynamically looks up the latest Ubuntu 22.04 LTS image, creates a
- * NETWORK_SSD disk from it, then launches a preemptible instance with
- * that disk as its boot disk.
+ * NETWORK_SSD disk from it, creates a shared filesystem, then launches a
+ * preemptible instance using that disk as its boot disk and mounting the
+ * filesystem. A commented snapshot/restore snippet follows the stack.
  *
  * Usage:
  *   SUBNET_ID=<subnet-id> alchemy deploy --yes
  *   alchemy destroy --yes
  *
  * `name` is omitted from all resources — auto-generated from logical IDs.
+ *
+ * ⚠️ Launches a real (preemptible) GPU instance and a billable filesystem.
  *
  * Environment variables:
  *   NEBIUS_API_KEY           (required — auto-populated from Nebius CLI)
@@ -36,6 +39,11 @@ export interface StackOutput {
   diskState: string
   diskType: string
   diskSizeGibibytes: number | undefined
+  filesystemId: string
+  filesystemName: string
+  filesystemState: string
+  /** A decimal **string** — the attribute is an int64 in the JSON rendering. */
+  filesystemSizeGibibytes: string
   instanceId?: string
   instanceName?: string
   instanceState?: string
@@ -63,6 +71,15 @@ export default Alchemy.Stack(
       sourceImageId: image.id,
     })
 
+    // A shared NFS filesystem — project-scoped, no subnet needed. `type` and
+    // `blockSizeBytes` are immutable after creation, so a change to either plans a
+    // replace; `sizeGibibytes` grows in place. Read it back as a **string**: the
+    // attribute is an int64 in the JSON rendering (`'64'`), not a number.
+    const filesystem = yield* Nebius.compute.Filesystem('TestFilesystem', {
+      type: 'NETWORK_SSD',
+      sizeGibibytes: 128,
+    })
+
     // Create a preemptible instance with the disk as boot disk
     const instance = yield* Nebius.compute.Instance('TestInstance', {
       // IDs read from the environment are branded at the boundary.
@@ -78,6 +95,9 @@ export default Alchemy.Stack(
       networkInterfaces: [
         { subnetId: Nebius.vpc.SubnetId.make(subnetId), name: 'eth0', ipAddress: { allocationId: '' } },
       ],
+      // The filesystem above, mounted into the guest by `mountTag` — the same
+      // shape `Nebius.mk8s.NodeGroup`'s `template.filesystems` takes.
+      filesystems: [{ existingFilesystem: { id: filesystem.id }, attachMode: 'READ_WRITE', mountTag: 'data' }],
       preemptible: { onPreemption: 'STOP' },
     })
 
@@ -90,12 +110,37 @@ export default Alchemy.Stack(
       diskState: disk.state,
       diskType: disk.type,
       diskSizeGibibytes: disk.sizeGibibytes,
+      filesystemId: filesystem.id,
+      filesystemName: filesystem.name,
+      filesystemState: filesystem.state,
+      /** A decimal **string** (int64 in the JSON rendering). */
+      filesystemSizeGibibytes: filesystem.sizeGibibytes,
       instanceId: instance.id,
       instanceName: instance.name,
       instanceState: instance.state,
     }
   }),
 )
+
+// ---------------------------------------------------------------------------
+// Disk snapshots
+// ---------------------------------------------------------------------------
+//
+// Point-in-time copies, and a *third* disk create source (beside an image and a
+// snapshot, which are mutually exclusive). A snapshot of the boot disk above:
+//
+//   const snapshot = yield* Nebius.compute.DiskSnapshot('TestSnapshot', {
+//     sourceDiskId: disk.id,        // the disk it copies
+//     // name is auto-generated; `forbidDeletion: true` blocks deletion while set
+//   })
+//
+//   // …and a disk created *from* it (`sizeGibibytes` must be at least the snapshot's):
+//   const restored = yield* Nebius.compute.Disk('RestoredDisk', {
+//     type: 'NETWORK_SSD',
+//     sizeGibibytes: diskSizeGb,
+//     sourceSnapshotId: snapshot.id,
+//   })
+//
 
 // ---------------------------------------------------------------------------
 // GPU clusters and NVLink instance groups

@@ -27,9 +27,9 @@ Creates a complete networking stack: Network, Subnet, RouteTable, Route (default
 
 Creates a VPC network (as zone scope), a VPC-scoped DNS zone for `alchemy-demo-test.com.`, and an `A` record at the zone apex (`@`) pointing to `192.0.2.1`.
 
-### [iam.ts](iam.ts) — Service account and static key
+### [iam.ts](iam.ts) — Service account, static key **and S3 access key**
 
-Creates a ServiceAccount and a StaticKey (CONTAINER_REGISTRY service) for programmatic access. Demonstrates the non-standard `Issue` lifecycle: the static key token is only available at creation time and is stored in Alchemy state.
+Creates a ServiceAccount, then both credential types: a `StaticKey` (CONTAINER_REGISTRY — the non-standard `Issue` lifecycle, where the token exists only in the issue response) and a v2 `AccessKey` — the **AWS-format** `awsAccessKeyId`/`secretAccessKey` pair Object Storage needs, which a StaticKey is not. Both are one-time secrets; `secretDeliveryMode` is where you choose whether that secret stays inline (local state) or lands in a MysteryBox instead.
 
 ### [kms.ts](kms.ts) — KMS keys
 
@@ -39,9 +39,9 @@ Creates both KMS key types: a SymmetricKey (AES_256) and an AsymmetricKey (ECDSA
 
 Creates a Secret with an initial version and payload, then adds a second version (`v2`) with updated credentials and `setPrimary: true` to promote it as primary.
 
-### [compute.ts](compute.ts) — Image → Disk → Instance
+### [compute.ts](compute.ts) — Image → Disk → Filesystem → Instance
 
-Dynamically looks up the latest Ubuntu 22.04 LTS image by family, creates a NETWORK_SSD boot disk from it, and launches a preemptible instance (`gpu-h200-sxm`) using that disk. Requires `SUBNET_ID` and `SERVICE_ACCOUNT_ID`; `IMAGE_FAMILY` and `DISK_SIZE_GB` are optional.
+Dynamically looks up the latest Ubuntu 22.04 LTS image by family, creates a NETWORK_SSD boot disk from it, creates a shared `NETWORK_SSD` filesystem, then launches a preemptible instance (`gpu-h200-sxm`) with that disk as its boot disk and the filesystem mounted at `mountTag: 'data'`. Requires `SUBNET_ID` and `SERVICE_ACCOUNT_ID`; `IMAGE_FAMILY` and `DISK_SIZE_GB` are optional. A commented snippet after the stack shows the snapshot → restore pair (`DiskSnapshot` as a third disk create source). One attribute looks like a number and is not: `Filesystem.sizeGibibytes` is an int64 in the JSON rendering, so it reads back as a **string**.
 
 ### [mk8s.ts](mk8s.ts) — Managed Kubernetes cluster + one worker node
 
@@ -82,8 +82,7 @@ Every resource is checkable against this list by name; the ones absent from the 
 | `Nebius.ai.Job` | **not demonstrated.** The low-level compute job behind `ai.Endpoint`; it needs GPU quota and runs for minutes, and [ai.bindings.ts](ai.bindings.ts) already covers the AI path end to end |
 | `Nebius.compute.GpuCluster` / `NVLInstanceGroup` | **commented, not runnable.** The snippet lives in [compute.ts](compute.ts) (fabric discovery → group → instance membership); deploying `NVLInstanceGroup` needs the `GB200`/`GB300` entitlement, so it stays a snippet rather than a stack that would fail on quota |
 | `Nebius.storage.Transfer` | **not yet written.** Genuine gap: two buckets, an access key and a stop condition — the only `storage` resource without a file |
-| `Nebius.iam.AccessKey` (v2) | **not yet written.** The standalone S3 credential pair (the bindings examples mint one internally); an example would have to be explicit that it returns a secret |
-| `Nebius.compute.Filesystem` / `DiskSnapshot` | **not yet written.** Cheap to add, and `Filesystem` is what the commented `template.filesystems` line in [mk8s.ts](mk8s.ts) points at |
+| `Nebius.compute.DiskSnapshot` | **commented, not runnable.** The snapshot → restore snippet is at the end of [compute.ts](compute.ts); as a stack it would add a second disk for no new lesson |
 | `Nebius.iam.AuthPublicKey` / `FederatedCredentials` | **not yet written.** Niche credential flows (a pinned RSA-4096 public key; OIDC federation for CI) that need a PEM or an IdP's issuer/subject pair as input |
 
 ## Companion Files

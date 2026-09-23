@@ -142,7 +142,9 @@ export default Alchemy.Stack(
         //   taints: [{ key: 'dedicated', value: 'demo', effect: 'NO_SCHEDULE' }],
         //   maxPods: 110,
         //   preemptible: true,
-        //   filesystems: [{ attachMode: 'READ_WRITE', mountTag: 'data', existingFilesystem: { id: 'computefilesystem-…' } }],
+        //   // An *existing* compute filesystem — `examples/compute.ts` creates one, and
+        //   // `existingFilesystem.id` is its id (`Nebius.compute.Filesystem`).
+        //   filesystems: [{ attachMode: 'READ_WRITE', mountTag: 'data', existingFilesystem: { id: filesystem.id } }],
         //   reservationPolicy: { policy: 'STRICT', reservationIds: [Nebius.capacity.CapacityBlockGroupId.make('capacityblockgroup-…')] },
         //
         // GPU nodes need a platform+preset from the compatibility matrix and a
