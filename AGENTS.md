@@ -645,6 +645,10 @@ Some Nebius APIs don't follow the standard CRUD pattern:
   (measured live 2026-09-23): Cluster `status.controlPlane.version` → `1.36`; both resources'
   `spec.version` → `1.35`; NodeGroup `status.version` → **`v1.36.3-nebius-node.75`**, leading `v`
   included (a `Diff` or a comparison shared between them is a bug waiting to happen).
+  `status.strategy` is a **third** kind of trap: with `strategy` omitted the API answers its own
+  *effective* values there (`maxUnavailable: {count: 1}`, `maxSurge: {count: 0}`,
+  `drainTimeout: 600s`), and the proto documents those defaults as **migrating during Q3 2026** —
+  so nothing may compare `status` for this resource (the drift check reads `spec` only).
 - **`template.cloudInitUserData` is required but its SSH key is NOT validated** — the proto says it
   "should contain at least one SSH key" and the solutions library enforces that, but the **API does
   not**: the 2026-09-23 write probe created a node group with `'#cloud-config\n'` and no key. A

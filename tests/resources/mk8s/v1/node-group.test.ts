@@ -460,7 +460,7 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
     })
 
     test('the autoscaling block is built from both bounds', () => {
-      const spec = desiredFor(autoProps as never)
+      const spec = desiredFor(autoProps)
       expect(spec.autoscaling!.minNodeCount.toString()).toBe('1')
       expect(spec.autoscaling!.maxNodeCount.toString()).toBe('3')
       // The swap is total: the pinned fixed count is gone from the request.
@@ -562,7 +562,7 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
           desiredFor({
             ...validProps,
             autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE' }] },
-          } as never),
+          }),
         ),
       ).toBe(true)
       // Live holds no autoRepair and none is pinned → nothing to compare.

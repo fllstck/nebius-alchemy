@@ -102,3 +102,36 @@ export const parseUserPayload = Effect.fn("parseUserPayload")((input: unknown) =
 - **Schema.TaggedError** gives you tagged errors catchable by string tag
 - Register schema identifier strings with the `effect/LanguageService` for IDE support
 - Read the full `SCHEMA.md` in the vendored repo for advanced topics (transformations, flips, classes, etc.)
+
+### `Schema.Union` of two structs silently drops the excess key — measured 2026-09-23
+
+```ts
+const PercentOrCount = Schema.Union([
+  Schema.Struct({ count: Schema.Finite }),
+  Schema.Struct({ percent: Schema.Finite }),
+])
+
+decodeUnknownSync(PercentOrCount)({ count: 1, percent: 20 })  // → { count: 1 }  (percent GONE)
+```
+
+Effect's `Union` tries each member in order and *strips* keys the member does not declare (the
+default excess-property behaviour), so a two-arm union of structs does **not** enforce
+exclusivity — it silently picks the first arm that fits. For an API field that is genuinely
+`{ count } | { percent }` (`mk8s/v1 PercentOrCount`, `security-rule`'s match blocks), one struct
+with both keys optional plus an `.check(Schema.makeFilter(...))` rejects all three wrong shapes
+(both set, neither set, out of range) **and** can name what the caller sent:
+
+```ts
+const PercentOrCount = Schema.Struct({
+  count: Schema.optional(...),
+  percent: Schema.optional(...),
+}).check(Schema.makeFilter((v) =>
+  (v.count !== undefined) === (v.percent !== undefined)
+    ? `set exactly one of count or percent (got count=${v.count}, percent=${v.percent})`
+    : undefined,
+))
+```
+
+Use a `Union` for *shape* alternatives whose members are mutually exclusive by structure (a class
+vs a literal), not for "one of these two keys" — that is a filter's job in this codebase (see
+`Validation.presenceOnly`, `percentOrCount` in `modules/resources/mk8s/v1/node-group.schema.ts`).
