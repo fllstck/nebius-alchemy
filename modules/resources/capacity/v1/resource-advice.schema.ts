@@ -49,10 +49,11 @@ export const ResourceAdviceAttributesSchema = Schema.Struct({
    * cluster identifier"; `GpuClusterSpec` spells the same thing
    * `infiniband_fabric`.)
    *
-   * **Can be empty**: measured against the live advisor, 12 of 32 rows had no
-   * fabric at all (rows that are not InfiniBand-scoped). Filter those out when
-   * discovering: `rows.filter((row) => row.fabric !== '')`. The observed values
-   * are `fabric-<n>` in `eu-north1`/`eu-west1` and region-shaped
+   * **Can be empty**, and how many rows are empty varies over time with the
+   * tenant's live capacity: measured 2026-09-19, 12 of 32 rows had no fabric;
+   * re-measured 2026-09-23, 14 of 38. Filter those out when discovering:
+   * `rows.filter((row) => row.fabric !== '')`. The observed values are
+   * `fabric-<n>` in `eu-north1`/`eu-west1` and region-shaped
    * (`us-central1-a`, `me-west1-a`, …) elsewhere; `fabric-7`, the id the Nebius
    * docs use for GPU clusters, appears verbatim — which is evidence (not proof)
    * that this is the same namespace `GpuClusterSpec.infinibandFabric` wants.

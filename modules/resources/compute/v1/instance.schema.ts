@@ -5,6 +5,7 @@ import * as Validation from '../../validation.ts'
 import * as IamIds from '../../iam/v1/ids.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
+import * as CapacityIds from '../../capacity/v1/ids.ts'
 
 // ---------------------------------------------------------------------------
 // Nested sub-schemas
@@ -282,11 +283,15 @@ const ReservationPolicySchema = Schema.Struct({
    */
   policy: Schema.Union([Schema.Literal('AUTO'), Schema.Literal('FORBID'), Schema.Literal('STRICT')]),
   /**
-   * Capacity block IDs, in priority order. Deliberately unbranded for now: the
-   * capacity resource family (and therefore its ID brand) is not implemented
-   * yet — see TASKS.md §"ID1 — Branded IDs" (group D).
+   * Capacity Block Groups to draw from, in priority order — each is a branded
+   * `capacity/v1.CapacityBlockGroupId`.
+   *
+   * Obtain one from discovery rather than typing it:
+   * `Nebius.capacity.action.ListCapacityBlockGroups({})` (or
+   * `…GetCapacityBlockGroupByResourceAffinity({ region, fabric, platform })`,
+   * which is the same triple the resource advisor reports).
    */
-  reservationIds: Schema.Array(Schema.String),
+  reservationIds: Schema.Array(CapacityIds.CapacityBlockGroupId),
 }).check(reservationPolicyValid)
 
 // ---------------------------------------------------------------------------

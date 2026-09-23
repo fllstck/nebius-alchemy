@@ -309,8 +309,10 @@ An identifier that names a schema entity **MUST** be the entity's brand, never a
 
 Audit status: casing and branding conformance are both re-checkable with
 `bun tools/schema-conformance.ts` (exit 1 on a casing deviation; it also prints the
-bare-string ID candidates). 14 remain, and every one of them is an approved exception from
-the list above — the full classification lives in TASKS.md §"ID1 — Branded IDs".
+bare-string ID candidates). **13** remain (14 before `capacity/v1` landed its
+`CapacityBlockGroupId` — the `reservationPolicy.reservationIds` exception is closed), and
+every one of them is an approved exception from the list above — the full classification
+lives in TASKS.md §"ID1 — Branded IDs".
 
 ### Replace ordering — create-first vs delete-first
 
@@ -539,6 +541,16 @@ Some Nebius APIs don't follow the standard CRUD pattern:
 - **GroupMembership**: uses `listMembers` instead of `list`
 - **QuotaAllowance**: lacks stable `id` — use `(parentId, name, region)` as identity tuple
 - **ResourceAdvice**: virtual advisory resource with `id: ""` — list-only, no stable identifier
+- **capacity/v1 is read-only except for `CapacityAllowance`** — `CapacityBlockGroupSpec` and
+  `CapacityIntervalSpec` are *empty messages* and their services expose no create/update/delete at
+  all (measured 2026-09-23), so the family is modeled as **discovery actions + a
+  `CapacityBlockGroupId` brand**, not providers. `CapacityAllowance` *does* have create/update/delete
+  and is still exposed read-only, because its `delete` means "resets the limit to the platform
+  default" and its `list` can include rows nobody created — a provider would report a destroy that
+  did not destroy, and would hand `alchemy unsafe nuke` a list-based delete that resets limits. See
+  `modules/resources/capacity/v1/capacity-allowance.schema.ts` and TASKS.md. All three services live
+  on `capacity-blocks.billing-cpl…` (a different host from the advisor's `capacity-advisor.billing-cpl…`),
+  already in `modules/endpoints.ts`.
 - **IAM v1 metadata has no `resourceVersion`** (`0` for every resource type, measured 2026-09-22),
   so a drift check for IAM cannot use the version as its witness — and `AuthPublicKey` echoes the
   submitted PEM normalized (one byte longer). `StaticKey`/`AuthPublicKey` also validate an
