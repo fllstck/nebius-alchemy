@@ -661,8 +661,25 @@ Some Nebius APIs don't follow the standard CRUD pattern:
     refusal). A change is a roll-out, so it is not planned as a replace. The id must be
     `computenvlinstancegroup-…`-shaped — the API enforces that prefix while the brand deliberately does
     not (`compute/v1/ids.ts`), so a mistyped prefix fails at apply time.
-  * An ordinary scalar that is *not* part of such a pair is **not** measured either way; do not
-    generalise from these rows.
+  * **An ordinary scalar is *not* cleared either** — measured 2026-09-24
+    (`spikes/mk8s-rollout-probe.ts`, one CPU node group): a group created with
+    `spec.version = "1.35"` and `spec.template.maxPods = 96` still echoed **both** after an update
+    whose spec omitted each one. So "absent ⇒ leave unchanged" holds for messages *and* plain
+    scalars, and the exclusive sizing pair above is the exception, not the rule. (An update that omits
+    a prop the group already pinned is therefore a no-op in the cloud; only a replace, or a change the
+    API acts on, moves it.)
+  * **Node-level runtime fields are accepted but not rolled out.** The same probe changed, one per
+    arm, `template.taints`, `metadata.labels`, `instanceMetadata.labels` and `cloudInitUserData`: each
+    update was **accepted** and the new value landed in `spec` (user-data grew 31 → 46 bytes), while
+    `status.outdatedNodeCount` stayed `0`, `nodeCount`/`readyNodeCount` stayed `1` and
+    `reconciling` stayed `false` for the whole window (90 s; 180 s for user-data). The proto states
+    this for taints and labels ("applied only to Kubernetes Nodes created after the field change") and
+    the same is now measured for **cloud-init user-data**, which the TASKS notes had only inferred
+    from the solutions library. The operator rolls out for *infrastructure* changes (platform, preset,
+    os, version — the `PreflightCheck` rows above), not for these — so a user-data edit converges in
+    `spec`, is invisible to running nodes, and is documented at the field rather than planned as a
+    replace (deleting and recreating a whole node group to apply a cloud-init nuance is not a trade
+    any provider should make silently).
   There is **no create-only template field** in the NodeGroup's arms 1–5 — the whole `template` is a
   roll-out, not a replace — so its only replaces are identity changes (`parentId` = the **cluster**,
   `name`), and `NodeGroup`'s drift check is the `pinnedSpecDeepEqual`/`protoPinnedFields` pair described

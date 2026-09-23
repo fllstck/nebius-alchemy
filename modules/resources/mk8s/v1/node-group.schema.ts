@@ -132,7 +132,8 @@ const attachMode = Schema.Union([Schema.Literal('READ_ONLY'), Schema.Literal('RE
  * `Schema.Union` of structs — `agent-patterns/effect-schema.md`). The rest of the syntax (prefix,
  * 63-char limits, charset) is left to the API, whose message names the offending label.
  *
- * ⚠️ Like taints, label changes are **not** rolled out to existing nodes.
+ * ⚠️ Like taints, label changes are **not** rolled out to existing nodes (measured live
+ * 2026-09-24 — see the `cloudInitUserData` note on this same struct for the counter reading).
  */
 const labelMap = Schema.Record(Schema.String, Schema.String).check(
   Schema.makeFilter((labels: Record<string, string>) =>
@@ -542,6 +543,10 @@ const NodeGroupTemplateSchema = Schema.Struct({
   /**
    * Kubernetes taints, applied to Nodes created after the change (existing nodes keep theirs — see
    * {@link taintEffect}).
+   *
+   * Measured live 2026-09-24: changing a taint's value was **accepted** and the new value landed in
+   * `spec`, while `status.outdatedNodeCount` stayed `0` and `node`/`readyNodeCount` stayed `1` for
+   * the whole 90 s window — the API does not roll the nodes out to apply it.
    */
   taints: Schema.optional(
     Schema.Array(
@@ -599,6 +604,11 @@ const NodeGroupTemplateSchema = Schema.Struct({
    * pod CIDR from it) — the API **accepts** the omission, which is why this is optional despite the
    * proto marking it required. The documented default is **not written back into `spec`**: measured
    * live 2026-09-23, an omitted `maxPods` echoes as `0`.
+   *
+   * Removing the prop from a configuration that already pinned it is a no-op on the cloud side as
+   * well: measured live 2026-09-24, an update whose spec omitted `maxPods` left the pinned `96` in
+   * `spec` (an absent plain scalar means "leave unchanged", not "reset" — the exclusive
+   * `fixedNodeCount` ⇄ `autoscaling` pair is the one place the API *does* clear the omitted side).
    */
   maxPods: Schema.optional(Schema.Finite.check(positiveCount('template.maxPods'))),
   /**
@@ -626,6 +636,16 @@ const NodeGroupTemplateSchema = Schema.Struct({
    * Empty is rejected because a proto3 scalar cannot distinguish `""` from absent —
    * see `Validation.isNonEmptyString`. A composing `sshPublicKey` prop is a possible
    * later addition (it would then own its own merge/roll-out semantics).
+   *
+   * ⚠️ **A change converges in `spec` but never reaches running nodes.** Measured live 2026-09-24
+   * (`spikes/mk8s-rollout-probe.ts`): an update that changed this string was accepted and the new
+   * value landed in `spec.template.cloudInitUserData` (echo length 31 → 46), while
+   * `status.outdatedNodeCount` stayed `0` and `node`/`readyNodeCount` stayed `1` for the full 180 s
+   * window. So the platform treats new user-data exactly like `taints` and `metadata.labels` — the
+   * operator rolls out for *infrastructure* changes (platform, preset, os, version), not for this
+   * one, and only freshly created nodes ever run it. To apply it to the nodes you have, change
+   * something the platform does roll out for, or recreate the group; a failed edit here is silent,
+   * which is the reason this paragraph exists.
    */
   cloudInitUserData: Schema.String.check(Validation.isNonEmptyString('template.cloudInitUserData')),
 })
@@ -646,6 +666,12 @@ export const NodeGroupPropsSchema = Schema.Struct({
    * created without one came up on the cluster's own version). Pinning a version the
    * node images do not carry is rejected by the compatibility matrix, which is a live
    * query, not a constant.
+   *
+   * ⚠️ Omitting it on an **existing** group does not un-pin it: measured live 2026-09-24, a group
+   * created with `spec.version = "1.35"` still echoed `"1.35"` after an update whose spec omitted
+   * `version`. Removing this prop from a configuration therefore leaves the pinned version in the
+   * cloud — an absent plain scalar means "leave unchanged" (see the same measurement on
+   * `template.maxPods`).
    */
   version: Schema.optional(Schema.String.check(versionValid)),
   /**
