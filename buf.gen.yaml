@@ -5,7 +5,11 @@ inputs:
     # Pinned to a specific commit for reproducible schema generation.
     # Bump deliberately when new API definitions are needed:
     #   git ls-remote https://github.com/nebius/api.git refs/heads/main
-    ref: 1396e2a05b3379967512d4d00d102e57705302dd
+    # Bumped 2026-09-24: 1396e2a05b3379967512d4d00d102e57705302dd -> ca9fcdc3c1e8bb519d09ebeadcc8ffc7c036a514
+    # (3 bot commits / 28 files: adds the `pricing_model` oneof to compute Instance + mk8s NodeGroup,
+    #  removes monitoring/v1 recording_rule, adds ai/v1 pricing + billing/v1 pricing_policy and the
+    #  `pricing-policies.billing-cpl.api.nebius.cloud:443` endpoint.) See TASKS.md.
+    ref: ca9fcdc3c1e8bb519d09ebeadcc8ffc7c036a514
 
 plugins:
   # The generator version MUST be pinned. `buf.build/community/stephenh-ts-proto`

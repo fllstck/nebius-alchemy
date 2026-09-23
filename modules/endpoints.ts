@@ -19,6 +19,12 @@ const DEFAULT_ENDPOINTS: Record<string, string> = {
     'api.calculator.billing-data-plane.api.nebius.cloud:443',
   'nebius.billing.v1alpha1.CalculatorService':
     'api.calculator.billing-data-plane.api.nebius.cloud:443',
+  // Added with the 2026-09-24 pin bump (`buf.gen.yaml` -> ca9fcdc): a regular CRUD service
+  // (Create/Get/GetByName/List/Update/Delete) for `PricingPolicy`, which the `pricing_model`
+  // oneof on compute Instance / mk8s NodeGroup / ai Job references by id. Host taken from the
+  // upstream catalog at that commit (`endpoints.md`), not guessed.
+  'nebius.billing.v1.PricingPolicyService':
+    'pricing-policies.billing-cpl.api.nebius.cloud:443',
 
   // --- AI / MSP ---
   'nebius.ai.v1.EndpointService': 'apps.msp.api.nebius.cloud:443',
