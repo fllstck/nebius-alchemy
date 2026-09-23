@@ -31,6 +31,15 @@ const toFriendlyAttributes = (raw: NebiusNodeGroupSchema.NodeGroup): NodeGroupSc
   NodeGroupSchema.toFriendlyAttributes(raw)
 
 /**
+ * `PercentOrCount` → its wire shape (plain objects; `NodeGroupSpec.fromJSON` converts the
+ * numbers to `Long`s): `{count}` when a count was given, `{percent}` when a percent was.
+ *
+ * The props' filter guarantees exactly one of the two is set, so this never has to choose.
+ */
+const percentOrCountWire = (value: { count?: number; percent?: number }) =>
+  value.count !== undefined ? { count: value.count } : { percent: value.percent }
+
+/**
  * Build the spec we want the API to hold, from exactly what the props carry.
  *
  * `fromJSON` (not `fromPartial`) because `bootDisk.type` is an **enum**: the props spell it
@@ -45,6 +54,47 @@ export const desiredSpec = (news: NodeGroupSchema.NodeGroupProps): NebiusNodeGro
   NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
     ...(news.version !== undefined ? { version: news.version } : {}),
     ...(news.fixedNodeCount !== undefined ? { fixedNodeCount: news.fixedNodeCount } : {}),
+    ...(news.autoscaling !== undefined
+      ? {
+          autoscaling: {
+            minNodeCount: news.autoscaling.minNodeCount,
+            maxNodeCount: news.autoscaling.maxNodeCount,
+          },
+        }
+      : {}),
+    ...(news.strategy !== undefined
+      ? {
+          strategy: {
+            ...(news.strategy.maxUnavailable !== undefined
+              ? { maxUnavailable: percentOrCountWire(news.strategy.maxUnavailable) }
+              : {}),
+            ...(news.strategy.maxSurge !== undefined
+              ? { maxSurge: percentOrCountWire(news.strategy.maxSurge) }
+              : {}),
+            // `Duration.fromJSON` accepts **only** the `{seconds, nanos}` message form — the
+            // canonical JSON string `"600s"` is silently dropped — so the seconds prop is mapped
+            // here rather than passed through (AGENTS.md §Tips `Duration.Input`).
+            ...(news.strategy.drainTimeoutSeconds !== undefined
+              ? { drainTimeout: { seconds: news.strategy.drainTimeoutSeconds, nanos: 0 } }
+              : {}),
+          },
+        }
+      : {}),
+    ...(news.autoRepair !== undefined
+      ? {
+          autoRepair: {
+            conditions: news.autoRepair.conditions.map((condition) => ({
+              type: condition.type,
+              // A string enum: `fromJSON` converts it to the int32 the wire wants, which
+              // `fromPartial` would have passed through as `NaN`.
+              status: condition.status,
+              ...(condition.timeoutSeconds !== undefined
+                ? { timeout: { seconds: condition.timeoutSeconds, nanos: 0 } }
+                : {}),
+            })),
+          },
+        }
+      : {}),
     template: {
       os: news.template.os,
       resources: {

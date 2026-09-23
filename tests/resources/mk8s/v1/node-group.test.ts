@@ -210,6 +210,92 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
         }),
       )
     })
+
+    // ── arm 2: sizing, strategy, auto-repair ────────────────────────────────
+
+    test('exactly one of fixedNodeCount / autoscaling must be set', async () => {
+      // Omitted sizing is rejected: the API has no default node count to fall back on.
+      expect(String(await invalid({ fixedNodeCount: undefined }))).toContain('set either fixedNodeCount or autoscaling')
+      // Both together is the API's documented mutual exclusion.
+      expect(
+        String(await invalid({ autoscaling: { minNodeCount: 1, maxNodeCount: 2 } })),
+      ).toContain('mutually exclusive')
+      // The autoscaled shape alone is valid.
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          fixedNodeCount: undefined,
+          autoscaling: { minNodeCount: 1, maxNodeCount: 3 },
+        }),
+      )
+    })
+
+    test('autoscaling bounds are positive and ordered', async () => {
+      const auto = (patch: Record<string, unknown>) =>
+        invalid({ fixedNodeCount: undefined, autoscaling: { minNodeCount: 1, maxNodeCount: 3, ...patch } })
+      // `0` in either bound cannot be transmitted as a change (proto3), so it is a plan-time error
+      // rather than a prop whose value silently never leaves.
+      expect(String(await auto({ minNodeCount: 0 }))).toContain('positive integer')
+      expect(String(await auto({ maxNodeCount: 0 }))).toContain('positive integer')
+      expect(String(await auto({ minNodeCount: 5, maxNodeCount: 3 }))).toContain('maxNodeCount must be >= minNodeCount')
+    })
+
+    test('PercentOrCount takes exactly one of count or percent', async () => {
+      const strategy = (patch: Record<string, unknown>) => invalid({ strategy: patch })
+      // Both at once: a `Schema.Union` of two structs would have silently dropped `percent`
+      // (measured 2026-09-23), which is why the props use a two-way filter.
+      expect(String(await strategy({ maxUnavailable: { count: 1, percent: 20 } }))).toContain('exactly one')
+      // Neither.
+      expect(String(await strategy({ maxUnavailable: {} }))).toContain('exactly one')
+      // Out of range / non-integer.
+      expect(String(await strategy({ maxSurge: { percent: 0 } }))).toContain('1-100')
+      expect(String(await strategy({ maxSurge: { percent: 101 } }))).toContain('1-100')
+      expect(String(await strategy({ maxSurge: { percent: 2.5 } }))).toContain('1-100')
+      expect(String(await strategy({ maxSurge: { count: 0 } }))).toContain('positive integer')
+      // Each arm alone is valid.
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          strategy: { maxUnavailable: { count: 1 }, maxSurge: { percent: 25 }, drainTimeoutSeconds: 600 },
+        }),
+      )
+    })
+
+    test('an empty strategy block is rejected (it is not a presence switch)', async () => {
+      // With no FieldMask an empty message means "leave unchanged", and `pinnedSpecDeepEqual` reads
+      // an empty object as a *presence* switch — which `strategy` is not. Omit the block instead.
+      expect(String(await invalid({ strategy: {} }))).toContain('at least one of maxUnavailable')
+    })
+
+    test('duration props are in seconds and must be positive', async () => {
+      // `0` encodes as an absent field, so "no timeout" (the proto's meaning for 0) cannot be set as
+      // a change — a plan-time error beats a value that never leaves the props.
+      expect(String(await invalid({ strategy: { drainTimeoutSeconds: 0 } }))).toContain('positive whole number of seconds')
+      expect(
+        String(
+          await invalid({
+            autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE', timeoutSeconds: 0 }] },
+          }),
+        ),
+      ).toContain('positive whole number of seconds')
+    })
+
+    test('autoRepair conditions need a type, a real status and at least one entry', async () => {
+      expect(String(await invalid({ autoRepair: { conditions: [] } }))).toContain('at least one condition')
+      expect(
+        String(await invalid({ autoRepair: { conditions: [{ type: '', status: 'FALSE' }] } })),
+      ).toContain('must not be empty')
+      // `CONDITION_STATUS_UNSPECIFIED` is not offered — an unset status is "the platform decides".
+      expect(
+        String(await invalid({ autoRepair: { conditions: [{ type: 'Ready', status: 'UNSPECIFIED' }] } })),
+      ).toContain('status')
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          autoRepair: { conditions: [{ type: 'Ready', status: 'UNKNOWN', timeoutSeconds: 300 }] },
+        }),
+      )
+    })
   })
 
   // -------------------------------------------------------------------------
@@ -329,6 +415,182 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
 
     test('a live node group with no spec never drifts (nothing to compare)', () => {
       expect(Module.nodeGroupSpecDrifted(undefined, desiredFor(validProps))).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // arm 2 — autoscaling / strategy / autoRepair
+  // -------------------------------------------------------------------------
+
+  describe('arm 2 props (sizing, strategy, auto-repair)', () => {
+    const autoProps = {
+      ...validProps,
+      fixedNodeCount: undefined,
+      autoscaling: { minNodeCount: 1, maxNodeCount: 3 },
+    }
+
+    test('the desired spec carries a real Duration, not the JSON string form', () => {
+      // The trap this pins: `Duration.fromJSON` accepts **only** `{seconds, nanos}` — the canonical
+      // protobuf JSON string `"600s"` (what the CLI and the API's renderings emit) is silently
+      // dropped, and the transfer provider shipped that bug. So assert on the built message.
+      const spec = desiredFor({
+        ...validProps,
+        strategy: { maxUnavailable: { count: 1 }, drainTimeoutSeconds: 600 },
+      })
+      expect(spec.strategy!.drainTimeout!.seconds.toString()).toBe('600')
+      expect(spec.strategy!.maxUnavailable!.count!.toString()).toBe('1')
+      expect(spec.strategy!.maxUnavailable!.percent).toBeUndefined()
+    })
+
+    test('a percent and a count reach the wire on their own arms', () => {
+      const spec = desiredFor({ ...validProps, strategy: { maxSurge: { percent: 25 } } })
+      expect(spec.strategy!.maxSurge!.percent!.toString()).toBe('25')
+      expect(spec.strategy!.maxSurge!.count).toBeUndefined()
+    })
+
+    test('autoRepair carries the condition status as the wire enum and its timeout as a Duration', () => {
+      const spec = desiredFor({
+        ...validProps,
+        autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE', timeoutSeconds: 300 }] },
+      })
+      // The string enum must be converted (`fromJSON`, not `fromPartial` — a string in an int32 field
+      // serializes as NaN), and `FALSE` is 2.
+      expect(spec.autoRepair!.conditions[0]!.status).toBe(NebiusNodeGroupSchema.ConditionStatus.FALSE)
+      expect(spec.autoRepair!.conditions[0]!.timeout!.seconds.toString()).toBe('300')
+    })
+
+    test('the autoscaling block is built from both bounds', () => {
+      const spec = desiredFor(autoProps as never)
+      expect(spec.autoscaling!.minNodeCount.toString()).toBe('1')
+      expect(spec.autoscaling!.maxNodeCount.toString()).toBe('3')
+      // The swap is total: the pinned fixed count is gone from the request.
+      expect(spec.fixedNodeCount).toBeUndefined()
+    })
+
+    test('a pinned strategy change drifts', () => {
+      const live = nodeGroupProto().spec
+      const news = { ...validProps, strategy: { maxUnavailable: { count: 2 } } }
+      expect(Module.nodeGroupSpecDrifted(live, desiredFor(news as never))).toBe(true)
+      // …and the same value against a live spec that holds it does not.
+      const withStrategy = nodeGroupProto({
+        spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
+          version: '1.35',
+          fixedNodeCount: '2',
+          strategy: { maxUnavailable: { count: '2' }, drainTimeout: { seconds: '600' } },
+          template: {
+            os: 'ubuntu24.04',
+            resources: { platform: 'cpu-d3', preset: '2vcpu-8gb' },
+            bootDisk: { sizeGibibytes: '64', blockSizeBytes: '4096', type: 'NETWORK_SSD' },
+            networkInterfaces: [{ subnetId: 'vpcsubnet-1' }],
+            serviceAccountId: 'serviceaccount-abc123',
+            cloudInitUserData: '#cloud-config\n',
+          },
+        }),
+      })
+      expect(Module.nodeGroupSpecDrifted(withStrategy.spec, desiredFor(news as never))).toBe(false)
+    })
+
+    test('an UNPINNED strategy is never compared — not from spec, and not from status', () => {
+      // The resource's main drift hazard, measured 2026-09-23: with `strategy` omitted the API
+      // reports its *effective* values in `status` (`maxUnavailable: {count: 1}`,
+      // `maxSurge: {count: 0}`, `drainTimeout: 600s`) and those defaults are migrating during
+      // Q3 2026. Comparing either would write on every reconcile, and never converge.
+      const liveWithEcho = nodeGroupProto({
+        spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
+          version: '1.35',
+          fixedNodeCount: '2',
+          // Even a `spec`-side echo must be invisible while nothing is pinned…
+          strategy: { maxUnavailable: { count: '1' }, maxSurge: { count: '0' }, drainTimeout: { seconds: '600' } },
+          template: {
+            os: 'ubuntu24.04',
+            resources: { platform: 'cpu-d3', preset: '2vcpu-8gb' },
+            bootDisk: { sizeGibibytes: '64', blockSizeBytes: '4096', type: 'NETWORK_SSD' },
+            networkInterfaces: [{ subnetId: 'vpcsubnet-1' }],
+            serviceAccountId: 'serviceaccount-abc123',
+            cloudInitUserData: '#cloud-config\n',
+          },
+        }),
+        // …and the effective values in status are not part of the comparison at all.
+        status: {
+          state: NebiusNodeGroupSchema.NodeGroupStatus_State.RUNNING,
+          version: 'v1.36.3-nebius-node.75',
+          targetNodeCount: Long.fromNumber(2),
+          nodeCount: Long.fromNumber(2),
+          readyNodeCount: Long.fromNumber(2),
+          outdatedNodeCount: Long.fromNumber(0),
+          events: [],
+          strategy: NebiusNodeGroupSchema.NodeGroupDeploymentStrategy.fromJSON({
+            maxUnavailable: { count: '1' },
+            maxSurge: { count: '0' },
+            drainTimeout: { seconds: '600' },
+          }),
+          reconciling: false,
+        },
+      })
+      expect(Module.nodeGroupSpecDrifted(liveWithEcho.spec, desiredFor(validProps))).toBe(false)
+    })
+
+    test('a pinned drainTimeout that the live spec holds differently drifts', () => {
+      const live = nodeGroupProto({
+        spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
+          version: '1.35',
+          fixedNodeCount: '2',
+          strategy: { drainTimeout: { seconds: '600' } },
+          template: {
+            os: 'ubuntu24.04',
+            resources: { platform: 'cpu-d3', preset: '2vcpu-8gb' },
+            bootDisk: { sizeGibibytes: '64', blockSizeBytes: '4096', type: 'NETWORK_SSD' },
+            networkInterfaces: [{ subnetId: 'vpcsubnet-1' }],
+            serviceAccountId: 'serviceaccount-abc123',
+            cloudInitUserData: '#cloud-config\n',
+          },
+        }),
+      })
+      expect(
+        Module.nodeGroupSpecDrifted(live.spec, desiredFor({ ...validProps, strategy: { drainTimeoutSeconds: 600 } })),
+      ).toBe(false)
+      expect(
+        Module.nodeGroupSpecDrifted(live.spec, desiredFor({ ...validProps, strategy: { drainTimeoutSeconds: 900 } })),
+      ).toBe(true)
+    })
+
+    test('autoRepair and autoscaling changes drift; an unpinned autoRepair does not', () => {
+      const live = nodeGroupProto().spec
+      expect(
+        Module.nodeGroupSpecDrifted(
+          live,
+          desiredFor({
+            ...validProps,
+            autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE' }] },
+          } as never),
+        ),
+      ).toBe(true)
+      // Live holds no autoRepair and none is pinned → nothing to compare.
+      expect(Module.nodeGroupSpecDrifted(live, desiredFor(validProps))).toBe(false)
+    })
+
+    test('a live node group whose status differs wildly still does not drift', () => {
+      // The comparison reads `spec` only — a node group mid-roll-out (`PROVISIONING`, 9 outdated
+      // nodes, the API's own effective `status.strategy`) must be indistinguishable from an idle
+      // `RUNNING` one when the props have not changed. If someone ever moves the drift list onto
+      // `status`, this fails.
+      const settled = nodeGroupProto()
+      const midRollout = nodeGroupProto({
+        status: {
+          state: NebiusNodeGroupSchema.NodeGroupStatus_State.PROVISIONING,
+          version: 'v1.36.0-nebius-node.1',
+          targetNodeCount: Long.fromNumber(9),
+          nodeCount: Long.fromNumber(0),
+          readyNodeCount: Long.fromNumber(0),
+          outdatedNodeCount: Long.fromNumber(9),
+          events: [],
+          strategy: NebiusNodeGroupSchema.NodeGroupDeploymentStrategy.fromJSON({ maxSurge: { percent: '50' } }),
+          reconciling: true,
+        },
+      })
+      const desired = desiredFor(validProps)
+      expect(Module.nodeGroupSpecDrifted(settled.spec, desired)).toBe(false)
+      expect(Module.nodeGroupSpecDrifted(midRollout.spec, desired)).toBe(false)
     })
   })
 

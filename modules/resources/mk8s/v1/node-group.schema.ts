@@ -32,19 +32,158 @@ const versionValid = Schema.makeFilter((value: string) =>
 )
 
 /**
- * `fixedNodeCount` is a **positive** integer.
+ * A positive, integer int64 count, for a field whose `0` means "absent".
  *
- * `0` is rejected for the reason every "required scalar" check exists in this
- * package: `fixedNodeCount` is an int64, and proto3 scalars have no presence, so `0`
- * and "field absent" are the same bytes on the wire. Accepting `0` would let a
- * caller write a prop whose value is never sent, and the API would answer with its own
- * default node count rather than an empty group.
+ * Same reasoning as every `≥ 1` check in this package: proto3 scalars have no presence, so `0`
+ * and "field not sent" are the same bytes. A `0` accepted here would be a prop whose value is
+ * never transmitted, and the API would keep its own value — the silent-no-op class.
  */
-const fixedNodeCountValid = Schema.makeFilter((value: number) =>
-  Number.isInteger(value) && value >= 1
-    ? undefined
-    : `fixedNodeCount must be a positive integer (got ${value}); 0 is indistinguishable from an omitted field on the wire (proto3 scalars have no presence)`,
+const positiveCount = (prop: string) =>
+  Schema.makeFilter((value: number) =>
+    Number.isInteger(value) && value >= 1
+      ? undefined
+      : `${prop} must be a positive integer (got ${value}); 0 is indistinguishable from an omitted field on the wire (proto3 scalars have no presence), so it cannot be set on an existing node group`,
+  )
+
+/**
+ * `PercentOrCount.percent` is an **integer** percentage, despite the proto's "for example 5%"
+ * prose: the wire field is an `int64`, so a fractional percent is not representable. The rounding
+ * the proto documents happens later, on `percent × desired node count` (down for `maxUnavailable`,
+ * up for `maxSurge`), and is the API's business, not ours.
+ */
+const percentValid = (prop: string) =>
+  Schema.makeFilter((value: number) =>
+    Number.isInteger(value) && value >= 1 && value <= 100
+      ? undefined
+      : `${prop} must be an integer percentage 1-100 (got ${value})`,
+  )
+
+/**
+ * `PercentOrCount`, as the API's own two-valued union: a count **or** a percent.
+ *
+ * Modelled as one struct with a two-way filter rather than `Schema.Union([Struct{count},
+ * Struct{percent}])`, and that is a **measured** decision (2026-09-23): Effect's `Union` tries
+ * each member and *strips* the excess key, so `{ count: 1, percent: 20 }` decodes to
+ * `{ count: 1 }` — the `percent` the caller wrote disappears without a word. The filter rejects
+ * all three wrong shapes (both, neither, out of range) and names what was given.
+ */
+const percentOrCount = (prop: string) =>
+  Schema.Struct({
+    count: Schema.optional(Schema.Finite.check(positiveCount(`${prop}.count`))),
+    percent: Schema.optional(Schema.Finite.check(percentValid(`${prop}.percent`))),
+  }).check(
+    Schema.makeFilter((value: { count?: number; percent?: number }) =>
+      (value.count !== undefined) === (value.percent !== undefined)
+        ? `set exactly one of ${prop}.count or ${prop}.percent (got count=${value.count}, percent=${value.percent}) — the API takes one, and rejects a 0/0 pair`
+        : undefined,
+    ),
+  )
+
+/**
+ * A positive number of seconds for a `google.protobuf.Duration` field.
+ *
+ * `0` is rejected even where the proto gives it a meaning ("A value of 0 means no timeout"): a
+ * zero duration encodes as an *absent* field, so sending it means "leave unchanged" — the platform
+ * would keep the old value while the props say `0`, forever. A change *to* zero is therefore
+ * unrepresentable in this API, and a plan-time error is the honest answer (AGENTS.md §Convergence).
+ */
+const positiveSeconds = (prop: string) =>
+  Schema.makeFilter((value: number) =>
+    Number.isInteger(value) && value >= 1
+      ? undefined
+      : `${prop} must be a positive whole number of seconds (got ${value}); 0 encodes as an absent field ("leave unchanged"), so it can never be set as a change`,
+  )
+
+/** Node condition status — `CONDITION_STATUS_UNSPECIFIED` is not offered (it is "the platform decides"). */
+const conditionStatus = Schema.Union([
+  Schema.Literal('TRUE'),
+  Schema.Literal('FALSE'),
+  Schema.Literal('UNKNOWN'),
+])
+
+/**
+ * `fixedNodeCount` and `autoscaling` are mutually exclusive **and** one of them is required.
+ *
+ * Both halves are the API's rule, not a preference: the proto documents the two as alternatives,
+ * and a node group with neither has no size. That is also why "omit `fixedNodeCount`" is an
+ * *invalid* props object — and why its convergence-table `omits` row had to go, with the
+ * `autoscaling` row as the anti-loop probe instead (the harness rejects a required prop in
+ * `omits`; it was right).
+ */
+const exactlyOneSizing = Schema.makeFilter((props: { fixedNodeCount?: number; autoscaling?: unknown }) => {
+  const fixed = props.fixedNodeCount !== undefined
+  const autoscaling = props.autoscaling !== undefined
+  if (fixed && autoscaling)
+    return 'fixedNodeCount and autoscaling are mutually exclusive — set one, not both (a fixed size or an autoscaled range)'
+  if (!fixed && !autoscaling)
+    return 'set either fixedNodeCount or autoscaling: a node group needs a size, and the API has no default for one'
+  return undefined
+})
+
+/**
+ * The roll-out strategy.
+ *
+ * Every field is optional, but an **empty block is rejected**: with no `FieldMask` an empty
+ * message is indistinguishable from "leave unchanged", and `pinnedSpecDeepEqual` reads an empty
+ * object as a *presence switch* (`publicIpAddress: {}` is exactly that) — which `strategy` is not.
+ *
+ * ⚠️ Read the **effective** values from `status.strategy`, never from here: with `strategy` omitted
+ * the API answers its own defaults, and those are *migrating* — the proto documents
+ * `maxUnavailable`/`maxSurge` moving from `{count: 1}`/`{count: 0}` and `drainTimeout` from `0` to
+ * `10m` during Q3 2026, new clusters first and existing ones gradually. Nothing here compares
+ * `status.strategy` (see `nodeGroupSpecDrifted`), which is what keeps that migration from looking
+ * like drift.
+ */
+const StrategySchema = Schema.Struct({
+  /** Nodes that may be unavailable at once during a roll-out. A percent rounds **down**. */
+  maxUnavailable: Schema.optional(percentOrCount('strategy.maxUnavailable')),
+  /** Extra nodes provisioned above the desired count during a roll-out. A percent rounds **up**. */
+  maxSurge: Schema.optional(percentOrCount('strategy.maxSurge')),
+  /**
+   * Graceful-drain budget before pods are deleted outright.
+   *
+   * **Reshaped from `google.protobuf.Duration` to whole seconds** (the proto's `drainTimeout`), as
+   * `storage/v1/transfer.interIterationIntervalSeconds` and
+   * `kms/v1/symmetric-key.rotationPeriodSeconds` do: `Duration.fromJSON` accepts only the
+   * `{seconds, nanos}` message form, so the canonical JSON string `"600s"` — what the CLI and the
+   * API's renderings emit — would be silently dropped. The probe's measured effective value is
+   * `600` (10m).
+   */
+  drainTimeoutSeconds: Schema.optional(Schema.Finite.check(positiveSeconds('strategy.drainTimeoutSeconds'))),
+}).check(
+  Schema.makeFilter((value: { maxUnavailable?: unknown; maxSurge?: unknown; drainTimeoutSeconds?: number }) =>
+    value.maxUnavailable === undefined && value.maxSurge === undefined && value.drainTimeoutSeconds === undefined
+      ? 'strategy must set at least one of maxUnavailable, maxSurge or drainTimeoutSeconds — omit the block to leave the platform values alone'
+      : undefined,
+  ),
 )
+
+/**
+ * Auto-repair rules.
+ *
+ * Unlike `strategy`, an empty condition list is rejected on its own merits: the API's default rules
+ * are what auto-repair *is* (the per-condition `disabled` flag is the override, and is deliberately
+ * not exposed yet), so a block with no conditions asks for nothing.
+ */
+const AutoRepairSchema = Schema.Struct({
+  conditions: Schema.Array(
+    Schema.Struct({
+      /** Node condition type, e.g. `Ready` / `MemoryPressure` — a free string (the set is Kubernetes's). */
+      type: Schema.String.check(Validation.isNonEmptyString('autoRepair.conditions[].type')),
+      /** The status that, held for `timeoutSeconds`, triggers a repair. */
+      status: conditionStatus,
+      /**
+       * How long the condition must hold before the node is repaired.
+       * **Reshaped from `Duration` to whole seconds** (see `strategy.drainTimeoutSeconds`).
+       */
+      timeoutSeconds: Schema.optional(Schema.Finite.check(positiveSeconds('autoRepair.conditions[].timeoutSeconds'))),
+    }),
+  ).check(
+    Schema.makeFilter((value: ReadonlyArray<unknown>) =>
+      value.length >= 1 ? undefined : 'autoRepair.conditions must list at least one condition',
+    ),
+  ),
+})
 
 /**
  * Boot-disk type. `UNSPECIFIED` is not offered: it is the wire's "the platform
@@ -61,16 +200,14 @@ const bootDiskType = Schema.Union([
 // NodeGroup Props (user input)
 // ---------------------------------------------------------------------------
 //
-// ## Scope: the minimal CPU arm (step 1 of N5's arm sequencing, 2026-09-23)
+// ## Scope: the CPU arms (arms 1 and 2 of N5's arm sequencing, 2026-09-23)
 //
-// This is the measured-working shape — `cpu-d3` + a preset + `fixedNodeCount` + an
-// OS, over a subnet and a service account — and nothing else. The remaining
-// `NodeTemplate` surface (`strategy`, `autoscaling`, `autoRepair`, GPU settings,
-// filesystems, local disks, taints, node labels, `maxPods`, `preemptible`, NVLink,
-// `reservationPolicy`) lands arm by arm, each with its own drift rows, because the
-// template re-declares compute's concepts with its own types
-// (`mk8s/v1/instance_template.ts` has its own `DiskSpec`/`ResourcesSpec`) and each
-// arm has its own convergence hazard.
+// Arm 1 is the measured-working shape — `cpu-d3` + a preset + a size + an OS, over a subnet and a
+// service account — and arm 2 adds the three *behavioural* blocks: `autoscaling`, `strategy` and
+// `autoRepair`. The rest of the `NodeTemplate` surface (GPU settings, filesystems, local disks,
+// taints, node labels, `maxPods`, `preemptible`, NVLink, `reservationPolicy`) lands arm by arm, each
+// with its own drift rows, because the template re-declares compute's concepts with its own types
+// (`mk8s/v1/instance_template.ts` has its own `DiskSpec`/`ResourcesSpec`).
 //
 // The props therefore *omit* wire fields rather than zeroing them: the spec is built
 // with `NodeGroupSpec.fromJSON` from exactly what is present (see `desiredSpec` in
@@ -219,14 +356,45 @@ export const NodeGroupPropsSchema = Schema.Struct({
    */
   version: Schema.optional(Schema.String.check(versionValid)),
   /**
-   * Number of nodes in the group. Mutually exclusive with `autoscaling` (which arrives
-   * in the next arm); for now this is the only sizing prop, and the API requires
-   * exactly one of the two.
+   * Number of nodes in the group. **Mutually exclusive with `autoscaling`**, and one of the two
+   * must be set.
    */
-  fixedNodeCount: Schema.optional(Schema.Finite.check(fixedNodeCountValid)),
+  fixedNodeCount: Schema.optional(Schema.Finite.check(positiveCount('fixedNodeCount'))),
+  /**
+   * Let the Kubernetes Cluster Autoscaler size the group between `minNodeCount` and
+   * `maxNodeCount` (mutually exclusive with `fixedNodeCount`).
+   *
+   * Both bounds are positive: a `0` cannot be transmitted as a change (proto3), so
+   * "scale to zero" is not expressible as an *update* here — a plan-time error beats a prop whose
+   * value silently never leaves.
+   */
+  autoscaling: Schema.optional(
+    Schema.Struct({
+      /** Lower bound for the autoscaler. Positive — see the note on the block. */
+      minNodeCount: Schema.Finite.check(positiveCount('autoscaling.minNodeCount')),
+      /** Upper bound for the autoscaler. Positive, and ≥ `minNodeCount`. */
+      maxNodeCount: Schema.Finite.check(positiveCount('autoscaling.maxNodeCount')),
+    }).check(
+      Schema.makeFilter((value: { minNodeCount: number; maxNodeCount: number }) =>
+        value.maxNodeCount >= value.minNodeCount
+          ? undefined
+          : `autoscaling.maxNodeCount must be >= minNodeCount (got max=${value.maxNodeCount}, min=${value.minNodeCount})`,
+      ),
+    ),
+  ),
+  /**
+   * How a roll-out replaces nodes (unavailable count, surge, drain timeout).
+   *
+   * Omit the block to leave the platform's values alone — and read the **effective** ones from
+   * the node group's `status.strategy`, which is where the API reports them (they are also
+   * migrating during Q3 2026; see {@link StrategySchema}).
+   */
+  strategy: Schema.optional(StrategySchema),
+  /** Which node conditions, held for how long, trigger a repair. */
+  autoRepair: Schema.optional(AutoRepairSchema),
   /** What to run: OS, hardware, boot disk, network, user-data. */
   template: NodeGroupTemplateSchema,
-})
+}).check(exactlyOneSizing)
 
 export type NodeGroupProps = typeof NodeGroupPropsSchema.Type
 

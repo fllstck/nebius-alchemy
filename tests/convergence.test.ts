@@ -2491,6 +2491,10 @@ describe('Nebius.mk8s.v1.Cluster convergence', () => {
 //      repeated fields, a `blockSizeBytes` echo). Those are precisely what a whole-message
 //      comparison would trip over on the first reconcile, so they belong in the fixture:
 //      without them the `omits` rows and the baseline row prove nothing.
+//   4. **`status.strategy` is never compared** — and it must not be. With `strategy` omitted the API
+//      answers its own *effective* values there, and the proto documents those defaults as migrating
+//      during Q3 2026, so anything reading `status` would report drift on a resource nobody touched.
+//      The `omits` row for `strategy` is the guard.
 //
 // ⚠️ `omits` cannot list `template` itself: it is a **required** prop, and the harness
 // rejects a required prop in `omits` ("the table's patch is not valid props") — the table
@@ -2550,7 +2554,17 @@ describe('Nebius.mk8s.v1.NodeGroup convergence', () => {
       // Written in place by `nodeGroupSpecDrifted` (the whole template is a roll-out, not a
       // replace — the API has no create-only template path in this arm).
       version: { version: '1.34' },
+      // Sizing is a **swap**, not an addition: `fixedNodeCount` and `autoscaling` are mutually
+      // exclusive (and one is required), so the patch clears the baseline's fixed count. What this
+      // row proves is that the change is *written*; whether the API also clears the other side on
+      // the wire is a live question (there is no `FieldMask` to say "remove this field") — see the
+      // probe list in TASKS.md §N5.
+      autoscaling: { fixedNodeCount: undefined, autoscaling: { minNodeCount: 1, maxNodeCount: 3 } },
       fixedNodeCount: { fixedNodeCount: 5 },
+      strategy: { strategy: { maxUnavailable: { count: 1 }, drainTimeoutSeconds: 600 } },
+      autoRepair: {
+        autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE', timeoutSeconds: 300 }] },
+      },
       template: {
         template: { ...mk8sNodeGroupProps.template, os: 'ubuntu22.04' },
       },
@@ -2559,7 +2573,10 @@ describe('Nebius.mk8s.v1.NodeGroup convergence', () => {
       labels:
         'create-time only: no update path sends labels (AGENTS.md §Convergence — the fleet-wide decision, not a mk8s one)',
     },
-    omits: ['version', 'fixedNodeCount'],
+    // `fixedNodeCount` is deliberately **absent**: `exactlyOneSizing` makes "omit it" invalid props
+    // (a node group needs a size), and the harness rejects a required prop in `omits` — so
+    // `autoscaling`'s row is the anti-loop probe for this pair instead.
+    omits: ['version', 'autoscaling', 'strategy', 'autoRepair'],
     live: mk8sNodeGroupLive(),
     liveId: MK8S_NODE_GROUP_ID,
     layerFor: (writes) =>
