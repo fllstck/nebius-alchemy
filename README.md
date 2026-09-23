@@ -32,7 +32,10 @@ bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.117 @effect/platform-bun@4.0.0-rc.
 > the newest prerelease. Once rc.117 existed, bun (which ignores peer ranges)
 > resolved the shared package to rc.117 while `effect` stayed rc.115: a mixed
 > family. Pinning the whole constellation to the newest release is what keeps one
-> `@effect/*` version in the tree. A newer `rc` will reintroduce the drift, so
+> `@effect/*` version in the tree — verify it after any dependency change:
+> `npm ls @effect/*` (or `bun pm ls`) must print one line per package. Three
+> `@effect/sql-*` packages shipped on the Effect 3 line until 0.9.1, so every install
+> carried two versions of each. A newer `rc` will reintroduce the drift, so
 > re-audit after every bump — see `agent-patterns/effect-versioning.md`.
 >
 > **Avoid `alchemy@next`.** The `next` dist-tag currently points at an _older_
