@@ -13,6 +13,7 @@ import * as KmsGrpc from './api-client/kms.ts'
 import * as QuotasGrpc from './api-client/quotas.ts'
 import * as CapacityGrpc from './api-client/capacity.ts'
 import * as AiGrpc from './api-client/ai.ts'
+import * as Mk8sGrpc from './api-client/mk8s.ts'
 import * as BucketResource from './resources/storage/v1/bucket.ts'
 import * as TransferResource from './resources/storage/v1/transfer.ts'
 import * as ProjectResource from './resources/iam/v2/project.ts'
@@ -152,6 +153,7 @@ export const providers = () =>
     Layer.provideMerge(QuotasGrpc.QuotasGrpcServiceLive),
     Layer.provideMerge(CapacityGrpc.CapacityGrpcServiceLive),
     Layer.provideMerge(AiGrpc.AiGrpcServiceLive),
+    Layer.provideMerge(Mk8sGrpc.Mk8sGrpcServiceLive),
   ).pipe(
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),
     Layer.provideMerge(Credentials.fromAuthProvider),
