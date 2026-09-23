@@ -360,7 +360,36 @@ export const InstancePropsSchema = Schema.Struct({
   /** Set to create a preemptible VM (cheaper, can be stopped by platform). */
   preemptible: Schema.optional(PreemptibleSchema),
   /**
-   * How the VM is priced (see {@link PricingModelSchema}) — omitted means the platform's default.
+   * How the VM is priced — `{ onDemand: true }`, `{ followsSpotPrice: true }` or
+   * `{ spotPricingPolicy: { id } }` (arms and rules shared: `shared/pricing.schema.ts`). **Optional —
+   * omitting it is the platform's default**, and the API does **not** materialize a default into `spec`
+   * (measured live 2026-09-24: a create that pinned nothing echoed no pricing field at all, while the
+   * empty *messages* around it — `gpuCluster`, `reservationPolicy`, `ipAddress` — were materialized).
+   *
+   * **A deliberate reshape**, documented here as AGENTS.md §"Naming" requires: the proto carries pricing
+   * as three *flat* siblings on `InstanceSpec` (`on_demand`, `follows_spot_price`,
+   * `spot_pricing_policy{id}`) and ts-proto emits a oneof as flat optional fields with no accessor, so
+   * there is no `pricing` message to mirror — `hostedSpecInput` spreads it back through
+   * `ResourceUtils.pricingModelFields`, the same reshape `storage/v1 transfer.stopCondition` makes. A
+   * nested key would be dropped **silently** by `fromJSON`.
+   *
+   * The API enforces the `preemptible` coupling itself: measured live 2026-09-24, the spot arm on a
+   * non-preemptible instance answers
+   * `3 INVALID_ARGUMENT: spot-pricing-policy pricing requires a preemptible instance` — the rule
+   * `pricingMatchesPreemptible` catches at plan time with a message naming the prop to drop.
+   *
+   * ⚠️ **A change is only accepted on a *stopped* instance** (all three measured live 2026-09-24):
+   *
+   *  * *introducing* the arm on a running instance is refused —
+   *    `9 FAILED_PRECONDITION: spec fields [pricing_model] update could be done with stopped instance`;
+   *  * **repeating** an already-set arm is accepted, so an unrelated field change (e.g. `hostname`) with
+   *    the arm pinned converges normally — pinning does not poison later updates;
+   *  * an update that **omits** it leaves it in place: absent means "leave unchanged", never "clear",
+   *    which is why `pricingDrifted` only compares a *pinned* arm.
+   *
+   * So a user who wants to change the mode must stop the instance first (`stopped: true`) or recreate it —
+   * the API's own message says so, which is why this is documented rather than planned as a replace
+   * (recreating a VM to change a bid is a bigger hammer than stopping it).
    */
   pricing: Schema.optional(PricingModelSchema),
   /** Whether the instance should be created in stopped state. */

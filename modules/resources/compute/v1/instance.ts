@@ -243,7 +243,9 @@ const gpuClusterChanged = (news: { gpuCluster?: { id?: string } }, olds?: { gpuC
  * live fields, one by one. An empty wire message decodes as `{}`, which is what a pinned `true` maps to
  * (`ResourceUtils.pricingModelFields`), so "the arm is already set" and "the spec says nothing" stay
  * distinguishable. Switching arms therefore reads as drift (the new arm is absent live), while leaving
- * `pricing` out of the props compares nothing at all — see the caller for why that guard is load-bearing.
+ * `pricing` out of the props compares nothing at all — and that guard is load-bearing for a *measured*
+ * reason: an update that omits the arm leaves it in place, so an unconditional comparison would ask the
+ * API to clear something it never clears, on every reconcile.
  */
 const pricingDrifted = (
   live: NebiusInstanceSchema.InstanceSpec | undefined,
@@ -295,12 +297,12 @@ export const instanceSpecDrifted = (
     live.stopped !== desired.stopped ||
     live.recoveryPolicy !== desired.recoveryPolicy ||
     live.hostname !== desired.hostname ||
-    // Guarded on the news side **because the platform's behaviour here is unmeasured**: whether a live VM
-    // accepts a pricing change in place, and whether the API materializes a default pricing into `spec`
-    // (which would differ from an omitted prop on every reconcile), were never probed — a live probe needs
-    // a preemptible VM, which this tenant's CPU platforms reject (`Preemptible is invalid`, measured
-    // 2026-09-10). Comparing only a **pinned** arm makes either answer a non-event rather than a permanent
-    // drift loop; the API adjudicates legality when `reconcile` sends the full desired spec.
+    // Guarded on the news side, and the measurement is why (live 2026-09-24): an update that *omits* the
+    // arm leaves it in place (absent means "leave unchanged", never "clear"), a create that pins nothing
+    // materializes no arm at all, and repeating a pinned arm in an update is accepted while *changing* it
+    // on a running instance is refused (`9 FAILED_PRECONDITION: spec fields [pricing_model] update could
+    // be done with stopped instance`). Comparing only a pinned arm keeps all three a non-event here; the
+    // API's refusal is an apply-time error the prop documents, not something this list can fix.
     (news.pricing !== undefined && pricingDrifted(live, news.pricing))
   )
 }

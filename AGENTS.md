@@ -638,6 +638,18 @@ Some Nebius APIs don't follow the standard CRUD pattern:
   account they reference (`PropsValidationError: Expected string`); the fix pattern is the one
   `iam/v2 AccessKey` uses — create in `reconcile`, which runs after reference resolution — see
   TASKS.md §F.
+- **`compute/v1 Instance.pricing` is a stopped-VM change, and omission never clears it** — three measured
+  rules (live 2026-09-24, `spikes/compute-pricing-{probe,stopped-probe}.ts`) that any provider of a
+  `pricing_model` oneof has to know, because all three are the opposite of what a naive drift check
+  assumes: *introducing* or changing an arm on a **running** instance is refused
+  (`9 FAILED_PRECONDITION: spec fields [pricing_model] update could be done with stopped instance`),
+  **repeating** an already-set arm is fine (so a pinned arm does not poison unrelated updates), and an
+  update that **omits** the arm leaves it in place — absent means "leave unchanged", never "clear". The
+  API also enforces the preemptible coupling itself (`3 INVALID_ARGUMENT: spot-pricing-policy pricing
+  requires a preemptible instance`), and materializes **no** default arm when nothing was pinned (empty
+  *messages* like `gpuCluster`/`reservationPolicy` around it **are** materialized). Every one of those is
+  why the prop is a reshape with a news-guarded comparison, and why the props reject a mismatched arm at
+  plan time instead of letting apply answer.
 - **Storage Transfer**: `source.nebius.accessKey` is **required by the API** even though the proto
   marks it optional (without it `Create` answers a bare `3 INVALID_ARGUMENT: Invalid argument` for
   every stop condition) — the props schema requires it, so it fails at plan time instead. The

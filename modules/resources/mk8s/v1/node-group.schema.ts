@@ -595,8 +595,25 @@ const NodeGroupTemplateSchema = Schema.Struct({
     Schema.Boolean.check(Validation.presenceOnly('template.preemptible', 'node group')),
   ),
   /**
-   * How the nodes are priced (see {@link PricingModelSchema}) — omitted means the platform's default,
-   * `onDemand` for a non-preemptible group.
+   * How the nodes are priced (arms and rules shared: `shared/pricing.schema.ts`) — omitted means the
+   * platform's default, and nothing is materialized for it (`compute/v1 Instance`, measured 2026-09-24,
+   * echoes no pricing field when nothing was pinned).
+   *
+   * **A deliberate reshape**, documented here as AGENTS.md §"Naming" requires: the proto carries pricing
+   * as three *flat* siblings on `NodeTemplate` (`on_demand`, `follows_spot_price`,
+   * `spot_pricing_policy{id}`) and ts-proto emits a oneof as flat optional fields with no accessor — so
+   * `desiredSpec` spreads `ResourceUtils.pricingModelFields` onto them, the `transfer.stopCondition`
+   * pattern. A nested key would be dropped **silently** by `fromJSON`.
+   *
+   * The API enforces the `preemptible` coupling itself — measured live 2026-09-24 (on `compute/v1
+   * Instance`): `3 INVALID_ARGUMENT: spot-pricing-policy pricing requires a preemptible instance` — so
+   * `pricingMatchesPreemptible` moves that failure to plan time.
+   *
+   * ⚠️ **What a change does to the nodes is unmeasured.** It converges in place (the pinned-template drift
+   * check covers it), but whether the operator rolls the nodes out for it was never probed — unlike
+   * `cloudInitUserData` (a measured roll-out) and `taints`/the label maps (measured sticky). Treat it as a
+   * template change and expect a roll-out; whether the *running* nodes accept it is also unmeasured here
+   * (on `compute/v1 Instance` a pricing change requires a stopped VM, which is a different update path).
    */
   pricing: Schema.optional(PricingModelSchema),
   /**
