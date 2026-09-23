@@ -1,3 +1,77 @@
+## [0.9.0](https://github.com/fllstck/nebius-alchemy/compare/v0.8.3...v0.9.0) (2026-09-22)
+
+
+### ⚠️ Upgrade notes
+
+* **Seven attributes are strings, and are now typed as such.** `toFriendlyAttributes` merges the API's
+  own JSON renderings, and ts-proto renders every int64 as a decimal *string* — so
+  `FilesystemAttributes.{sizeGibibytes,blockSizeBytes}`, `DiskAttributes.{sizeGibibytes,blockSizeBytes}`,
+  `DiskSnapshotAttributes.{contentSizeBytes,storageSizeBytes}` and
+  `FederationCertificateAttributes.keySize` were declared `number` while the value was `"4096"`.
+  Nothing changes at runtime; code doing arithmetic on them now fails to *compile* instead of silently
+  concatenating. Wrap them in `Number(...)` (or `BigInt(...)`) where you need the value.
+  `AuthPublicKeyAttributes.keySize` and `AccessKeyAttributes.keySize` stay numbers — the wire type
+  there is int32, and the rule is per-field, not "all numbers are strings".
+* **`Nebius.storage.v1.Transfer` now requires `source.nebius.accessKey`.** The proto marks it optional;
+  the service does not — `Create` answered `3 INVALID_ARGUMENT: Invalid argument` for a Nebius source
+  without it, for *every* stop condition (measured against the live API). A missing key is now a
+  plan-time error naming the field, instead of an opaque apply-time failure.
+* **`Nebius.iam.v1.AuthPublicKey.data` must be an RSA-4096 public key.** That is the only shape the
+  service accepts: RSA-2048/3072 answer `Key doesn't fits to any supported algorithms`, and
+  Ed25519/ECDSA answer `Invalid public key data: expected public key in PEM-format` — which is
+  misleading, since those *are* valid PEM; the service only parses RSA. Validated at plan time now,
+  with a message that says so (and a certificate is rejected with the command to export the key).
+* **`Nebius.vpc.v1.SecurityRule` requires the match block its `direction` selects.**
+  `SecurityRuleSpec` has no `direction` field at all — the API infers INGRESS/EGRESS from `ingress` vs
+  `egress` — so `direction: 'INGRESS'` with neither block could not express its direction and was
+  silently dropped. Declaring a direction without the matching block is a plan-time error.
+* No other props or wire shapes changed; everything below is a behaviour fix.
+
+### Bug Fixes
+
+* **vpc:** stop re-writing resources the platform already agrees with. `network`/`subnet` compared the
+  pool structs the API *materializes* (`{pools: [], useNetworkPools: true}`) against omitted props, and
+  `pool` compared its CIDR blocks as a whole array while the API fills each block's `state` and
+  `maxMaskLength` — so every reconcile issued an update, and a create spent two writes. Comparisons are
+  now guarded on the props you actually pinned, `subnet.routeTableId` included, which also stops a
+  pinned route table from being reset when the prop is later removed from your config
+  ([81fd829](https://github.com/fllstck/nebius-alchemy/commit/81fd829bf2ef43baf26ac18a78beb09e0baf0714), [b1f3eac](https://github.com/fllstck/nebius-alchemy/commit/b1f3eac4b1a5f746d8cdcbb6fedb1bf7c34b8bd9)).
+* **vpc:** a security rule can no longer declare a direction it cannot express ([8af6162](https://github.com/fllstck/nebius-alchemy/commit/8af6162fb75887cd2207736837e4d99012d63639)).
+* **storage:** the `Transfer`'s `stopCondition` never reached the wire. The proto models it as three flat
+  oneof fields (`afterOneIteration`, `afterNEmptyIterations`, `infinite`) with no `stopCondition`
+  message, so `fromJSON` dropped the union silently and the transfer ran with the server's default stop
+  behaviour on create *and* update. The mapping is explicit now; the destination/source are compared by
+  value instead of by reference (an unchanged config used to plan a replace and fail with
+  `ALREADY_EXISTS`); and the platform's echoed credentials, limiters and iteration interval no longer
+  read as drift ([cb96e3e](https://github.com/fllstck/nebius-alchemy/commit/cb96e3ea31fe1c375ec45e8c137b958e00704f2c)).
+* **iam:** `AuthPublicKey` and `FederationCertificate` compared their whole spec, and the API does not
+  echo a PEM verbatim — it terminates it (799 → 800 and 1240 → 1241 bytes measured), so both wrote an
+  update on every reconcile. Only mutable fields are compared now, and a change to the immutable
+  `FederationCertificate.data` plans a replace instead of being dropped ([1bc3817](https://github.com/fllstck/nebius-alchemy/commit/1bc3817828321228a1b38475c7b61bb6e7af13b7), [31b34b3](https://github.com/fllstck/nebius-alchemy/commit/31b34b38ddef888183642418d8d1387edd9508ab)).
+* **iam:** `StaticKey` is created in `reconcile`, not `precreate`, so it can be declared in the same
+  deploy as its service account. `precreate` receives raw props — references unresolved — and answered
+  `PropsValidationError: Expected string at ["serviceAccountId"]`; the half-written state row it left
+  behind then blocked the whole destroy plan ([9240a6b](https://github.com/fllstck/nebius-alchemy/commit/9240a6b1c014dc5213fc621906b101006b7e5c7f)).
+* **resources:** every user-facing prop is now either planned by `diff`, reconciled in place, or
+  explicitly declared non-converging. The sweep that established this (all 38 resources) found props
+  that reached neither a plan nor a write, losing the change silently — `record.relativeName` (now a
+  replace) and `transfer.stopCondition` above among them ([41db874](https://github.com/fllstck/nebius-alchemy/commit/41db874ee6ba16069d0292bfaeba4ef44a4abe6a), [0f9c350](https://github.com/fllstck/nebius-alchemy/commit/0f9c350bd003124aa2c4334c6ab643d198fa80d0)).
+* **resources:** delete progress is narrated only when a re-issue will actually happen ([d8782e3](https://github.com/fllstck/nebius-alchemy/commit/d8782e3c774ea66b86cfa78cd25af73b05a6975b)).
+* **compute:** the boot-disk image check inspects only the boot disk ([11482a0](https://github.com/fllstck/nebius-alchemy/commit/11482a098998d05f97522448cdd46f6ea9013395)).
+
+### Tooling & tests
+
+* **Mutation testing covers eight modules and runs nightly.** Aggregate **91.8 %**: `AuthProvider`
+  65 % → **92.8 %**, `oauth` **90.2 %**, `Credentials` **100 %**. The nightly workflow writes a per-file
+  table *and* every surviving mutant's source line into the run's Summary panel — a score alone is not
+  actionable ([6d5c08a](https://github.com/fllstck/nebius-alchemy/commit/6d5c08ad0f2b7f5e72c7634d869ad292e7aa4723), [a50c2bb](https://github.com/fllstck/nebius-alchemy/commit/a50c2bbe7bda6d3b612483cafa8793e3ab310851), [66bab1b](https://github.com/fllstck/nebius-alchemy/commit/66bab1b94100444e0770853a217bf8e287ed8f28)).
+* **The auth flows have doubles at last**: the OAuth token exchange (`fetch` seam), the loopback
+  callback server as a real local listener, and the tenant/project pickers moved onto the `SaBootstrap`
+  service — reaching them by `import` is what had made the OAuth login flow impossible to test
+  ([0199686](https://github.com/fllstck/nebius-alchemy/commit/0199686ca4ced6f8b05eeaaf2a66177ed958704d)).
+* Behavioural tests for the gRPC layer ([eb3ee48](https://github.com/fllstck/nebius-alchemy/commit/eb3ee4892395f6fd8b890149c2fa674c7e94623f)) and boundary tests for the shared validation filters
+  ([07d6f40](https://github.com/fllstck/nebius-alchemy/commit/07d6f406cc69bc80534579f1ceeec64cc370e1f4), [ebf5061](https://github.com/fllstck/nebius-alchemy/commit/ebf50610a2ab0a75412e1510b47cbe12712624bd)).
+
 ## [0.8.3](https://github.com/fllstck/nebius-alchemy/compare/v0.8.2...v0.8.3) (2026-09-21)
 
 
