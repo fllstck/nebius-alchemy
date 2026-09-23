@@ -46,7 +46,7 @@ export const NebiusDiskSnapshotProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusDiskSnapshot>, never, any>)
   : AlchemyProvider.succeed(NebiusDiskSnapshot, {
-  reconcile: Effect.fn('Nebius.compute.v1.DiskSnapshot.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.compute.v1.DiskSnapshot.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* DiskSnapshotSchema.validateDiskSnapshotProps(news)
 
     const svc = yield* ComputeGrpc.ComputeGrpcService
@@ -81,7 +81,10 @@ export const NebiusDiskSnapshotProvider: Layer.Layer<
       sourceDiskId: news.sourceDiskId,
       description: news.description || '',
     })
-    if (snap.spec && !ResourceUtils.specDeepEqual(snap.spec, desired)) {
+    if ((
+snap.spec && !ResourceUtils.specDeepEqual(snap.spec, desired)
+    ) ||
+    Factory.labelsDrifted(snap.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.compute.v1.DiskSnapshot (${snap.metadata!.name})`)
       snap = yield* svc.diskSnapshot.update({
         metadata: {

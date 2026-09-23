@@ -45,7 +45,7 @@ export const NebiusInvitationProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusInvitation>, never, any>)
   : AlchemyProvider.succeed(NebiusInvitation, {
-  reconcile: Effect.fn('Nebius.iam.v1.Invitation.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.iam.v1.Invitation.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* InvitationSchema.validateInvitationProps(news)
 
     const iam = yield* IamGrpc.IamGrpcService
@@ -78,7 +78,10 @@ export const NebiusInvitationProvider: Layer.Layer<
         description: news.description || '',
         email: news.email,
       })
-      if (invitation.spec && !ResourceUtils.specDeepEqual(invitation.spec, desired)) {
+      if ((
+invitation.spec && !ResourceUtils.specDeepEqual(invitation.spec, desired)
+    ) ||
+    Factory.labelsDrifted(invitation.metadata?.labels, news.labels, olds?.labels)) {
         yield* session.note(`Updating Nebius.iam.v1.Invitation (${invitation.metadata!.name})`)
       invitation = yield* iam.invitation.update({
           metadata: {

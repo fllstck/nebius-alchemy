@@ -45,7 +45,7 @@ export const NebiusServiceAccountProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusServiceAccount>, never, any>)
   : AlchemyProvider.succeed(NebiusServiceAccount, {
-  reconcile: Effect.fn('Nebius.iam.v1.ServiceAccount.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.iam.v1.ServiceAccount.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* ServiceAccountSchema.validateServiceAccountProps(news)
 
@@ -79,7 +79,10 @@ export const NebiusServiceAccountProvider: Layer.Layer<
     const desiredSpec = NebiusServiceAccountSchema.ServiceAccountSpec.fromPartial({
       description: news.description || '',
     })
-    if (sa.spec && !ResourceUtils.specDeepEqual(sa.spec, desiredSpec)) {
+    if ((
+sa.spec && !ResourceUtils.specDeepEqual(sa.spec, desiredSpec)
+    ) ||
+    Factory.labelsDrifted(sa.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.iam.v1.ServiceAccount (${sa.metadata!.name})`)
       sa = yield* iamGrpcService.serviceAccount.update({
         metadata: {

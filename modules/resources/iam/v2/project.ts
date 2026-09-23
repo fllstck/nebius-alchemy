@@ -55,7 +55,7 @@ export const NebiusProjectProvider: Layer.Layer<
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusProject>, never, any>)
   : AlchemyProvider.succeed(NebiusProject, {
   // Observe → Ensure → Sync → Return
-  reconcile: Effect.fn('Nebius.iam.v2.Project.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.iam.v2.Project.reconcile')(function* ({ id, news, output, session, olds }) {
     // When props are fully optional and the user passes none, news is undefined.
     // But region is required in the schema, so this won't happen in practice.
     news = news || ({} as ProjectSchema.ProjectProps)
@@ -91,7 +91,10 @@ export const NebiusProjectProvider: Layer.Layer<
 
     // 3. Sync — update if spec drifted from desired
     const desired = NebiusProjectSchema.ProjectSpec.fromPartial({ region: news.region })
-    if (project.spec && project.spec.region !== desired.region) {
+    if ((
+project.spec && project.spec.region !== desired.region
+    ) ||
+    Factory.labelsDrifted(project.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.iam.v2.Project (${project.metadata!.name})`)
       project = yield* iamGrpcService.project.update({
         metadata: {

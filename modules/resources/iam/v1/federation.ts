@@ -45,7 +45,7 @@ export const NebiusFederationProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusFederation>, never, any>)
   : AlchemyProvider.succeed(NebiusFederation, {
-  reconcile: Effect.fn('Nebius.iam.v1.Federation.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.iam.v1.Federation.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* FederationSchema.validateFederationProps(news)
 
     const iam = yield* IamGrpc.IamGrpcService
@@ -87,7 +87,10 @@ export const NebiusFederationProvider: Layer.Layer<
         forceAuthn: news.samlSettings.forceAuthn ?? false,
       },
     })
-    if (federation.spec && !ResourceUtils.specDeepEqual(federation.spec, desired)) {
+    if ((
+federation.spec && !ResourceUtils.specDeepEqual(federation.spec, desired)
+    ) ||
+    Factory.labelsDrifted(federation.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.iam.v1.Federation (${federation.metadata!.name})`)
       federation = yield* iam.federation.update({
         metadata: {

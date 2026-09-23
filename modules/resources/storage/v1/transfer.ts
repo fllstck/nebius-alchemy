@@ -130,7 +130,7 @@ export const NebiusTransferProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusTransfer>, never, any>)
   : AlchemyProvider.succeed(NebiusTransfer, {
-  reconcile: Effect.fn('Nebius.storage.v1.Transfer.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.storage.v1.Transfer.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* TransferSchema.validateTransferProps(news)
 
     const svc = yield* StorageGrpc.StorageGrpcService
@@ -204,7 +204,10 @@ export const NebiusTransferProvider: Layer.Layer<
     // `transferSpecDrifted`: the API echoes `secretAccessKey: ""` (write-only), so credentials
     // are stripped before comparing; `interIterationInterval` is a `Duration` (Long seconds)
     // and the limiters carry int64s — invisible to `deepEqual` (see utilities.ts).
-    if (transfer.spec && transferSpecDrifted(transfer.spec, desired)) {
+    if ((
+transfer.spec && transferSpecDrifted(transfer.spec, desired)
+    ) ||
+    Factory.labelsDrifted(transfer.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.storage.v1.Transfer (${transfer.metadata!.name})`)
       transfer = yield* svc.transfer.update({
         metadata: {

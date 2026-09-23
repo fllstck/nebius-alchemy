@@ -41,7 +41,7 @@ export const NebiusZoneProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusZone>, never, any>)
   : AlchemyProvider.succeed(NebiusZone, {
-  reconcile: Effect.fn('Nebius.dns.v1.Zone.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.dns.v1.Zone.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* ZoneSchema.validateZoneProps(news)
 
@@ -73,7 +73,8 @@ export const NebiusZoneProvider: Layer.Layer<
 
     // 3. Sync — VPC scope and SOA settings can change (domainName is immutable)
     const desired = NebiusZoneSchema.ZoneSpec.fromJSON(news)
-    if (
+    if ((
+
       zone.spec &&
       (!ResourceUtils.specDeepEqual(zone.spec.vpc, desired.vpc) ||
         // SOA is opt-in: the API answers with its own SOA when none was set, so
@@ -88,7 +89,9 @@ export const NebiusZoneProvider: Layer.Layer<
         // and the change never converged.
         (news.soaSpec?.negativeTtl !== undefined &&
           !ResourceUtils.specDeepEqual(zone.spec.soaSpec, desired.soaSpec)))
-    ) {
+    
+    ) ||
+    Factory.labelsDrifted(zone.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.dns.v1.Zone (${zone.metadata!.name})`)
       zone = yield* dnsGrpcService.zone.update({
         metadata: {

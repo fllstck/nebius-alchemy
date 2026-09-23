@@ -51,7 +51,7 @@ export const NebiusFederatedCredentialsProvider: Layer.Layer<
   // before their SA.
   nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
 
-  reconcile: Effect.fn('Nebius.iam.v1.FederatedCredentials.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.iam.v1.FederatedCredentials.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* FedCredsSchema.validateFederatedCredentialsProps(news)
 
     const iam = yield* IamGrpc.IamGrpcService
@@ -94,7 +94,10 @@ export const NebiusFederatedCredentialsProvider: Layer.Layer<
       federatedSubjectId: news.federatedSubjectId,
       subjectId: news.subjectId,
     })
-    if (creds.spec && !ResourceUtils.specDeepEqual(creds.spec, desired)) {
+    if ((
+creds.spec && !ResourceUtils.specDeepEqual(creds.spec, desired)
+    ) ||
+    Factory.labelsDrifted(creds.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.iam.v1.FederatedCredentials (${creds.metadata!.name})`)
       creds = yield* iam.federatedCredentials.update({
         metadata: {

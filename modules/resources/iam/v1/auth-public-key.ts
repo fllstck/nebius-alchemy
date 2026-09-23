@@ -54,7 +54,7 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
   // keys before their SA (Nebius does not cascade-delete associated resources).
   nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
 
-  reconcile: Effect.fn('Nebius.iam.v1.AuthPublicKey.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.iam.v1.AuthPublicKey.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* AuthPublicKeySchema.validateAuthPublicKeyProps(news)
 
     const iam = yield* IamGrpc.IamGrpcService
@@ -106,12 +106,15 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
     // `data`/`accountId` are immutable and a change to either is planned as a REPLACE by `diff`, so
     // ignoring them here loses nothing; `expiresAt` stays compared (guarded on the news side) so a
     // change to it is still written for the API to adjudicate rather than silently dropped.
-    if (
+    if ((
+
       key.spec &&
       ((key.spec.description ?? '') !== (news.description ?? '') ||
         (news.expiresAt !== undefined &&
           !ResourceUtils.specDeepEqual(key.spec.expiresAt, desired.expiresAt)))
-    ) {
+    
+    ) ||
+    Factory.labelsDrifted(key.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.iam.v1.AuthPublicKey (${key.metadata!.name})`)
       key = yield* iam.authPublicKey.update({
         metadata: {

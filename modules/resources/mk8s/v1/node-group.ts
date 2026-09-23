@@ -3,7 +3,6 @@ import * as Layer from 'effect/Layer'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
 import * as NebiusNodeGroupSchema from '../../../../schemas/nebius/mk8s/v1/node_group.ts'
@@ -261,7 +260,7 @@ export const NebiusNodeGroupProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusNodeGroup>, never, any>)
   : AlchemyProvider.succeed(NebiusNodeGroup, {
-      reconcile: Effect.fn('Nebius.mk8s.v1.NodeGroup.reconcile')(function* ({ id, news, output, session }) {
+      reconcile: Effect.fn('Nebius.mk8s.v1.NodeGroup.reconcile')(function* ({ id, news, output, session, olds }) {
         news = yield* NodeGroupSchema.validateNodeGroupProps(news)
 
         const svc = yield* Mk8sGrpc.Mk8sGrpcService
@@ -273,14 +272,16 @@ export const NebiusNodeGroupProvider: Layer.Layer<
             .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
         }
 
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
         if (!nodeGroup) {
           // The parent is the **cluster** (not the project), so there is no `NEBIUS_PROJECT_ID`
           // fallback here: `parentId` is required in the props for exactly that reason.
           const name =
             news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-          const internalLabels = yield* AlchemyTags.createInternalTags(id)
-          const labels = { ...internalLabels, ...news.labels }
-
           yield* session.note(`Creating Nebius.mk8s.v1.NodeGroup (${name})`)
           nodeGroup = yield* svc.nodeGroup.create({
             metadata: { parentId: news.parentId, name, labels },
@@ -289,7 +290,14 @@ export const NebiusNodeGroupProvider: Layer.Layer<
         }
 
         const desired = desiredSpec(news)
-        if (nodeGroupSpecDrifted(nodeGroup.spec, desired)) {
+        if (
+      (
+nodeGroupSpecDrifted(nodeGroup.spec, desired)
+      ) ||
+      // A labels-only change is not a spec drift, so it needs its own trigger — carrying the merged map
+      // in `metadata.labels` converges only if this fires.
+      Factory.labelsDrifted(nodeGroup.metadata?.labels, news.labels, olds?.labels)
+    ) {
           yield* session.note(`Updating Nebius.mk8s.v1.NodeGroup (${nodeGroup.metadata!.name})`)
           // `resourceVersion` is the optimistic-concurrency token; `Get` renders it as a
           // string, which is what `UpdateNodeGroupRequest.metadata` wants back.
@@ -297,6 +305,7 @@ export const NebiusNodeGroupProvider: Layer.Layer<
             metadata: {
               id: nodeGroup.metadata!.id,
               resourceVersion: nodeGroup.metadata!.resourceVersion.toString(),
+              labels,
             },
             spec: desired,
           })

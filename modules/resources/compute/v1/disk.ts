@@ -45,7 +45,7 @@ export const NebiusDiskProvider: Layer.Layer<
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusDisk>, never, any>)
   : AlchemyProvider.succeed(NebiusDisk, {
   // Observe → Ensure → Sync → Return
-  reconcile: Effect.fn('Nebius.compute.v1.Disk.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.compute.v1.Disk.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
 
     // Validate user input at runtime
@@ -79,7 +79,8 @@ export const NebiusDiskProvider: Layer.Layer<
 
     // 3. Sync — update if spec drifted from desired
     const desired = NebiusDiskSchema.DiskSpec.fromJSON(news)
-    if (
+    if ((
+
       disk.spec &&
       // `specDeepEqual` for the int64 sizes: `deepEqual` canonicalizes `Long`
       // (a class instance) to `undefined`, so every size compared equal — a
@@ -96,7 +97,9 @@ export const NebiusDiskProvider: Layer.Layer<
           !ResourceUtils.specDeepEqual(disk.spec.blockSizeBytes, desired.blockSizeBytes)) ||
         disk.spec.type !== desired.type ||
         disk.spec.forbidDeletion !== desired.forbidDeletion)
-    ) {
+    
+    ) ||
+    Factory.labelsDrifted(disk.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.compute.v1.Disk (${disk.metadata!.name})`)
       // The compute API requires metadata.parentId on update (like Instance) —
       // omitting it yields `INVALID_ARGUMENT: ParentID is invalid`.

@@ -46,7 +46,7 @@ export const NebiusAsymmetricKeyProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusAsymmetricKey>, never, any>)
   : AlchemyProvider.succeed(NebiusAsymmetricKey, {
-  reconcile: Effect.fn('Nebius.kms.v1.AsymmetricKey.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.kms.v1.AsymmetricKey.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* AsymmetricKeySchema.validateAsymmetricKeyProps(news)
 
@@ -84,10 +84,13 @@ export const NebiusAsymmetricKeyProvider: Layer.Layer<
       description: news.description || '',
       algorithm: output?.algorithm || news.algorithm || 'ECDSA_NIST_P256_SHA_256',
     })
-    if (key.spec && !ResourceUtils.specDeepEqual(
+    if ((
+key.spec && !ResourceUtils.specDeepEqual(
       { description: key.spec.description },
       { description: desiredSpec.description },
-    )) {
+    )
+    ) ||
+    Factory.labelsDrifted(key.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.kms.v1.AsymmetricKey (${key.metadata!.name})`)
       key = yield* grpcService.asymmetricKey.update({
         metadata: {

@@ -5,7 +5,6 @@ import * as Schema from 'effect/Schema'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
 import * as NebiusNVLInstanceGroupSchema from '../../../../schemas/nebius/compute/v1/nvlinstancegroup.ts'
@@ -74,7 +73,7 @@ export const NebiusNVLInstanceGroupProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusNVLInstanceGroup>, never, any>)
   : AlchemyProvider.succeed(NebiusNVLInstanceGroup, {
-      reconcile: Effect.fn('Nebius.compute.v1.NVLInstanceGroup.reconcile')(function* ({ id, news, output, session }) {
+      reconcile: Effect.fn('Nebius.compute.v1.NVLInstanceGroup.reconcile')(function* ({ id, news, output, session, olds }) {
         news = yield* NVLInstanceGroupSchema.validateNVLInstanceGroupProps(news)
 
         const svc = yield* ComputeGrpc.ComputeGrpcService
@@ -88,12 +87,14 @@ export const NebiusNVLInstanceGroupProvider: Layer.Layer<
 
         const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
 
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
         if (!group) {
           const name =
             news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-          const internalLabels = yield* AlchemyTags.createInternalTags(id)
-          const labels = { ...internalLabels, ...news.labels }
-
           yield* session.note(`Creating Nebius.compute.v1.NVLInstanceGroup (${name})`)
           group = yield* svc.nvlInstanceGroup.create({
             metadata: { parentId, name, labels },
@@ -106,13 +107,21 @@ export const NebiusNVLInstanceGroupProvider: Layer.Layer<
         // `diff`). Shrinking below the current member count is left to the API:
         // it owns the rule, and a local guard could block a legal resize.
         const desired = desiredSpec(news)
-        if (group.spec && !ResourceUtils.specDeepEqual(group.spec, desired)) {
+        if (
+      (
+group.spec && !ResourceUtils.specDeepEqual(group.spec, desired)
+      ) ||
+      // A labels-only change is not a spec drift, so it needs its own trigger — carrying the merged map
+      // in `metadata.labels` converges only if this fires.
+      Factory.labelsDrifted(group.metadata?.labels, news.labels, olds?.labels)
+    ) {
           yield* session.note(`Updating Nebius.compute.v1.NVLInstanceGroup (${group.metadata!.name})`)
           group = yield* svc.nvlInstanceGroup.update({
             metadata: {
               id: group.metadata!.id,
               parentId,
               resourceVersion: group.metadata!.resourceVersion.toString(),
+              labels,
             },
             spec: desired,
           })

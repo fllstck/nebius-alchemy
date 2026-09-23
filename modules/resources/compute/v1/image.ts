@@ -45,7 +45,7 @@ export const NebiusImageProvider: Layer.Layer<
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusImage>, never, any>)
   : AlchemyProvider.succeed(NebiusImage, {
   // Observe → Ensure → Sync → Return
-  reconcile: Effect.fn('Nebius.compute.v1.Image.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.compute.v1.Image.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
 
     // Validate user input at runtime
@@ -81,7 +81,8 @@ export const NebiusImageProvider: Layer.Layer<
     const desired = NebiusImageSchema.ImageSpec.fromJSON(news)
     // `cpuArchitecture` / `recommendedPlatforms` are spec fields too: without
     // them here, changing either planned an update that wrote nothing.
-    if (
+    if ((
+
       image.spec &&
       (!ResourceUtils.specDeepEqual(image.spec.description, desired.description) ||
         image.spec.imageFamily !== desired.imageFamily ||
@@ -92,7 +93,9 @@ export const NebiusImageProvider: Layer.Layer<
         // would re-issue an update on every reconcile (found by the convergence sweep, §C1).
         (news.cpuArchitecture !== undefined && image.spec.cpuArchitecture !== desired.cpuArchitecture) ||
         !ResourceUtils.specDeepEqual(image.spec.recommendedPlatforms, desired.recommendedPlatforms))
-    ) {
+    
+    ) ||
+    Factory.labelsDrifted(image.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.compute.v1.Image (${image.metadata!.name})`)
       image = yield* computeGrpcService.image.update({
         metadata: {

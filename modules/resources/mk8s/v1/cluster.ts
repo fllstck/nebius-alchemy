@@ -4,7 +4,6 @@ import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import Long from 'long'
 
@@ -135,7 +134,7 @@ export const NebiusClusterProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusCluster>, never, any>)
   : AlchemyProvider.succeed(NebiusCluster, {
-      reconcile: Effect.fn('Nebius.mk8s.v1.Cluster.reconcile')(function* ({ id, news, output, session }) {
+      reconcile: Effect.fn('Nebius.mk8s.v1.Cluster.reconcile')(function* ({ id, news, output, session, olds }) {
         news = yield* ClusterSchema.validateClusterProps(news)
 
         const svc = yield* Mk8sGrpc.Mk8sGrpcService
@@ -147,13 +146,15 @@ export const NebiusClusterProvider: Layer.Layer<
             .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
         }
 
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
         if (!cluster) {
           const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
           const name =
             news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-          const internalLabels = yield* AlchemyTags.createInternalTags(id)
-          const labels = { ...internalLabels, ...news.labels }
-
           yield* session.note(`Creating Nebius.mk8s.v1.Cluster (${name})`)
           cluster = yield* svc.cluster.create({
             metadata: { parentId, name, labels },
@@ -162,7 +163,14 @@ export const NebiusClusterProvider: Layer.Layer<
         }
 
         const desired = desiredSpec(news)
-        if (clusterSpecDrifted(cluster.spec, desired, news)) {
+        if (
+      (
+clusterSpecDrifted(cluster.spec, desired, news)
+      ) ||
+      // A labels-only change is not a spec drift, so it needs its own trigger — carrying the merged map
+      // in `metadata.labels` converges only if this fires.
+      Factory.labelsDrifted(cluster.metadata?.labels, news.labels, olds?.labels)
+    ) {
           yield* session.note(`Updating Nebius.mk8s.v1.Cluster (${cluster.metadata!.name})`)
           // `resourceVersion` is the optimistic-concurrency token; `Get` exposes it
           // as a string, which is what `UpdateClusterRequest.metadata` wants back.
@@ -170,6 +178,7 @@ export const NebiusClusterProvider: Layer.Layer<
             metadata: {
               id: cluster.metadata!.id,
               resourceVersion: cluster.metadata!.resourceVersion.toString(),
+              labels,
             },
             spec: desired,
           })

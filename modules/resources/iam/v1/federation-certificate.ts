@@ -51,7 +51,7 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
   // certificates before their federation.
   nuke: { dependsOn: ['Nebius.iam.v1.Federation'] },
 
-  reconcile: Effect.fn('Nebius.iam.v1.FederationCertificate.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.iam.v1.FederationCertificate.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* FedCertSchema.validateFederationCertificateProps(news)
 
     const iam = yield* IamGrpc.IamGrpcService
@@ -96,7 +96,10 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
     //
     // Nothing is lost: `data` is immutable, and `diff` now plans a REPLACE for a change to it, so it
     // never reaches this update path.
-    if (cert.spec && (cert.spec.description ?? '') !== (news.description ?? '')) {
+    if ((
+cert.spec && (cert.spec.description ?? '') !== (news.description ?? '')
+    ) ||
+    Factory.labelsDrifted(cert.metadata?.labels, news.labels, olds?.labels)) {
       cert = yield* iam.federationCertificate.update({
         metadata: {
           id: cert.metadata!.id,

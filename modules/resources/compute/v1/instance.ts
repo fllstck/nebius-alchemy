@@ -427,7 +427,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusInstance>, never, any>)
   : AlchemyProvider.succeed(NebiusInstance, {
   // Observe → Ensure → Sync → Restart-if-code-changed → Wait → Return
-  reconcile: Effect.fn('Nebius.compute.v1.Instance.reconcile')(function* ({ id, news, output, bindings, session }) {
+  reconcile: Effect.fn('Nebius.compute.v1.Instance.reconcile')(function* ({ id, news, olds, output, bindings, session }) {
     news = news || {}
 
     // `exports` is stripped by validation below (it is not a schema field).
@@ -504,7 +504,12 @@ export const NebiusInstanceProvider: Layer.Layer<
     //    `gpuCluster` is absent from the list below BY DESIGN: it is create-only,
     //    so a difference is a `replace` (see `gpuClusterChangeRequiresReplace`),
     //    never an in-place update — the API rejects an update that tries.
-    if (instanceSpecDrifted(instance.spec, desired, news)) {
+    if (
+      instanceSpecDrifted(instance.spec, desired, news) ||
+      // A labels-only change is not a spec drift, so it needs its own trigger — carrying the merged map in
+      // `metadata.labels` converges only if this condition fires (`Factory.labelsDrifted`).
+      Factory.labelsDrifted(instance.metadata?.labels, news.labels, olds?.labels)
+    ) {
       yield* session.note(`Updating Nebius.compute.v1.Instance (${instance.metadata!.name})`)
       // The compute API requires metadata.parentId on update (unlike VPC
       // resources) — omitting it yields `INVALID_ARGUMENT: ParentID is invalid`.

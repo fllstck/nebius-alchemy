@@ -59,7 +59,7 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusSymmetricKey>, never, any>)
   : AlchemyProvider.succeed(NebiusSymmetricKey, {
-  reconcile: Effect.fn('Nebius.kms.v1.SymmetricKey.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.kms.v1.SymmetricKey.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* SymmetricKeySchema.validateSymmetricKeyProps(news)
 
@@ -109,7 +109,10 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
       // `deepEqual` cannot see (see utilities.ts).
       (news.rotationPeriodSeconds != null &&
         !ResourceUtils.specDeepEqual(key.spec?.rotationPeriod, desiredSpec.rotationPeriod))
-    if (key.spec && specDrifted) {
+    if ((
+key.spec && specDrifted
+    ) ||
+    Factory.labelsDrifted(key.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.kms.v1.SymmetricKey (${key.metadata!.name})`)
       key = yield* grpcService.symmetricKey.update({
         metadata: {

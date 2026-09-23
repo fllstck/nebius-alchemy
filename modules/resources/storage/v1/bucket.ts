@@ -79,7 +79,7 @@ export const NebiusBucketProvider: Layer.Layer<
   : AlchemyProvider.succeed(NebiusBucket, {
   // Observe → Ensure → Sync → Return
   // (see https://v2.alchemy.run/infrastructure-as-code/custom-provider/#implement-reconcile)
-  reconcile: Effect.fn('Nebius.storage.v1.Bucket.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.storage.v1.Bucket.reconcile')(function* ({ id, news, output, session, olds }) {
     // When props are fully optional and the user passes none, news is undefined.
     news = news || {}
 
@@ -114,7 +114,10 @@ export const NebiusBucketProvider: Layer.Layer<
 
     // 3. Sync — update if spec drifted from desired
     const desired = NebiusBucketSchema.BucketSpec.fromJSON(news)
-    if (bucket.spec && specDrifted(bucket.spec, desired)) {
+    if ((
+bucket.spec && specDrifted(bucket.spec, desired)
+    ) ||
+    Factory.labelsDrifted(bucket.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.storage.v1.Bucket (${bucket.metadata!.name})`)
       bucket = yield* storageGrpcService.bucket.update({
         metadata: {

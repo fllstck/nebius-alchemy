@@ -48,7 +48,7 @@ export const NebiusSecretProvider: Layer.Layer<
   : AlchemyProvider.succeed(NebiusSecret, {
   nuke: { skip: true },
 
-  reconcile: Effect.fn('Nebius.mysterybox.v1.Secret.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.mysterybox.v1.Secret.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* SecretSchema.validateSecretProps(news)
 
@@ -90,7 +90,10 @@ export const NebiusSecretProvider: Layer.Layer<
     }
 
     // 3. Sync — update if description changed
-    if (secret.spec && secret.spec.description !== (news.description || '')) {
+    if ((
+secret.spec && secret.spec.description !== (news.description || '')
+    ) ||
+    Factory.labelsDrifted(secret.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.mysterybox.v1.Secret (${secret.metadata!.name})`)
       secret = yield* grpcService.secret.update({
         metadata: {

@@ -46,7 +46,7 @@ export const NebiusFilesystemProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusFilesystem>, never, any>)
   : AlchemyProvider.succeed(NebiusFilesystem, {
-  reconcile: Effect.fn('Nebius.compute.v1.Filesystem.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.compute.v1.Filesystem.reconcile')(function* ({ id, news, output, session, olds }) {
     news = yield* FilesystemSchema.validateFilesystemProps(news)
 
     const svc = yield* ComputeGrpc.ComputeGrpcService
@@ -96,7 +96,10 @@ export const NebiusFilesystemProvider: Layer.Layer<
     const desired = NebiusFilesystemSchema.FilesystemSpec.fromJSON(desiredSpec)
     // `specDeepEqual`, not `deepEqual`: the spec's sizes are int64s, which
     // `deepEqual` canonicalizes to `undefined` (see utilities.ts).
-    if (fs.spec && !ResourceUtils.specDeepEqual(fs.spec, desired)) {
+    if ((
+fs.spec && !ResourceUtils.specDeepEqual(fs.spec, desired)
+    ) ||
+    Factory.labelsDrifted(fs.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.compute.v1.Filesystem (${fs.metadata!.name})`)
       fs = yield* svc.filesystem.update({
         metadata: {
