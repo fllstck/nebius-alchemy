@@ -339,13 +339,14 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
   describe('attributes', () => {
     test('reports the requested version and the running one separately', () => {
       // The two are *different formats*: `spec.version` is `<major>.<minor>` while
-      // `status.version` is the node image's `1.36.3-nebius-node.75`. Nothing parses them
-      // together (see the note on `versionValid`) — this pins both.
+      // `status.version` is the node image's `v1.36.3-nebius-node.75` (**measured live
+      // 2026-09-23**, leading `v` included). Nothing parses them together (see the note on
+      // `versionValid`) — this pins both.
       const attrs = SchemaModule.toFriendlyAttributes(
         nodeGroupProto({
           status: {
             state: NebiusNodeGroupSchema.NodeGroupStatus_State.RUNNING,
-            version: '1.36.3-nebius-node.75',
+            version: 'v1.36.3-nebius-node.75',
             targetNodeCount: Long.fromNumber(2),
             nodeCount: Long.fromNumber(2),
             readyNodeCount: Long.fromNumber(1),
@@ -356,7 +357,7 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
         }),
       )
       expect(attrs.requestedVersion).toBe('1.35')
-      expect(attrs.version).toBe('1.36.3-nebius-node.75')
+      expect(attrs.version).toBe('v1.36.3-nebius-node.75')
       expect(attrs.state).toBe('RUNNING')
       // int64s arrive from decoded protobuf as `Long`s and must leave as decimal strings —
       // an attribute typed `Schema.Finite` for an int64 is a type that lies (a consumer

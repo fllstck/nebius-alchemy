@@ -1,5 +1,6 @@
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
+import Long from 'long'
 import { expect } from 'bun:test'
 import { Nebius, test } from '../../../helpers/stack.ts'
 import { integrationTest } from '../../../helpers/gate.ts'
@@ -95,11 +96,13 @@ integrationTest(
       // the VM spend buys.
       expect(nodeGroup.state).toBe('RUNNING')
       expect(nodeGroup.fixedNodeCount).toBe('1')
-      // Inherited from the cluster: `status.version` is the *node image* version
-      // (`1.36.3-nebius-node.75`), a different format from `spec.version` — hence undefined
-      // here, which is also what keeps the drift comparison meaningful.
+      expect(nodeGroup.nodeCount).toBe('1')
+      expect(nodeGroup.readyNodeCount).toBe('1')
+      // Inherited from the cluster: `status.version` is the *node image* version — measured
+      // live 2026-09-23 as `v1.36.3-nebius-node.75`, i.e. a **different format with a leading
+      // `v`**, which is why `requestedVersion` is undefined here and nowhere compares the two.
       expect(nodeGroup.requestedVersion).toBeUndefined()
-      expect(nodeGroup.version).toBeDefined()
+      expect(nodeGroup.version).toMatch(/^v\d+\.\d+\.\d+-nebius-node\.\d+$/)
 
       // Live-echo assertion 1: a create-only deploy wrote exactly once.
       const created = yield* mk8s.nodeGroup.get(nodeGroup.id)
@@ -112,15 +115,29 @@ integrationTest(
           `nodeCount=${nodeGroup.nodeCount} readyNodeCount=${nodeGroup.readyNodeCount} ` +
           `resourceVersion=${createdVersion}`,
       )
-      // The platform's own view of the spec, which is what the drift check compares against:
-      // `maxPods` is materialized here and must never be compared, because no prop pinned it.
+      // The platform's own view of the spec, which is what the drift check compares against.
+      // **Print values, not just keys** — the first run of this test printed
+      // `Object.keys`-style output and therefore could not say whether the API had filled in
+      // `template.maxPods` (the proto documents `110`) or `spec.version` (which appears in the
+      // echo even when the props omit it). Every field here that the props did not pin is
+      // evidence for the `pinnedSpecDeepEqual` design.
+      const render = (value: unknown): string =>
+        // `spec` is a **proto message**: `spec.toJSON()` is the JSON rendering the API and
+        // `toFriendlyAttributes` use (Long → decimal string, enum → name). Longs nested in
+        // plain objects/arrays are covered by the replacer.
+        JSON.stringify(value, (_key, nested) => (Long.isLong(nested) ? nested.toString() : nested))
       console.log(
-        `PROBE mk8s node group spec keys with values: ` +
-          JSON.stringify(
-            Object.entries(created.spec ?? {})
-              .filter(([, value]) => value !== undefined)
-              .map(([key]) => key),
-          ),
+        `PROBE mk8s node group spec echo: ` +
+          JSON.stringify({
+            version: render(created.spec?.version),
+            fixedNodeCount: render(created.spec?.fixedNodeCount),
+            template: Object.fromEntries(
+              Object.entries(created.spec?.template ?? {})
+                .filter(([, value]) => value !== undefined)
+                // User-data is not a secret *here*, but it can be one in general.
+                .map(([key, value]) => [key, key === 'cloudInitUserData' ? '<user-data>' : render(value)]),
+            ),
+          }),
       )
 
       // ── Live-echo assertion 2: a forced reconcile writes nothing ────────────

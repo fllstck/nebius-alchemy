@@ -641,6 +641,10 @@ Some Nebius APIs don't follow the standard CRUD pattern:
   node group") and nothing more. `NodeGroup.template.os` is validated live, not locally:
   `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix` is the authority (the set depends on the
   Kubernetes version *and* the platform, and it moves).
+  Three version formats live in this family and **none** of them parses the other
+  (measured live 2026-09-23): Cluster `status.controlPlane.version` → `1.36`; both resources'
+  `spec.version` → `1.35`; NodeGroup `status.version` → **`v1.36.3-nebius-node.75`**, leading `v`
+  included (a `Diff` or a comparison shared between them is a bug waiting to happen).
 - **`template.cloudInitUserData` is required but its SSH key is NOT validated** — the proto says it
   "should contain at least one SSH key" and the solutions library enforces that, but the **API does
   not**: the 2026-09-23 write probe created a node group with `'#cloud-config\n'` and no key. A

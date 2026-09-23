@@ -24,7 +24,7 @@
  *
  * | resource type | create-only value | meaning |
  * | `vpc/v1/{Subnet,RouteTable,SecurityGroup,Pool}`, `compute/v1/{Disk,DiskSnapshot,Filesystem,GpuCluster,Image}`, `storage/v1/{Bucket,Transfer}` | `1` | a per-resource counter → assertion 1 is meaningful |
- * | `mk8s/v1/{Cluster,NodeGroup}` | `1` | a per-resource counter → assertion 1 is meaningful. `Cluster` is **measured** (its live test asserted `1` and no movement on 2026-09-23). `NodeGroup` is **asserted, not yet measured**: its gated live test asserts both directions but has not been run, so treat a failure there as the calibration answer, not as a broken test. Neither is a family here — a node group provisions a real VM, and a family entry would pay for a second one |
+ * | `mk8s/v1/{Cluster,NodeGroup}` | `1` | a per-resource counter → assertion 1 is meaningful. Both **measured**: `Cluster` 2026-09-23 (its live test), `NodeGroup` 2026-09-23 late (`resourceVersion=1` after a create-only deploy, and still `1` after a forced reconcile; state `RUNNING`, `nodeCount=1`/`readyNodeCount=1`). Neither is a family here — a node group provisions a real VM, and a family entry would pay for a second one |
  * | `vpc/v1/SecurityRule` | `5`, then stable | an opaque/platform-side sequence (the platform writes the rule into dataplane state during creation; the spec echo is already identical to `desired`) |
  * | `dns/v1/Record` | `661134` | opaque, epoch-like |
  * | `vpc/v1/Network` | moves while idle | the platform assigns real `vpcpool-` ids into `spec` itself |

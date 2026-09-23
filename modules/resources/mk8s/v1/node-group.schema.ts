@@ -19,10 +19,11 @@ import * as VpcIds from '../../vpc/v1/ids.ts'
  * omitted, so the authority to name here is the cluster, not the version catalogue.
  *
  * ⚠️ Do not confuse this with `status.version`, which is a different format
- * entirely (`1.36.3-nebius-node.75` — measured 2026-09-23). Nothing shares a parser
- * between the two sides: `spec.version` is what was requested, `status.version` is
- * the node image actually running, and the cluster's own `status.controlPlane.version`
- * is a third format again (`1.36`, no `v` prefix).
+ * entirely: **measured live 2026-09-23** as `v1.36.3-nebius-node.75` — note the leading
+ * `v`, which the plan of record (TASKS.md §N5) had recorded without it. Nothing shares a
+ * parser between the two sides: `spec.version` is what was requested, `status.version` is
+ * the node image actually running, and the cluster's own `status.controlPlane.version` is
+ * a third format again (`1.36`, no `v` prefix).
  */
 const versionValid = Schema.makeFilter((value: string) =>
   Validation.isMajorMinorVersion(value)
@@ -254,9 +255,9 @@ export const NodeGroupAttributesSchema = Schema.Struct({
   requestedVersion: Schema.optional(Schema.String),
   /**
    * The version the nodes actually run (`status.version`), in the long
-   * `<major>.<minor>.<patch>-nebius-node.<infra_version>` form — e.g.
-   * `1.36.3-nebius-node.75`. Not comparable with {@link requestedVersion}; see the
-   * note on `versionValid`.
+   * `v<major>.<minor>.<patch>-nebius-node.<infra_version>` form — measured live 2026-09-23
+   * as `v1.36.3-nebius-node.75` (the `v` *is* part of it). Not comparable with
+   * {@link requestedVersion}; see the note on `versionValid`.
    */
   version: Schema.optional(Schema.String),
   /** Requested node count (`spec.fixedNodeCount`), int64 → decimal **string**. */
