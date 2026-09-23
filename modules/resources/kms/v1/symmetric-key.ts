@@ -5,7 +5,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusSymmetricKeySchema from '../../../../schemas/nebius/kms/v1/symmetric_key.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
@@ -75,12 +74,14 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
     }
 
     // 2. Ensure — create if missing
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!key) {
       const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       yield* session.note(`Creating Nebius.kms.v1.SymmetricKey (${name})`)
       key = yield* grpcService.symmetricKey.create({
         metadata: { parentId, name, labels },
@@ -114,6 +115,7 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
         metadata: {
           id: key.metadata!.id,
           resourceVersion: key.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desiredSpec,
       })

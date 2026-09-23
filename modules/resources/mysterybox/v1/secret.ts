@@ -5,7 +5,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusSecretSchema from '../../../../schemas/nebius/mysterybox/v1/secret.ts'
 import * as NebiusSecretVersionSchema from '../../../../schemas/nebius/mysterybox/v1/secret_version.ts'
@@ -64,12 +63,14 @@ export const NebiusSecretProvider: Layer.Layer<
     }
 
     // 2. Ensure — create if missing
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!secret) {
       const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       // Build initial payload entries
       const payloads = (news.payloads || [{ key: 'placeholder', stringValue: '' }]).map((p) =>
         NebiusPayloadSchema.Payload.fromPartial(p),
@@ -95,6 +96,7 @@ export const NebiusSecretProvider: Layer.Layer<
         metadata: {
           id: secret.metadata!.id,
           resourceVersion: secret.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: NebiusSecretSchema.SecretSpec.fromPartial({
           description: news.description || '',

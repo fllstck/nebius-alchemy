@@ -4,7 +4,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusProjectSchema from '../../../../schemas/nebius/iam/v2/project.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
@@ -75,12 +74,14 @@ export const NebiusProjectProvider: Layer.Layer<
     }
 
     // 2. Ensure — create if missing (with ownership tags)
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!project) {
       const parentId = news.parentId || (yield* resolveTenantId())
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       yield* session.note(`Creating Nebius.iam.v2.Project (${name})`)
       project = yield* iamGrpcService.project.create({
         metadata: { parentId, name, labels },
@@ -96,6 +97,7 @@ export const NebiusProjectProvider: Layer.Layer<
         metadata: {
           id: project.metadata!.id,
           resourceVersion: project.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desired,
       })

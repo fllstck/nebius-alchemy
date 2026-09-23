@@ -283,6 +283,33 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
       ).toContain('positive whole number of seconds')
     })
 
+    test('`disabled` turns the DEFAULT rules off, and only `true` travels', async () => {
+      // The field sits on a condition but does not disable that condition — it switches the platform's
+      // default auto-repair rules off. `false` is rejected rather than sent: a proto3 bool has no presence,
+      // so `false` and absent are the same bytes and a `false` would read like a request without being one.
+      expect(
+        String(
+          await invalid({
+            autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE', disabled: false }] },
+          }),
+        ),
+      ).toContain('can only be set to true')
+      expect(
+        String(
+          await invalid({
+            autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE', disabled: false }] },
+          }),
+        ),
+      ).toContain('default auto-repair rules')
+      // `true` is accepted, and one entry is enough (it is a flag, not a per-entry switch).
+      await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE', disabled: true }] },
+        }),
+      )
+    })
+
     test('autoRepair conditions need a type, a real status and at least one entry', async () => {
       expect(String(await invalid({ autoRepair: { conditions: [] } }))).toContain('at least one condition')
       expect(
@@ -651,6 +678,30 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
       const spec = desiredFor({ ...validProps, strategy: { maxSurge: { percent: 25 } } })
       expect(spec.strategy!.maxSurge!.percent!.toString()).toBe('25')
       expect(spec.strategy!.maxSurge!.count).toBeUndefined()
+    })
+
+    test('`disabled` is sent on the condition the caller marked, and only when true', () => {
+      // Wire-faithful on purpose: the flag is *not* reshaped to the autoRepair level, because whether the
+      // platform keeps it on the entry it was sent on is unmeasured — and if it normalised it elsewhere, a
+      // pinned-template comparison would report drift (a node roll-out) for a no-op. Sending exactly what
+      // the caller wrote removes that possibility.
+      const withDisabled = desiredFor({
+        ...validProps,
+        autoRepair: {
+          conditions: [
+            { type: 'Ready', status: 'FALSE', timeoutSeconds: 300 },
+            { type: 'MemoryPressure', status: 'TRUE', disabled: true },
+          ],
+        },
+      })
+      expect(withDisabled.autoRepair?.conditions[0]?.disabled).toBeUndefined()
+      expect(withDisabled.autoRepair?.conditions[1]?.disabled).toBe(true)
+
+      const without = desiredFor({
+        ...validProps,
+        autoRepair: { conditions: [{ type: 'Ready', status: 'FALSE' }] },
+      })
+      expect(without.autoRepair?.conditions[0]?.disabled).toBeUndefined()
     })
 
     test('autoRepair carries the condition status as the wire enum and its timeout as a Duration', () => {
@@ -1217,6 +1268,43 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
   // -------------------------------------------------------------------------
 
   describe('attributes', () => {
+    test('reports the *effective* strategy from `status`, in the props’ own shape', () => {
+      // `status.strategy` is the authority for the values actually in force (the proto says so, because the
+      // defaults are migrating during Q3 2026). Both `PercentOrCount` arms are int64s, so they surface as
+      // decimal strings like every other int64 attribute, and only the arm the service chose is present.
+      const attrs = SchemaModule.toFriendlyAttributes(
+        nodeGroupProto({
+          status: {
+            state: NebiusNodeGroupSchema.NodeGroupStatus_State.RUNNING,
+            version: 'v1.36.3-nebius-node.75',
+            targetNodeCount: Long.fromNumber(2),
+            nodeCount: Long.fromNumber(2),
+            readyNodeCount: Long.fromNumber(2),
+            outdatedNodeCount: Long.fromNumber(0),
+            events: [],
+            reconciling: false,
+            strategy: NebiusNodeGroupSchema.NodeGroupDeploymentStrategy.fromJSON({
+              maxUnavailable: { count: '2' },
+              maxSurge: { percent: '20' },
+              drainTimeout: { seconds: '900', nanos: 0 },
+            }),
+          },
+        }),
+      )
+      expect(attrs.maxUnavailable).toEqual({ count: '2', percent: undefined })
+      expect(attrs.maxSurge).toEqual({ count: undefined, percent: '20' })
+      expect(attrs.drainTimeoutSeconds).toBe('900')
+    })
+
+    test('a group with no strategy reports none of it — not zeros', () => {
+      // The alternative (rendering absent values as `0`) would be a lie about a field whose real default
+      // is migrating, and the service omits the whole message when it has nothing to report.
+      const attrs = SchemaModule.toFriendlyAttributes(nodeGroupProto({ status: undefined }))
+      expect(attrs.maxUnavailable).toBeUndefined()
+      expect(attrs.maxSurge).toBeUndefined()
+      expect(attrs.drainTimeoutSeconds).toBeUndefined()
+    })
+
     test('reports the requested version and the running one separately', () => {
       // The two are *different formats*: `spec.version` is `<major>.<minor>` while
       // `status.version` is the node image's `v1.36.3-nebius-node.75` (**measured live

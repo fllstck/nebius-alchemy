@@ -4,7 +4,6 @@ import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
 import * as NebiusTransferSchema from '../../../../schemas/nebius/storage/v1/transfer.ts'
@@ -143,13 +142,15 @@ export const NebiusTransferProvider: Layer.Layer<
         .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
     }
 
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!transfer) {
       const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
       const name =
         news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       const spec: Record<string, unknown> = {
         source: news.source,
         destination: news.destination,
@@ -209,6 +210,7 @@ export const NebiusTransferProvider: Layer.Layer<
         metadata: {
           id: transfer.metadata!.id,
           resourceVersion: transfer.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desired,
       })

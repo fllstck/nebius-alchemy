@@ -49,6 +49,11 @@ export const NebiusInvitationProvider: Layer.Layer<
     news = yield* InvitationSchema.validateInvitationProps(news)
 
     const iam = yield* IamGrpc.IamGrpcService
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
 
     let invitation: NebiusInvitationSchema.Invitation | undefined
     if (output?.id) {
@@ -79,6 +84,7 @@ export const NebiusInvitationProvider: Layer.Layer<
           metadata: {
             id: invitation.metadata!.id,
             resourceVersion: invitation.metadata!.resourceVersion.toString(),
+            labels,
           },
           spec: desired,
         })
@@ -89,9 +95,6 @@ export const NebiusInvitationProvider: Layer.Layer<
 
     // Create new invitation — API rejects metadata.name
     const parentId = news.parentId || (yield* resolveTenantId())
-    const internalLabels = yield* AlchemyTags.createInternalTags(id)
-    const labels = { ...internalLabels, ...news.labels }
-
     yield* session.note(`Creating Nebius.iam.v1.Invitation (${news.email})`)
     invitation = yield* iam.invitation.create({
       metadata: { parentId, labels },

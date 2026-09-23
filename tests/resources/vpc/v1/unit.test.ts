@@ -16,6 +16,8 @@ import * as RouteModule from '../../../../modules/resources/vpc/v1/route.ts'
 import * as RouteSchema from '../../../../modules/resources/vpc/v1/route.schema.ts'
 import * as PoolModule from '../../../../modules/resources/vpc/v1/pool.ts'
 import * as PoolSchema from '../../../../modules/resources/vpc/v1/pool.schema.ts'
+import * as Factory from '../../../../modules/resources/factory.ts'
+import * as SubnetProto from '../../../../schemas/nebius/vpc/v1/subnet.ts'
 import * as AllocationModule from '../../../../modules/resources/vpc/v1/allocation.ts'
 import * as AllocationSchema from '../../../../modules/resources/vpc/v1/allocation.schema.ts'
 import { resolveProvider, runDiff, runEffect, runReconcile } from '../../../helpers/provider.ts'
@@ -65,6 +67,62 @@ describe('Nebius.vpc.v1.Subnet', () => {
     test('rejects props without networkId', async () => {
       const result = await runEffect(SubnetSchema.validateSubnetProps({ name: 'my-subnet' }).pipe(Effect.flip))
       expect(result._tag).toBe('PropsValidationError')
+    })
+  })
+
+  describe('labels converge (the fleet-wide decision, measured 2026-09-24)', () => {
+    // The semantics are in `spikes/labels-convergence-probe.ts`: an update's `metadata.labels` adds and
+    // removes keys in the cloud, while an update that *omits* the key leaves the map alone — which is why
+    // the merged map travels on every update and why the condition below exists at all (a labels-only
+    // change is not a spec drift, so nothing else would fire).
+    test('labelsDrifted reads the two directions, and ignores labels nobody declared', () => {
+      // Declared labels must be present with the declared value.
+      expect(Factory.labelsDrifted({ a: '1' }, { a: '1' }, undefined)).toBe(false)
+      expect(Factory.labelsDrifted({ a: '1' }, { a: '2' }, undefined)).toBe(true)
+      expect(Factory.labelsDrifted({}, { a: '1' }, undefined)).toBe(true)
+      // A label we declared before and no longer declare: removal is drift (the update deletes it).
+      expect(Factory.labelsDrifted({ a: '1' }, {}, { a: '1' })).toBe(true)
+      // A label nobody declared never triggers a write — a colleague's console label does not make every
+      // deploy rewrite the resource.
+      expect(Factory.labelsDrifted({ foreign: 'yes' }, {}, undefined)).toBe(false)
+      expect(Factory.labelsDrifted({ foreign: 'yes' }, { a: '1' }, { a: '1' })).toBe(true)
+    })
+
+    test('removing a label from props writes an update carrying the merged map', async () => {
+      const svc = await resolveProvider(SubnetModule.NebiusSubnet.Provider, SubnetModule.NebiusSubnetProvider)
+      const writes: Array<unknown> = []
+      const live = {
+        metadata: protoMetadata('vpcsubnet-1', 'subnet-1', 'project-1', { team: 'ml' }),
+        spec: SubnetProto.SubnetSpec.fromJSON({ networkId: 'network-1' }),
+      }
+      const layer = Layer.mergeAll(
+        mockVpcLayer({
+          subnet: {
+            get: () => Effect.succeed(live),
+            update: (req: unknown) => {
+              writes.push(req)
+              return Effect.succeed(live)
+            },
+          },
+        }),
+        stackLayer,
+        testConfigLayer,
+        instanceIdLayer,
+      )
+      // Props without the label the live resource carries → the trigger is `labelsDrifted`, not the spec.
+      await runReconcile(
+        svc,
+        { networkId: 'network-1', name: 'subnet-1' },
+        { id: 'vpcsubnet-1' },
+        { networkId: 'network-1', name: 's', labels: { 'team': 'ml' } },
+        Effect.provide(layer) as never,
+      )
+      expect(writes).toHaveLength(1)
+      const request = writes[0] as { metadata: { labels: Record<string, string> } }
+      // The merged map (internal tags + user labels): the label dropped from props is absent, so the API
+      // deletes it; the internal tags are still there, so a service that persists labels keeps ownership.
+      expect(request.metadata.labels['team']).toBeUndefined()
+      expect(Object.keys(request.metadata.labels).length).toBeGreaterThan(0)
     })
   })
 })

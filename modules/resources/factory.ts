@@ -420,6 +420,65 @@ export const makeTenantScopedList = <
  * `metadata.parentId` on every update, so the API rejects a cross-project
  * update rather than silently keeping the resource where it was.
  */
+/**
+ * Whether the labels this configuration declares differ from the ones live.
+ *
+ * The second half of label convergence: carrying the merged map in `metadata.labels` is not enough,
+ * because these providers only issue an update when their **spec** drifts — so without this condition a
+ * labels-only change plans an `update` that writes nothing (the silent-no-op class the convergence sweep
+ * exists to catch).
+ *
+ * The rule, in two directions and deliberately **not** a whole-map comparison:
+ *
+ *  * every label the caller declares must be present with the declared value (a change to one, or adding
+ *    one, is drift);
+ *  * a label **we** declared on a previous deploy (`previous`, from the state store's props) and no longer
+ *    declare must be gone from the live map — that is the removal direction, and the update deletes it in
+ *    the cloud (measured 2026-09-24, `spikes/labels-convergence-probe.ts`);
+ *  * labels nobody declared are **ignored**, so a colleague's console-added label does not make every
+ *    deploy rewrite the resource. (It is still dropped by any update that carries the full merged map —
+ *    this provider owns the map when it writes — but it never *causes* the write.)
+ *
+ * A whole-map comparison against the merged set instead would fire on every baseline: the live fixture —
+ * and any resource created before this change — need not carry the internal `alchemy::*` tags, and the
+ * very resources that drop them (see `billing/v1 PricingPolicy`) would then loop forever.
+ */
+export const labelsDrifted = (
+  live: Record<string, string> | undefined,
+  desired: Record<string, string> | undefined,
+  previous: Record<string, string> | undefined,
+): boolean => {
+  const current = live ?? {}
+  const wanted = desired ?? {}
+  for (const [key, value] of Object.entries(wanted)) {
+    if (current[key] !== value) return true
+  }
+  for (const key of Object.keys(previous ?? {})) {
+    if (!(key in wanted) && key in current) return true
+  }
+  return false
+}
+
+/**
+ * The labels to send on **create and every update**: the internal ownership tags plus the user's.
+ *
+ * Converging `labels` is a fleet-wide decision (AGENTS.md §Convergence) and it is now a *measured* one
+ * (`spikes/labels-convergence-probe.ts`, 2026-09-24, on a `vpc/v1 Network`):
+ *
+ *  * an update whose `metadata.labels` adds a key **stores it** — so the merge below is what makes a
+ *    labels-only change converge instead of waiting for an unrelated change to carry the full spec;
+ *  * an update that *drops* a key **deletes it in the cloud** — the intended reading of "config is the
+ *    source of truth", and the behaviour to document wherever users might not expect it;
+ *  * an update with **no `labels` key at all** leaves the live map untouched — which is why the merge is
+ *    the *full* intended set (internal tags included, not just the user's), and why an update must never
+ *    send a partial map.
+ *
+ * `createInternalTags` is pure and deterministic for a given resource id, so merging it into updates
+ * cannot churn the ownership tags.
+ */
+export const mergedLabels = (id: string, userLabels: Record<string, string> | undefined) =>
+  Effect.map(AlchemyTags.createInternalTags(id), (internal) => ({ ...internal, ...userLabels }))
+
 export const identityChangeRequiresReplace = (
   news: { name?: string; parentId?: string },
   olds?: { name?: string; parentId?: string },

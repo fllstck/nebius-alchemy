@@ -5,7 +5,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusSubnetSchema from '../../../../schemas/nebius/vpc/v1/subnet.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
@@ -75,7 +74,7 @@ export const NebiusSubnetProvider: Layer.Layer<
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusSubnet>, never, any>)
   : AlchemyProvider.succeed(NebiusSubnet, {
   // Observe → Ensure → Sync → Return
-  reconcile: Effect.fn('Nebius.vpc.v1.Subnet.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.vpc.v1.Subnet.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
 
     // Validate user input at runtime
@@ -92,11 +91,15 @@ export const NebiusSubnetProvider: Layer.Layer<
     }
 
     // 2. Ensure — create if missing (with ownership tags)
+    //
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed
+    // in the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!subnet) {
       const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
 
       yield* session.note(`Creating Nebius.vpc.v1.Subnet (${name})`)
       subnet = yield* vpcGrpcService.subnet.create({
@@ -108,12 +111,13 @@ export const NebiusSubnetProvider: Layer.Layer<
     // 3. Sync — update if spec drifted from desired
     // fromJSON handles the Schema.Struct readonly → mutable conversion for us.
     const desired = NebiusSubnetSchema.SubnetSpec.fromJSON(news)
-    if (subnet.spec && specDrifted(subnet.spec, desired, news)) {
+    if ((subnet.spec && specDrifted(subnet.spec, desired, news)) || Factory.labelsDrifted(subnet.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.vpc.v1.Subnet (${subnet.metadata!.name})`)
       subnet = yield* vpcGrpcService.subnet.update({
         metadata: {
           id: subnet.metadata!.id,
           resourceVersion: subnet.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desired,
       })

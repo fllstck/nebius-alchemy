@@ -387,6 +387,26 @@ const AutoRepairSchema = Schema.Struct({
        * **Reshaped from `Duration` to whole seconds** (see `strategy.drainTimeoutSeconds`).
        */
       timeoutSeconds: Schema.optional(Schema.Finite.check(positiveSeconds('autoRepair.conditions[].timeoutSeconds'))),
+      /**
+       * Turn off the **default** auto-repair rules.
+       *
+       * ⚠️ Read the proto's wording carefully, because the field's position lies: it sits on a *condition*
+       * but it does not disable that condition — it disables the rules the platform applies by default, so
+       * that only the conditions listed here trigger a repair. **Setting it on one entry is enough** (it is
+       * a flag, not a per-entry switch).
+       *
+       * **Presence is the switch:** `false` is rejected rather than sent, because a proto3 `bool` has no
+       * presence — `false` and "absent" are the same bytes, so `false` would be a silent no-op that reads
+       * like a request (`Validation.trueOnly`).
+       */
+      disabled: Schema.optional(
+        Schema.Boolean.check(
+          Validation.trueOnly(
+            'autoRepair.conditions[].disabled',
+            'it turns off the platform\'s default auto-repair rules (not this entry), so omitting it is how you leave the defaults on — a `false` cannot be transmitted, and `true` on any one condition is enough',
+          ),
+        ),
+      ),
     }),
   ).check(
     Schema.makeFilter((value: ReadonlyArray<unknown>) =>
@@ -806,12 +826,68 @@ export const NodeGroupAttributesSchema = Schema.Struct({
   state: Schema.optional(Schema.String),
   /** An operation is in flight on the node group. */
   reconciling: Schema.optional(Schema.Boolean),
+  //
+  // ── The *effective* deployment strategy ───────────────────────────────────────────────────────────
+  //
+  // Read from `status.strategy`, which is where the API reports the values it is actually using — the
+  // proto says so outright ("To get the actual value for your node group, please see 'strategy' in its
+  // status") because the defaults are **migrating during Q3 2026** (`maxUnavailable` 0 → 1,
+  // `drainTimeout` 600 s → its new value). That migration is why nothing in this package may *compare*
+  // `status.strategy`: a documented default landing in `spec` would loop a drift check forever, and the
+  // spec-side props deliberately document `status` as the authority instead. Reading it is safe.
+  //
+  // Shape mirrors the props (and the wire): `{ count }` or `{ percent }`, exactly one set, with the two
+  // int64s rendered as decimal strings like every other int64 attribute here.
+  /**
+   * Nodes that may be unavailable at once during a roll-out, **as the service is applying it** —
+   * `{ count: '1' }` or `{ percent: '20' }`, exactly one of the two set (int64s → decimal strings,
+   * as in `fixedNodeCount`). Omitted when the service reports no strategy.
+   */
+  maxUnavailable: Schema.optional(
+    Schema.Struct({
+      /** Absolute node count. */
+      count: Schema.optional(Schema.String),
+      /** Percentage of the desired node count (the service rounds **down**). */
+      percent: Schema.optional(Schema.String),
+    }),
+  ),
+  /** Extra nodes provisioned above the desired count during a roll-out, same `{ count | percent }` shape. */
+  maxSurge: Schema.optional(
+    Schema.Struct({
+      /** Absolute node count. */
+      count: Schema.optional(Schema.String),
+      /** Percentage of the desired node count (the service rounds **up**). */
+      percent: Schema.optional(Schema.String),
+    }),
+  ),
+  /**
+   * How long a node may be drained during a roll-out before the drain is cut short — the **effective**
+   * value, whole seconds as a decimal string (`0` means draining is not time-limited).
+   */
+  drainTimeoutSeconds: Schema.optional(Schema.String),
 })
 
 export type NodeGroupAttributes = typeof NodeGroupAttributesSchema.Type
 
 const longToString = (value: { toString(): string } | undefined): string | undefined =>
   value === undefined ? undefined : value.toString()
+
+/**
+ * Render a `PercentOrCount` oneof for the attributes.
+ *
+ * Both arms are int64 (`Long`s through the api-client), so they become decimal strings like every other
+ * int64 attribute here — and exactly one of them is set, which the props of the same name enforce on the
+ * way in. A struct rather than two flat fields, because that is the shape a user writes in
+ * `strategy.maxUnavailable` — the read side answers in the same words.
+ */
+const percentOrCountAttributes = (
+  value: NebiusNodeGroupSchema.PercentOrCount | undefined,
+): { count?: string; percent?: string } | undefined => {
+  if (value === undefined) return undefined
+  const count = value.count === undefined ? undefined : value.count.toString()
+  const percent = value.percent === undefined ? undefined : value.percent.toString()
+  return count === undefined && percent === undefined ? undefined : { count, percent }
+}
 
 /**
  * Friendly attributes for one NodeGroup.
@@ -842,5 +918,13 @@ export const toFriendlyAttributes = (raw: NebiusNodeGroupSchema.NodeGroup): Node
         ? undefined
         : NebiusNodeGroupSchema.nodeGroupStatus_StateToJSON(status.state),
     reconciling: status?.reconciling ?? false,
+    // The **effective** strategy, from `status` — see the note on the schema field. `PercentOrCount`
+    // carries two int64s (both `Long`s through the api-client), rendered as decimal strings; only the
+    // arm the service chose is present.
+    maxUnavailable: percentOrCountAttributes(status?.strategy?.maxUnavailable),
+    maxSurge: percentOrCountAttributes(status?.strategy?.maxSurge),
+    // `Duration` → whole seconds, the house `<field>Seconds` convention (`nanos` is dropped: the
+    // drain timeout is a whole-second setting, and `0` legitimately means "not time-limited").
+    drainTimeoutSeconds: status?.strategy?.drainTimeout?.seconds?.toString(),
   }
 }

@@ -255,7 +255,8 @@ describe('Nebius.dns.v1.Zone convergence', () => {
       soaSpec: { soaSpec: { negativeTtl: 60 } },
     },
     declared: {
-      labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
+      labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
     },
     // SOA is opt-in and every field in it is optional, so an omitted `soaSpec` must not fire.
     omits: ['soaSpec'],
@@ -318,6 +319,10 @@ describe('Nebius.vpc.v1.SecurityRule convergence', () => {
     propsSchema: SecurityRuleSchema.SecurityRulePropsSchema,
     props: ruleProps,
     change: {
+      // Labels CONVERGE for this resource (2026-09-24): the update carries the merged map
+      // (`Factory.mergedLabels`) and the drift condition fires on a labels-only change
+      // (`Factory.labelsDrifted`) — the measured semantics are in `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'securitygroup-2' }, { action: 'replace' }),
       name: planned({ name: 'deny-ssh' }, { action: 'replace' }),
       protocol: { protocol: 'UDP' },
@@ -334,7 +339,6 @@ describe('Nebius.vpc.v1.SecurityRule convergence', () => {
       },
     },
     declared: {
-      labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
       direction:
         'status-derived selector, now made representable: `SecurityRuleSpec` has no `direction` — the API infers it from which match block is present and returns it in `status.direction`, so it converges *through* the `ingress`/`egress` rows above. The schema requires the block the direction selects, so the previously-acceptable "no match block at all" state (which could not express its direction) is now a plan-time error.',
     },
@@ -396,12 +400,15 @@ describe('Nebius.vpc.v1.Network convergence', () => {
     propsSchema: NetworkSchema.NetworkPropsSchema,
     props: networkProps,
     change: {
+      // Labels CONVERGE for this resource (2026-09-24): the update carries the merged map
+      // (`Factory.mergedLabels`) and the drift condition fires on a labels-only change
+      // (`Factory.labelsDrifted`) — the measured semantics are in `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-net' }, { action: 'replace' }),
       ipv4PrivatePools: { ipv4PrivatePools: { pools: [{ id: 'pool-2' }] } },
       ipv4PublicPools: { ipv4PublicPools: { pools: [{ id: 'pool-3' }] } },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
     // An omitted pool struct must not look like drift against the API's materialized echo.
     omits: ['ipv4PrivatePools', 'ipv4PublicPools'],
     live: networkLive(),
@@ -461,6 +468,10 @@ describe('Nebius.vpc.v1.Subnet convergence', () => {
     propsSchema: SubnetSchema.SubnetPropsSchema,
     props: subnetProps,
     change: {
+      // Labels CONVERGE for this resource (2026-09-24): the update carries the merged map
+      // (`Factory.mergedLabels`) and the drift condition fires on a labels-only change
+      // (`Factory.labelsDrifted`) — the measured semantics are in `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-subnet' }, { action: 'replace' }),
       networkId: { networkId: 'network-2' },
@@ -468,7 +479,6 @@ describe('Nebius.vpc.v1.Subnet convergence', () => {
       ipv4PublicPools: { ipv4PublicPools: { pools: [{ cidrs: [{ cidr: '203.0.113.0/24' }] }] } },
       routeTableId: { routeTableId: 'routetable-2' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
     // An omitted optional prop must not look like drift against the value the API holds:
     //   * `routeTableId` — when unrequested the spec field is `""`, but a PINNED route table
     //     the user then drops from config must not be clobbered back to the network default;
@@ -537,7 +547,8 @@ describe('Nebius.vpc.v1.Pool convergence', () => {
       // A pinned per-CIDR field is a real change (the nested fields cannot be probed as their own
       // rows — the sweep is prop-level — so the live-echo audit covers them instead).
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: poolLive(),
     liveId: POOL_ID,
     layerFor: (writes) =>
@@ -582,13 +593,16 @@ describe('Nebius.vpc.v1.Route convergence', () => {
     propsSchema: RouteSchema.RoutePropsSchema,
     props: routeProps,
     change: {
+      // Labels CONVERGE for this resource (2026-09-24): the update carries the merged map
+      // (`Factory.mergedLabels`) and the drift condition fires on a labels-only change
+      // (`Factory.labelsDrifted`) — the measured semantics are in `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'routetable-2' }, { action: 'replace' }),
       name: planned({ name: 'other-route' }, { action: 'replace' }),
       destination: { destination: { cidr: '10.0.0.0/8' } },
       nextHop: { nextHop: { allocation: { id: 'allocation-1' } } },
       description: { description: 'a route' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
     live: routeLive(),
     liveId: ROUTE_ID,
     layerFor: (writes) =>
@@ -649,7 +663,8 @@ describe('Nebius.compute.v1.Disk convergence', () => {
       diskEncryption: { diskEncryption: { type: 'DISK_ENCRYPTION_MANAGED' } },
       forbidDeletion: { forbidDeletion: true },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // `sizeGibibytes` is optional in props but the live disk always has one, and
     // `blockSizeBytes` is a non-optional int64 the API defaults to 4096 — an omitted prop
     // must not become "drift" against the value the platform already holds.
@@ -718,7 +733,8 @@ describe('Nebius.compute.v1.Image convergence', () => {
       cpuArchitecture: { cpuArchitecture: 'ARM64' },
       recommendedPlatforms: { recommendedPlatforms: ['gpu-h100'] },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // The platform substitutes its own default (AMD64) when the prop is omitted.
     omits: ['cpuArchitecture'],
     live: imageLive(),
@@ -779,7 +795,8 @@ describe('Nebius.kms.v1.SymmetricKey convergence', () => {
       rotationPeriodSeconds: { rotationPeriodSeconds: 86_400 },
     },
     declared: {
-      labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
+      labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       algorithm:
         'single-valued and immutable: `SymmetricAlgorithmSchema` admits only `AES_256`, and the provider treats it as immutable — there is no change to converge (the `diff` clause is a defensive net for a value validation makes unreachable)',
     },
@@ -843,7 +860,8 @@ describe('Nebius.storage.v1.Bucket convergence', () => {
       defaultStorageClass: { defaultStorageClass: 'ENHANCED_THROUGHPUT' },
       objectAuditLogging: { objectAuditLogging: 'ALL' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // The platform reports 0 ("unlimited") for an unset quota — an unset int64 must not
     // fabricate drift (the `Long.ZERO` vs `undefined` trap).
     omits: ['maxSizeBytes'],
@@ -902,7 +920,8 @@ describe(`${singleFieldResource('Nebius.iam.v2.Project')} convergence`, () => {
       name: planned({ name: 'other-project' }, { action: 'replace' }),
       region: { region: 'eu-west1' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: projectLive(),
     liveId: PROJECT_ID,
     layerFor: (writes) =>
@@ -955,7 +974,8 @@ describe('Nebius.kms.v1.AsymmetricKey convergence', () => {
       description: { description: 'verifies releases' },
       algorithm: { algorithm: 'RSA_4096_ENC_OAEP_SHA_256' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: asymmetricLive(),
     liveId: ASYMMETRIC_ID,
     layerFor: (writes) =>
@@ -1005,7 +1025,8 @@ describe('Nebius.mysterybox.v1.Secret convergence', () => {
       description: { description: 'redis password' },
     },
     declared: {
-      labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
+      labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       payloads:
         'create-only by design: the prop seeds the first secret version (see the props doc comment); later payloads go through Nebius.mysterybox.v1.SecretVersion',
     },
@@ -1048,11 +1069,14 @@ describe('Nebius.vpc.v1.RouteTable convergence', () => {
     propsSchema: RouteTableSchema.RouteTablePropsSchema,
     props: routeTableProps,
     change: {
+      // Labels CONVERGE for this resource (2026-09-24): the update carries the merged map
+      // (`Factory.mergedLabels`) and the drift condition fires on a labels-only change
+      // (`Factory.labelsDrifted`) — the measured semantics are in `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-routes' }, { action: 'replace' }),
       networkId: { networkId: 'network-2' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
     live: routeTableLive(),
     liveId: ROUTE_TABLE_ID,
     layerFor: (writes) =>
@@ -1092,11 +1116,14 @@ describe('Nebius.vpc.v1.SecurityGroup convergence', () => {
     propsSchema: SecurityGroupSchema.SecurityGroupPropsSchema,
     props: securityGroupProps,
     change: {
+      // Labels CONVERGE for this resource (2026-09-24): the update carries the merged map
+      // (`Factory.mergedLabels`) and the drift condition fires on a labels-only change
+      // (`Factory.labelsDrifted`) — the measured semantics are in `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-sg' }, { action: 'replace' }),
       networkId: { networkId: 'network-2' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
     live: securityGroupLive(),
     liveId: SECURITY_GROUP_ID,
     layerFor: (writes) =>
@@ -1212,7 +1239,8 @@ describe('Nebius.compute.v1.Instance convergence', () => {
       cloudInitUserData: { cloudInitUserData: '#cloud-config\nruncmd: []' },
     },
     declared: {
-      labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
+      labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       // The hosted-program props are not instance spec fields at all: they drive the
       // Effectful-compute path (bundle, S3 assets, service account) rather than the VM's
       // `InstanceSpec`, so there is no spec comparison for them to converge through.
@@ -1273,7 +1301,8 @@ describe('Nebius.compute.v1.GpuCluster convergence', () => {
       // Immutable physical fabric: a different one means a different cluster.
       infinibandFabric: { infinibandFabric: 'fabric-2' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: gpuClusterLive(),
     liveId: GPU_CLUSTER_ID,
     layerFor: (writes) =>
@@ -1312,7 +1341,8 @@ describe('Nebius.iam.v1.Group convergence', () => {
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-group' }, { action: 'replace' }),
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: groupLive(),
     liveId: GROUP_ID,
     layerFor: (writes) =>
@@ -1400,7 +1430,8 @@ describe('Nebius.iam.v1.AccessPermit convergence', () => {
       resourceId: { resourceId: 'project-2' },
       role: { role: 'editor' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: accessPermitLive(),
     liveId: ACCESS_PERMIT_ID,
     layerFor: (writes) =>
@@ -1441,7 +1472,8 @@ describe('Nebius.iam.v1.GroupMembership convergence', () => {
       // The revoke schedule is fixed at creation, so a change re-issues the membership.
       revokeAfterHours: { revokeAfterHours: 48 },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: groupMembershipLive(),
     liveId: GROUP_MEMBERSHIP_ID,
     layerFor: (writes) =>
@@ -1489,7 +1521,8 @@ describe('Nebius.mysterybox.v1.SecretVersion convergence', () => {
       payload: { payload: [{ key: 'password', stringValue: 'hunter3' }] },
       setPrimary: { setPrimary: true },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: secretVersionLive(),
     liveId: SECRET_VERSION_ID,
     layerFor: (writes) =>
@@ -1537,7 +1570,8 @@ describe('Nebius.iam.v1.ServiceAccount convergence', () => {
       name: planned({ name: 'other-sa' }, { action: 'replace' }),
       description: { description: 'release uploads' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: serviceAccountLive(),
     liveId: SERVICE_ACCOUNT_ID,
     layerFor: (writes) =>
@@ -1594,7 +1628,8 @@ describe('Nebius.iam.v1.FederatedCredentials convergence', () => {
       federatedSubjectId: { federatedSubjectId: 'repo:org/repo:ref:refs/heads/other' },
       subjectId: { subjectId: 'serviceaccount-def456' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: fedCredsLive(),
     liveId: FED_CREDS_ID,
     layerFor: (writes) =>
@@ -1655,7 +1690,8 @@ describe('Nebius.iam.v1.FederationCertificate convergence', () => {
       // it only passed *because of the bug* the drift list had (writing the API's normalized echo).
       data: planned({ data: CERT_B }, { action: 'replace', deleteFirst: true }),
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: fedCertLive(),
     liveId: FED_CERT_ID,
     layerFor: (writes) =>
@@ -1727,7 +1763,8 @@ describe('Nebius.iam.v1.AuthPublicKey convergence', () => {
       expiresAt: { expiresAt: '2031-01-01T00:00:00Z' },
       data: { data: PUBKEY_B },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // An omitted `expiresAt` must not drive an update (the API answers its own default) — the
     // comparison is guarded on the news side, exactly as for the other optional props.
     omits: ['expiresAt'],
@@ -1783,7 +1820,8 @@ describe('Nebius.compute.v1.DiskSnapshot convergence', () => {
       sourceDiskId: { sourceDiskId: 'disk-2' },
       description: { description: 'taken before the downgrade' },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: snapshotLive(),
     liveId: SNAPSHOT_ID,
     layerFor: (writes) =>
@@ -1834,7 +1872,8 @@ describe('Nebius.vpc.v1.Allocation convergence', () => {
       // the private one.
       ipv4Public: { ipv4Public: { cidr: '203.0.113.0/24' }, ipv4Private: undefined },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: allocationLive(),
     liveId: ALLOCATION_ID,
     layerFor: (writes) =>
@@ -1936,7 +1975,8 @@ describe('Nebius.compute.v1.NVLInstanceGroup convergence', () => {
       type: planned({ type: 'GB300' }, { action: 'replace', deleteFirst: true }),
       size: { size: 8 },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: nvlLive(),
     liveId: NVL_ID,
     layerFor: (writes) =>
@@ -1995,7 +2035,8 @@ describe('Nebius.compute.v1.Filesystem convergence', () => {
       type: planned({ type: 'WEKA' }, { action: 'replace', deleteFirst: true }),
       forbidDeletion: { forbidDeletion: true },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // Omitted `blockSizeBytes` must not fight the platform's 4096.
     omits: ['blockSizeBytes'],
     live: filesystemLive(),
@@ -2109,7 +2150,8 @@ describe('Nebius.iam.v1.Federation convergence', () => {
         samlSettings: { idpIssuer: 'https://other.example.com', ssoUrl: 'https://other.example.com/sso' },
       },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: federationLive(),
     liveId: FEDERATION_ID,
     layerFor: (writes) =>
@@ -2154,7 +2196,8 @@ describe('Nebius.iam.v1.Invitation convergence', () => {
       email: { email: 'ops@example.com' },
     },
     declared: {
-      labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)',
+      labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       noSend:
         'create-time-only request field: `CreateInvitationInput.noSend` decides whether the invite is emailed, and `UpdateInvitationInput` cannot carry it (see the api-client types). A change is therefore a no-op until the invitation is re-created — the documented declared category, not a silent one.',
       expiresInSeconds:
@@ -2251,7 +2294,8 @@ describe('Nebius.storage.v1.Transfer convergence', () => {
       touchUnmanaged: { touchUnmanaged: true },
       interIterationIntervalSeconds: { interIterationIntervalSeconds: 60 },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // The API materializes its own defaults for these (`limiters: {}`, 900s interval) — an
     // omitted prop must not drive an update (see the mirror in the provider).
     omits: ['limiters', 'interIterationIntervalSeconds', 'enableDeletesInDestination', 'touchUnmanaged'],
@@ -2461,7 +2505,8 @@ describe('Nebius.mk8s.v1.Cluster convergence', () => {
       auditLogs: { auditLogs: true },
       karpenter: { karpenter: true },
     },
-    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    declared: { labels:
+        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // `serviceCidrs` is deliberately absent: it is create-only, so *removing* it cannot be
     // expressed in place and plans a replace (see its `change` row) — the anti-loop row
     // only covers props whose omission must be a no-op.

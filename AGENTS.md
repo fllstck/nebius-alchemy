@@ -117,13 +117,19 @@ Every user-facing prop **MUST** be one of:
   forever); the plan makes it visible instead of silent; or
 - **declared**: documented as create-time-only, with a comment saying why, **plus the fields that
   only ever travel on a request** (`invitation.{noSend,expiresInSeconds}` are
-  `CreateInvitationInput` fields). `labels` is the one fleet-wide example: no update path sends
-  labels, so a labels-only change is a no-op until some other change rewrites the resource.
-  *Decision, not impossibility*: `Update*Request.metadata` is the shared `ResourceMetadata`, which
-  does carry `labels`, so converging them is a code change (merge internal + user labels into every
-  update's metadata, 30+ sites) that also changes behaviour — a label removed from config would be
-  deleted in the cloud. Parked in TASKS.md; a `declared` entry must always say which of the two it
-  is, or the table rots into "everything is declared"; or
+  `CreateInvitationInput` fields).
+  `labels` was the fleet-wide example and is now **half-converged, deliberately and visibly**
+  (2026-09-24): the API *does* take labels on an update (`Update*Request.metadata` is the shared
+  `ResourceMetadata`) and the behaviour is measured (`spikes/labels-convergence-probe.ts`, on a `vpc/v1
+  Network`): an update whose `metadata.labels` adds a key stores it, one that drops a key **deletes it in
+  the cloud**, and one that omits the key leaves the live map alone. So the rule is two-sided and the
+  implementation is `Factory.mergedLabels(id, news.labels)` on every update plus
+  `Factory.labelsDrifted(live, news.labels, olds.labels)` as the **trigger** (these providers only update
+  on spec drift, so without it a labels-only change writes nothing — the silent-no-op class this section
+  exists to prevent). `vpc/v1` (6 resources) has both halves and the table rows to prove it; 18 further
+  resources carry the map but not the trigger; 7 have a different create-label shape. **A `declared`
+  entry must say which of those it is** — an undifferentiated "declared" is how the table rots. The
+  remaining list and the recipe are in TASKS.md §"labels convergence"; or
 - a **selector of a sibling field**: a props-only field that has *no* wire field, because the
   API derives it from which sibling message is present and reports it back through `status`.
   `security-rule.direction` is the one such prop — `SecurityRuleSpec` has no `direction` at

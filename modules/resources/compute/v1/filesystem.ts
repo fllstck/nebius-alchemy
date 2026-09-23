@@ -4,7 +4,6 @@ import * as Config from 'effect/Config'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
 import * as NebiusFilesystemSchema from '../../../../schemas/nebius/compute/v1/filesystem.ts'
@@ -60,12 +59,14 @@ export const NebiusFilesystemProvider: Layer.Layer<
     }
 
     const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!fs) {
       const name =
         news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       const spec: Record<string, unknown> = {
         sizeGibibytes: String(news.sizeGibibytes),
         type: news.type,
@@ -102,6 +103,7 @@ export const NebiusFilesystemProvider: Layer.Layer<
           id: fs.metadata!.id,
           parentId,
           resourceVersion: fs.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desired,
       })

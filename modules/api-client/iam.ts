@@ -369,7 +369,10 @@ export interface CreateInvitationInput {
 }
 
 export interface UpdateInvitationInput {
-  readonly metadata: { id: string; resourceVersion?: string }
+  // `labels` is part of the update metadata on the wire (measured 2026-09-24 — see `UpdateInput` in
+  // `types.ts`); this per-service type was narrower than the shared one, which the fleet-wide labels
+  // convergence exposed.
+  readonly metadata: { id: string; resourceVersion?: string; labels?: Record<string, string> }
   readonly spec: {}
 }
 

@@ -7,7 +7,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyServer from 'alchemy/Server'
 
 import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
@@ -458,11 +457,14 @@ export const NebiusInstanceProvider: Layer.Layer<
 
     // 2. Ensure — create if missing (with ownership tags)
     const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
+    // The merged labels are computed **once** and sent on every update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change means
+    // carrying the full intended set each time — and a label removed from config is then removed in the
+    // cloud (measured 2026-09-24 on `vpc/v1 Network`, `spikes/labels-convergence-probe.ts`; AGENTS.md
+    // §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!instance) {
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       yield* session.note(`Creating Nebius.compute.v1.Instance (${name})`)
       instance = yield* computeGrpcService.instance
         .create({
@@ -511,6 +513,7 @@ export const NebiusInstanceProvider: Layer.Layer<
           id: instanceId,
           parentId,
           resourceVersion: instance.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desired,
       })
@@ -535,6 +538,7 @@ export const NebiusInstanceProvider: Layer.Layer<
           id: instanceId,
           parentId,
           resourceVersion: instance.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: stoppedSpec,
       })
@@ -545,6 +549,7 @@ export const NebiusInstanceProvider: Layer.Layer<
           id: instanceId,
           parentId,
           resourceVersion: stopped.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desired,
       })

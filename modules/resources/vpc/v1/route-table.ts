@@ -5,7 +5,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusRouteTableSchema from '../../../../schemas/nebius/vpc/v1/route_table.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
@@ -45,7 +44,7 @@ export const NebiusRouteTableProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusRouteTable>, never, any>)
   : AlchemyProvider.succeed(NebiusRouteTable, {
-  reconcile: Effect.fn('Nebius.vpc.v1.RouteTable.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.vpc.v1.RouteTable.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* RouteTableSchema.validateRouteTableProps(news)
 
@@ -60,12 +59,14 @@ export const NebiusRouteTableProvider: Layer.Layer<
     }
 
     // 2. Ensure
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!rt) {
       const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       yield* session.note(`Creating Nebius.vpc.v1.RouteTable (${name})`)
       rt = yield* vpcGrpcService.routeTable.create({
         metadata: { parentId, name, labels },
@@ -75,10 +76,14 @@ export const NebiusRouteTableProvider: Layer.Layer<
 
     // 3. Sync
     const desired = NebiusRouteTableSchema.RouteTableSpec.fromJSON(news)
-    if (rt.spec && rt.spec.networkId !== desired.networkId) {
+    if ((rt.spec && rt.spec.networkId !== desired.networkId) || Factory.labelsDrifted(rt.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.vpc.v1.RouteTable (${rt.metadata!.name})`)
       rt = yield* vpcGrpcService.routeTable.update({
-        metadata: { id: rt.metadata!.id, resourceVersion: rt.metadata!.resourceVersion.toString() },
+        metadata: {
+          id: rt.metadata!.id,
+          resourceVersion: rt.metadata!.resourceVersion.toString(),
+          labels,
+        },
         spec: desired,
       })
     }

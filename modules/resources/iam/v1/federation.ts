@@ -3,7 +3,6 @@ import * as Layer from 'effect/Layer'
 import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 
 import * as NebiusFederationSchema from '../../../../schemas/nebius/iam/v1/federation.ts'
@@ -58,12 +57,14 @@ export const NebiusFederationProvider: Layer.Layer<
         .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
     }
 
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!federation) {
       const parentId = news.parentId || (yield* resolveTenantId())
       const name = news.name ?? (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       yield* session.note(`Creating Nebius.iam.v1.Federation (${name})`)
       federation = yield* iam.federation.create({
         metadata: { parentId, name, labels },
@@ -92,6 +93,7 @@ export const NebiusFederationProvider: Layer.Layer<
         metadata: {
           id: federation.metadata!.id,
           resourceVersion: federation.metadata!.resourceVersion.toString(),
+          labels,
         },
         spec: desired,
       })

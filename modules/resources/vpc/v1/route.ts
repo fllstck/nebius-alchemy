@@ -4,7 +4,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusRouteSchema from '../../../../schemas/nebius/vpc/v1/route.ts'
 import * as VpcGrpc from '../../../api-client/vpc.ts'
@@ -54,7 +53,7 @@ export const NebiusRouteProvider: Layer.Layer<
   // route table.
   nuke: { dependsOn: ['Nebius.vpc.v1.RouteTable'] },
 
-  reconcile: Effect.fn('Nebius.vpc.v1.Route.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.vpc.v1.Route.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* RouteSchema.validateRouteProps(news)
 
@@ -69,11 +68,13 @@ export const NebiusRouteProvider: Layer.Layer<
     }
 
     // 2. Ensure — parent is the RouteTable, not the Project
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!route) {
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       yield* session.note(`Creating Nebius.vpc.v1.Route (${name})`)
       route = yield* vpcGrpcService.route.create({
         metadata: { parentId: news.parentId, name, labels },
@@ -83,10 +84,14 @@ export const NebiusRouteProvider: Layer.Layer<
 
     // 3. Sync
     const desired = NebiusRouteSchema.RouteSpec.fromJSON(news)
-    if (route.spec && specDrifted(route.spec, desired)) {
+    if ((route.spec && specDrifted(route.spec, desired)) || Factory.labelsDrifted(route.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.vpc.v1.Route (${route.metadata!.name})`)
       route = yield* vpcGrpcService.route.update({
-        metadata: { id: route.metadata!.id, resourceVersion: route.metadata!.resourceVersion.toString() },
+        metadata: {
+          id: route.metadata!.id,
+          resourceVersion: route.metadata!.resourceVersion.toString(),
+          labels,
+        },
         spec: desired,
       })
     }

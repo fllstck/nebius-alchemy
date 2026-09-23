@@ -91,6 +91,9 @@ export const desiredSpec = (news: NodeGroupSchema.NodeGroupProps): NebiusNodeGro
               ...(condition.timeoutSeconds !== undefined
                 ? { timeout: { seconds: condition.timeoutSeconds, nanos: 0 } }
                 : {}),
+              // Sent exactly where the proto puts it: on the condition the caller marked. The API's field
+              // means "turn the *default* rules off", not "disable this entry" — see the prop's doc.
+              ...(condition.disabled === true ? { disabled: true } : {}),
             })),
           },
         }
