@@ -69,6 +69,23 @@ Same deploy-time wiring as `storage.bindings.ts`, but the Worker entry ([storage
 
 The Worker entry ([ai.bindings-worker.ts](ai.bindings-worker.ts)) declares an inference endpoint (network + subnet + the official vLLM Qwen3-0.6B config from the Nebius Serverless AI cookbook — L40S GPU) and consumes the typed `ChatCompletions` runtime client: deploy-time `NEBIUS_ENDPOINT_URL`/`NEBIUS_ENDPOINT_AUTH_TOKEN` injection (the token deploys as a Cloudflare secret), a fetch-based OpenAI-compatible client at runtime. Auth is a bearer token — unlike the S3 bindings there is no identity minting or IAM grant. The provider awaits the endpoint to RUNNING before wiring the URL (progress notes included); a broken endpoint fails with `EndpointNotReady`. See [AI_BINDINGS.md](../AI_BINDINGS.md) for the design.
 
+## Coverage — what is *not* demonstrated, and why
+
+Every resource is checkable against this list by name; the ones absent from the files above are absent
+**on purpose** or **not yet written**, and the difference matters:
+
+| resource | status |
+| `Nebius.iam.Invitation` | **deliberately not demonstrated.** Creating one sends real email to a real person (the same reason the live-echo audit excludes it) — an example is one `alchemy deploy` away from being run by accident |
+| `Nebius.quotas.QuotaAllowance` | **deliberately not demonstrated.** It mutates the tenant's real quotas, and its identity is the `(parent, name, region)` tuple because the service has no stable `id` |
+| `Nebius.iam.Federation` / `FederationCertificate` | **deliberately not demonstrated.** Tenant-scoped SSO configuration: it needs tenant-admin rights and points at a real identity provider's metadata/certificate, none of which a project-scoped example can supply |
+| `Nebius.iam.Project` | **deliberately not demonstrated.** The one resource here that is not project-scoped — a stack would create a whole new project (and its billing/entitlement context) rather than something inside the current one |
+| `Nebius.ai.Job` | **not demonstrated.** The low-level compute job behind `ai.Endpoint`; it needs GPU quota and runs for minutes, and [ai.bindings.ts](ai.bindings.ts) already covers the AI path end to end |
+| `Nebius.compute.GpuCluster` / `NVLInstanceGroup` | **commented, not runnable.** The snippet lives in [compute.ts](compute.ts) (fabric discovery → group → instance membership); deploying `NVLInstanceGroup` needs the `GB200`/`GB300` entitlement, so it stays a snippet rather than a stack that would fail on quota |
+| `Nebius.storage.Transfer` | **not yet written.** Genuine gap: two buckets, an access key and a stop condition — the only `storage` resource without a file |
+| `Nebius.iam.AccessKey` (v2) | **not yet written.** The standalone S3 credential pair (the bindings examples mint one internally); an example would have to be explicit that it returns a secret |
+| `Nebius.compute.Filesystem` / `DiskSnapshot` | **not yet written.** Cheap to add, and `Filesystem` is what the commented `template.filesystems` line in [mk8s.ts](mk8s.ts) points at |
+| `Nebius.iam.AuthPublicKey` / `FederatedCredentials` | **not yet written.** Niche credential flows (a pinned RSA-4096 public key; OIDC federation for CI) that need a PEM or an IdP's issuer/subject pair as input |
+
 ## Companion Files
 
 - [.env.example](.env.example) — optional default tenant/project IDs for the examples
