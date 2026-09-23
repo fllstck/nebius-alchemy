@@ -28,14 +28,31 @@ TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
 
 # Pins are read from package.json rather than hardcoded, so a version bump can
 # never leave this job asserting a stale version.
-PIN="$(node -p "require('$ROOT/package.json').peerDependencies.effect")"
-# The README's install line names alchemy explicitly. Omitting it from this test
-# is what hid a real npm failure: as a *root* dependency alchemy's optional
-# frontend chain competes with our typescript peer, while as a transitive one it
-# is skipped - so the two commands resolve differently.
-ALCHEMY_PIN="$(node -p "require('$ROOT/package.json').dependencies.alchemy")"
-BUN_PEER="$(node -p "require('$ROOT/package.json').peerDependencies['@effect/platform-bun']")"
-NODE_PEER="$(node -p "require('$ROOT/package.json').peerDependencies['@effect/platform-node']")"
+#
+# `pinOf` refuses to hand back `undefined`. Deriving a pin from a field that MOVED is invisible
+# otherwise: when 0.9.1 turned `alchemy` into a peer, `dependencies.alchemy` started evaluating to
+# `undefined`, `node -p` printed the string `undefined`, and the job installed `alchemy@undefined` —
+# failing with `ETARGET` in a CI run, naming neither the field nor the file (2026-09-23).
+pinOf() {
+  local expression="$1" label="$2" value
+  value="$(node -p "$expression")"
+  if [ -z "$value" ] || [ "$value" = "undefined" ]; then
+    # `>&2`: inside `$( … )` anything on stdout is captured as the value, so the message would
+    # vanish exactly when it is needed.
+    echo "::error::could not read the $label pin from package.json (got '$value') — the field moved or was removed. Fix the derivation in .github/smoke/consumer.sh." >&2
+    exit 1
+  fi
+  printf '%s' "$value"
+}
+
+PIN="$(pinOf "require('$ROOT/package.json').peerDependencies.effect" 'effect')"
+# The README's install line names alchemy explicitly (it is a peer since 0.9.1, so this also proves
+# the peer is satisfiable at the exact beta). Omitting alchemy from this test is what hid a real npm
+# failure at 0.8.1: as a *root* dependency alchemy's optional frontend chain competes with the
+# typescript peer, while as a transitive one it is skipped — so the two commands resolve differently.
+ALCHEMY_PIN="$(pinOf "require('$ROOT/package.json').peerDependencies.alchemy" 'alchemy (peer)')"
+BUN_PEER="$(pinOf "require('$ROOT/package.json').peerDependencies['@effect/platform-bun']" '@effect/platform-bun')"
+NODE_PEER="$(pinOf "require('$ROOT/package.json').peerDependencies['@effect/platform-node']" '@effect/platform-node')"
 # 0.9.1 dropped the `typescript` peer: a compiler *range* as a peer makes npm fail against alchemy's
 # optional TypeScript-5 chains (`octane`, `@xata.io`) — the 0.8.0 failure mode, re-triggered by alchemy
 # becoming a root peer. The compiler is consumer-provided, so pin the documented line for this check.
