@@ -2,7 +2,7 @@
   "name": "@fllstck/nebius-alchemy",
   "type": "module",
   "sideEffects": false,
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Nebius AI Cloud resource providers for Alchemy",
   "keywords": [
     "nebius",

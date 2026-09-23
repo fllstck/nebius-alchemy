@@ -162,6 +162,32 @@ at import (see _Install Dependencies_ above):
 | `typescript`                   | Not declared | Bring TypeScript 6 or 7 (verified: 6.0.3, 7.0.2). It was a `>=6 <8` **optional** peer until 0.9.1, which made `npm install` fail against alchemy's optional TypeScript-5 chains (`ERESOLVE … peerOptional typescript`) — a compiler range here can only break installs, so the choice is yours. |
 | `alchemy`                      | Yes (peer, exact) | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which is an _older_ beta. Exact on purpose: the CLI and this package's providers must share one `alchemy` (and one Effect instance), so a mismatch is an install error rather than two copies |
 
+### Upgrading from 0.9.x
+
+**One behaviour change, and four new resources.**
+
+* **`labels` now converge on update** (28 resources — every one with an update path). Every update carries
+  the full label map (internal ownership tags + yours), and a change to *labels alone* now triggers that
+  update. So: a label **removed from your configuration is deleted in the cloud** (it used to survive until
+  something unrelated rewrote the resource), and a label added **out of band** (console, script) is dropped
+  by the next update, because the map is replaced rather than merged. Configurations you did not change are
+  unaffected — the trigger only fires when a declared label is missing/different, or one you declared
+  before is gone. The few resources that cannot converge labels (no `Update` RPC, or a service that
+  discards them) are listed per resource in the convergence sweep.
+* **New resources:** `Nebius.mk8s.Cluster`, `Nebius.mk8s.NodeGroup`, `Nebius.billing.PricingPolicy`, plus
+  the read-only `Nebius.capacity.action.*` discovery actions and two new brands
+  (`Nebius.billing.PricingPolicyId`, `Nebius.capacity.CapacityBlockGroupId`).
+* **Spot pricing is expressible** via `pricing` on `compute.Instance`, `mk8s.NodeGroup.template`, `ai.Job`
+  and `ai.Endpoint` — `{ onDemand: true }`, `{ followsSpotPrice: true }` or
+  `{ spotPricingPolicy: { id } }`. The API's requirement that the arm match `preemptible` is a plan-time
+  error. Two measured caveats: on `compute.Instance` a pricing change is only accepted on a **stopped**
+  instance, and on `mk8s.NodeGroup` it is treated as a template change (expect a node roll-out).
+* **`Nebius.billing.PricingPolicy` has two sharp edges from the API:** its service **discards**
+  `metadata.labels` (accepted and ignored; every read reports `Unowned`), and its `Update` RPC rejects every
+  documented request shape, so any spec change is planned as a **replace**.
+* **`mk8s.NodeGroup` attributes** gained the effective `maxUnavailable` / `maxSurge` /
+  `drainTimeoutSeconds` (read from `status`, where the platform reports what it is actually using).
+
 ### Upgrading from 0.8.x
 
 **0.9.0** changed four things a consumer can feel; the rest of that release is behaviour fixes.

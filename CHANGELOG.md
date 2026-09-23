@@ -1,3 +1,60 @@
+# [0.10.0](https://github.com/fllstck/nebius-alchemy/compare/v0.9.1...v0.10.0) (2026-09-23)
+
+### ⚠️ Upgrade notes
+
+* **BEHAVIOUR CHANGE — `labels` now converge on update.** For the **28 resources with an update path**,
+  every update carries the full label map (internal ownership tags + your labels), and a change to
+  *labels alone* now triggers that update. Two consequences to know before you upgrade:
+  * a label **removed from your configuration is deleted in the cloud** (previously it survived until some
+    unrelated change rewrote the resource);
+  * because the map is replaced rather than merged, a label added **out of band** (in the console, by a
+    script) is dropped by the next update — including an update triggered by something unrelated.
+
+  Unchanged configurations are unaffected: the trigger only fires when a label you *declare* is missing or
+  different, or when a label you declared before is gone. The semantics were measured, not assumed
+  (an update's `metadata.labels` adds and removes keys; an update that *omits* the key leaves the live map
+  alone). The resources that still cannot converge labels — no `Update` RPC at all, or a service that
+  discards them — are listed per resource in the convergence sweep and in `AGENTS.md` §Convergence.
+* **Four resources are new in this release**, so nothing to migrate: `Nebius.mk8s.Cluster`,
+  `Nebius.mk8s.NodeGroup`, `Nebius.billing.PricingPolicy`, plus the read-only
+  `Nebius.capacity.action.*` discovery actions and the `Nebius.billing.PricingPolicyId` /
+  `Nebius.capacity.CapacityBlockGroupId` brands.
+* **`Nebius.billing.PricingPolicy` has two sharp edges the API imposes:** its service **discards**
+  `metadata.labels` (so `labels` is accepted and ignored, and every read reports `Unowned`), and
+  `UpdatePricingPolicyService/Update` rejects every documented request shape, so any spec change is planned
+  as a **replace**.
+* **Spot pricing is now expressible:** `pricing` on `compute.Instance`, `mk8s.NodeGroup.template`,
+  `ai.Job` and `ai.Endpoint` (`{ onDemand: true }` / `{ followsSpotPrice: true }` /
+  `{ spotPricingPolicy: { id } }`). It is a deliberate reshape of a flat oneof, and the API's rule that the
+  arm must match `preemptible` is a **plan-time error**. Two measured caveats: on `compute.Instance` a
+  pricing change is only accepted on a **stopped** instance (the API says so), and on `mk8s.NodeGroup` a
+  pricing change is treated as a template change (expect a node roll-out).
+* **`Nebius.mk8s.NodeGroup` attributes gained the effective roll-out strategy**
+  (`maxUnavailable` / `maxSurge` / `drainTimeoutSeconds`) read from `status` — the authority, since the
+  platform's defaults were migrating during Q3 2026. Read-only; nothing compares it.
+* The `nebius/api` schema pin was bumped (its `pricing_model` oneof is what made the `pricing` props
+  possible), and `endpoints.ts` gained the `billing/v1 PricingPolicyService` endpoint.
+
+
+### Bug Fixes
+
+* **ci:** guard smoke-test pin derivation against moved package.json fields ([6df1194](https://github.com/fllstck/nebius-alchemy/commit/6df1194d1d19de92e98b1a1ff03d70ccbbe58a9e))
+* **compute:** detect label drift in reconcile for compute resources ([c58644d](https://github.com/fllstck/nebius-alchemy/commit/c58644d88baa96716202ded665722e2466397a31))
+
+
+### Features
+
+* **billing:** add PricingPolicy provider and gRPC client ([ffc5c7a](https://github.com/fllstck/nebius-alchemy/commit/ffc5c7a46f4ab06ed2413bc9c580572ceedc8c12))
+* **capacity:** add read-only capacity block group, interval, and allowance services ([451db6e](https://github.com/fllstck/nebius-alchemy/commit/451db6ed3abad0240bbb5f1adfb56503df34faca))
+* **examples:** add Filesystem and AccessKey examples ([dba97c6](https://github.com/fllstck/nebius-alchemy/commit/dba97c6669839055b843b23352480564a50d9b46))
+* **examples:** add mk8s cluster + node group example ([5245dca](https://github.com/fllstck/nebius-alchemy/commit/5245dca08ca2a524c8d4d1dc7780be010cb6b9dc))
+* **labels:** converge labels on update for all resources with update paths ([c37b534](https://github.com/fllstck/nebius-alchemy/commit/c37b534d47cc28d3cf6fa0ae3f540a7e82c37394))
+* **labels:** converge labels on updates across compute and vpc resources ([5e5e71e](https://github.com/fllstck/nebius-alchemy/commit/5e5e71ea53211ce67a1fbdd8902ea204edc2fd8b))
+* **mk8s:** add managed Kubernetes cluster and node group API client ([489af19](https://github.com/fllstck/nebius-alchemy/commit/489af19e81db2813e150452650b8f6575dcd2fcc))
+* **mk8s:** add node group strategy, autoscaling, and repair schemas ([6f11832](https://github.com/fllstck/nebius-alchemy/commit/6f11832ace5d4040784bc150841a46fecdbfce11))
+* **pricing:** add shared pricing model schema across compute, mk8s, and ai resources ([7863af4](https://github.com/fllstck/nebius-alchemy/commit/7863af488215b389c1c2a0cb3abbcbe491c975f7))
+* **spikes:** add mk8s write-path probe for subnet immutability and preflight ([4518ab7](https://github.com/fllstck/nebius-alchemy/commit/4518ab76ba7820aeb876bf11729e7c435370e5ab))
+* **spikes:** add quota and OS compatibility matrix probe ([89da791](https://github.com/fllstck/nebius-alchemy/commit/89da7912a95c25b4ff733471a8a441595c13e310))
 ## [0.9.1](https://github.com/fllstck/nebius-alchemy/compare/v0.9.0...v0.9.1) (2026-09-23)
 
 
