@@ -100,6 +100,7 @@ import * as JobSchema from '../modules/resources/ai/v1/job.schema.ts'
 import * as PricingPolicyModule from '../modules/resources/billing/v1/pricing-policy.ts'
 import * as PricingPolicySchema from '../modules/resources/billing/v1/pricing-policy.schema.ts'
 import * as NebiusPricingPolicySchema from '../schemas/nebius/billing/v1/pricing_policy.ts'
+import * as Factory from '../modules/resources/factory.ts'
 import * as NebiusInstanceSchema from '../schemas/nebius/compute/v1/instance.ts'
 import * as NebiusNvlSchema from '../schemas/nebius/compute/v1/nvlinstancegroup.ts'
 import * as NebiusAccessPermitSchema from '../schemas/nebius/iam/v1/access_permit.ts'
@@ -248,15 +249,15 @@ describe('Nebius.dns.v1.Zone convergence', () => {
     propsSchema: ZoneSchema.ZonePropsSchema,
     props: zoneProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // A labels-only change is not a spec drift, so it needs its own trigger — carrying the merged map
+      // in `metadata.labels` converges only if this fires.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-zone' }, { action: 'replace' }),
       domainName: { domainName: 'other.com.' },
       vpc: { vpc: { primaryNetworkId: 'network-2' } },
       soaSpec: { soaSpec: { negativeTtl: 60 } },
-    },
-    declared: {
-      labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
     },
     // SOA is opt-in and every field in it is optional, so an omitted `soaSpec` must not fire.
     omits: ['soaSpec'],
@@ -538,6 +539,12 @@ describe('Nebius.vpc.v1.Pool convergence', () => {
     propsSchema: PoolSchema.PoolPropsSchema,
     props: poolProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-pool' }, { action: 'replace' }),
       sourcePoolId: { sourcePoolId: 'pool-2' },
@@ -547,8 +554,6 @@ describe('Nebius.vpc.v1.Pool convergence', () => {
       // A pinned per-CIDR field is a real change (the nested fields cannot be probed as their own
       // rows — the sweep is prop-level — so the live-echo audit covers them instead).
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: poolLive(),
     liveId: POOL_ID,
     layerFor: (writes) =>
@@ -652,6 +657,12 @@ describe('Nebius.compute.v1.Disk convergence', () => {
     propsSchema: ComputeSchema.DiskPropsSchema,
     props: diskProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-disk' }, { action: 'replace' }),
       sizeGibibytes: { sizeGibibytes: 128 },
@@ -663,8 +674,6 @@ describe('Nebius.compute.v1.Disk convergence', () => {
       diskEncryption: { diskEncryption: { type: 'DISK_ENCRYPTION_MANAGED' } },
       forbidDeletion: { forbidDeletion: true },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // `sizeGibibytes` is optional in props but the live disk always has one, and
     // `blockSizeBytes` is a non-optional int64 the API defaults to 4096 — an omitted prop
     // must not become "drift" against the value the platform already holds.
@@ -717,6 +726,12 @@ describe('Nebius.compute.v1.Image convergence', () => {
     propsSchema: ImageSchema.ImagePropsSchema,
     props: imageProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-image' }, { action: 'replace' }),
       description: { description: 'built by CI' },
@@ -733,8 +748,6 @@ describe('Nebius.compute.v1.Image convergence', () => {
       cpuArchitecture: { cpuArchitecture: 'ARM64' },
       recommendedPlatforms: { recommendedPlatforms: ['gpu-h100'] },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // The platform substitutes its own default (AMD64) when the prop is omitted.
     omits: ['cpuArchitecture'],
     live: imageLive(),
@@ -789,14 +802,18 @@ describe('Nebius.kms.v1.SymmetricKey convergence', () => {
     propsSchema: SymmetricKeySchema.SymmetricKeyPropsSchema,
     props: keyProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-key' }, { action: 'replace' }),
       description: { description: 'encrypts the backups' },
       rotationPeriodSeconds: { rotationPeriodSeconds: 86_400 },
     },
     declared: {
-      labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       algorithm:
         'single-valued and immutable: `SymmetricAlgorithmSchema` admits only `AES_256`, and the provider treats it as immutable — there is no change to converge (the `diff` clause is a defensive net for a value validation makes unreachable)',
     },
@@ -845,6 +862,12 @@ describe('Nebius.storage.v1.Bucket convergence', () => {
     propsSchema: BucketSchema.BucketPropsSchema,
     props: bucketProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-bucket' }, { action: 'replace' }),
       maxSizeBytes: { maxSizeBytes: 1_073_741_824n },
@@ -860,8 +883,6 @@ describe('Nebius.storage.v1.Bucket convergence', () => {
       defaultStorageClass: { defaultStorageClass: 'ENHANCED_THROUGHPUT' },
       objectAuditLogging: { objectAuditLogging: 'ALL' },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // The platform reports 0 ("unlimited") for an unset quota — an unset int64 must not
     // fabricate drift (the `Long.ZERO` vs `undefined` trap).
     omits: ['maxSizeBytes'],
@@ -919,9 +940,10 @@ describe(`${singleFieldResource('Nebius.iam.v2.Project')} convergence`, () => {
       parentId: planned({ parentId: 'tenant-2' }, { action: 'replace' }),
       name: planned({ name: 'other-project' }, { action: 'replace' }),
       region: { region: 'eu-west1' },
+      // Labels converge here too (the project's reconcile carries the merged map and the guard fires on
+      // `Factory.labelsDrifted`), so the row is a write, not a declaration — see the vpc tables' note.
+      labels: { labels: { 'converged': 'true' } },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: projectLive(),
     liveId: PROJECT_ID,
     layerFor: (writes) =>
@@ -969,13 +991,17 @@ describe('Nebius.kms.v1.AsymmetricKey convergence', () => {
     propsSchema: AsymmetricKeySchema.AsymmetricKeyPropsSchema,
     props: asymmetricProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-key' }, { action: 'replace' }),
       description: { description: 'verifies releases' },
       algorithm: { algorithm: 'RSA_4096_ENC_OAEP_SHA_256' },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: asymmetricLive(),
     liveId: ASYMMETRIC_ID,
     layerFor: (writes) =>
@@ -1020,13 +1046,17 @@ describe('Nebius.mysterybox.v1.Secret convergence', () => {
     propsSchema: SecretSchema.SecretPropsSchema,
     props: secretProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-secret' }, { action: 'replace' }),
       description: { description: 'redis password' },
     },
     declared: {
-      labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       payloads:
         'create-only by design: the prop seeds the first secret version (see the props doc comment); later payloads go through Nebius.mysterybox.v1.SecretVersion',
     },
@@ -1187,6 +1217,12 @@ describe('Nebius.compute.v1.Instance convergence', () => {
     propsSchema: InstanceSchema.InstancePropsSchema,
     props: instanceProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-instance' }, { action: 'replace' }),
       serviceAccountId: { serviceAccountId: 'serviceaccount-def456' },
@@ -1239,8 +1275,6 @@ describe('Nebius.compute.v1.Instance convergence', () => {
       cloudInitUserData: { cloudInitUserData: '#cloud-config\nruncmd: []' },
     },
     declared: {
-      labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       // The hosted-program props are not instance spec fields at all: they drive the
       // Effectful-compute path (bundle, S3 assets, service account) rather than the VM's
       // `InstanceSpec`, so there is no spec comparison for them to converge through.
@@ -1266,7 +1300,13 @@ describe('Nebius.compute.v1.Instance convergence', () => {
         NebiusInstanceSchema.InstanceSpec.fromJSON(baseline),
         NebiusInstanceSchema.InstanceSpec.fromJSON(news),
         news as never,
-      ),
+      ) ||
+      // The labels trigger, and the reason it has to appear here rather than as a `layerFor` write: this
+      // table predates the reconcile-based harness (its `live` is a bare spec, not a resource), so the
+      // provider's own condition is the thing to probe. `reconcile` fires an update when
+      // `instanceSpecDrifted(...) || Factory.labelsDrifted(...)` — the second half is what makes a
+      // labels-only change converge (2026-09-24).
+      Factory.labelsDrifted(undefined, (news as { labels?: Record<string, string> }).labels, undefined),
   })
 })
 
@@ -1301,8 +1341,7 @@ describe('Nebius.compute.v1.GpuCluster convergence', () => {
       // Immutable physical fabric: a different one means a different cluster.
       infinibandFabric: { infinibandFabric: 'fabric-2' },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
+    declared: { labels: 'create-only resource (no Update RPC): labels can land at create only, so a labels-only change waits for a recreate — converging them is impossible here, unlike the resources with an update path' },
     live: gpuClusterLive(),
     liveId: GPU_CLUSTER_ID,
     layerFor: (writes) =>
@@ -1341,8 +1380,7 @@ describe('Nebius.iam.v1.Group convergence', () => {
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-group' }, { action: 'replace' }),
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
+    declared: { labels: 'create-only resource (no Update RPC): labels can land at create only, so a labels-only change waits for a recreate — converging them is impossible here, unlike the resources with an update path' },
     live: groupLive(),
     liveId: GROUP_ID,
     layerFor: (writes) =>
@@ -1430,8 +1468,7 @@ describe('Nebius.iam.v1.AccessPermit convergence', () => {
       resourceId: { resourceId: 'project-2' },
       role: { role: 'editor' },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
+    declared: { labels: 'create-only resource (no Update RPC): labels can land at create only, so a labels-only change waits for a recreate — converging them is impossible here, unlike the resources with an update path' },
     live: accessPermitLive(),
     liveId: ACCESS_PERMIT_ID,
     layerFor: (writes) =>
@@ -1472,8 +1509,7 @@ describe('Nebius.iam.v1.GroupMembership convergence', () => {
       // The revoke schedule is fixed at creation, so a change re-issues the membership.
       revokeAfterHours: { revokeAfterHours: 48 },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
+    declared: { labels: 'create-only resource (no Update RPC): labels can land at create only, so a labels-only change waits for a recreate — converging them is impossible here, unlike the resources with an update path' },
     live: groupMembershipLive(),
     liveId: GROUP_MEMBERSHIP_ID,
     layerFor: (writes) =>
@@ -1521,8 +1557,7 @@ describe('Nebius.mysterybox.v1.SecretVersion convergence', () => {
       payload: { payload: [{ key: 'password', stringValue: 'hunter3' }] },
       setPrimary: { setPrimary: true },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
+    declared: { labels: 'create-only resource (no Update RPC): labels can land at create only, so a labels-only change waits for a recreate — converging them is impossible here, unlike the resources with an update path' },
     live: secretVersionLive(),
     liveId: SECRET_VERSION_ID,
     layerFor: (writes) =>
@@ -1566,12 +1601,16 @@ describe('Nebius.iam.v1.ServiceAccount convergence', () => {
     propsSchema: ServiceAccountSchema.ServiceAccountPropsSchema,
     props: serviceAccountProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-sa' }, { action: 'replace' }),
       description: { description: 'release uploads' },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: serviceAccountLive(),
     liveId: SERVICE_ACCOUNT_ID,
     layerFor: (writes) =>
@@ -1622,14 +1661,18 @@ describe('Nebius.iam.v1.FederatedCredentials convergence', () => {
     propsSchema: FedCredsSchema.FederatedCredentialsPropsSchema,
     props: fedCredsProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'gh-actions-2' }, { action: 'replace' }),
       oidcProvider: { oidcProvider: { issuerUrl: 'https://accounts.google.com' } },
       federatedSubjectId: { federatedSubjectId: 'repo:org/repo:ref:refs/heads/other' },
       subjectId: { subjectId: 'serviceaccount-def456' },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: fedCredsLive(),
     liveId: FED_CREDS_ID,
     layerFor: (writes) =>
@@ -1682,6 +1725,12 @@ describe('Nebius.iam.v1.FederationCertificate convergence', () => {
     propsSchema: FedCertSchema.FederationCertificatePropsSchema,
     props: fedCertProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'idp-cert-2' }, { action: 'replace' }),
       description: { description: 'rotated cert' },
@@ -1690,8 +1739,6 @@ describe('Nebius.iam.v1.FederationCertificate convergence', () => {
       // it only passed *because of the bug* the drift list had (writing the API's normalized echo).
       data: planned({ data: CERT_B }, { action: 'replace', deleteFirst: true }),
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: fedCertLive(),
     liveId: FED_CERT_ID,
     layerFor: (writes) =>
@@ -1754,6 +1801,12 @@ describe('Nebius.iam.v1.AuthPublicKey convergence', () => {
     propsSchema: AuthPublicKeySchema.AuthPublicKeyPropsSchema,
     props: authKeyProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'ci-key-2' }, { action: 'replace' }),
       accountId: { accountId: 'serviceaccount-def456' },
@@ -1763,8 +1816,6 @@ describe('Nebius.iam.v1.AuthPublicKey convergence', () => {
       expiresAt: { expiresAt: '2031-01-01T00:00:00Z' },
       data: { data: PUBKEY_B },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // An omitted `expiresAt` must not drive an update (the API answers its own default) — the
     // comparison is guarded on the news side, exactly as for the other optional props.
     omits: ['expiresAt'],
@@ -1815,13 +1866,17 @@ describe('Nebius.compute.v1.DiskSnapshot convergence', () => {
     propsSchema: DiskSnapshotSchema.DiskSnapshotPropsSchema,
     props: snapshotProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'pre-downgrade' }, { action: 'replace' }),
       sourceDiskId: { sourceDiskId: 'disk-2' },
       description: { description: 'taken before the downgrade' },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: snapshotLive(),
     liveId: SNAPSHOT_ID,
     layerFor: (writes) =>
@@ -1865,6 +1920,12 @@ describe('Nebius.vpc.v1.Allocation convergence', () => {
     propsSchema: AllocationSchema.AllocationPropsSchema,
     props: allocationProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-alloc' }, { action: 'replace' }),
       ipv4Private: { ipv4Private: { cidr: '10.0.1.0/24' } },
@@ -1872,8 +1933,6 @@ describe('Nebius.vpc.v1.Allocation convergence', () => {
       // the private one.
       ipv4Public: { ipv4Public: { cidr: '203.0.113.0/24' }, ipv4Private: undefined },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: allocationLive(),
     liveId: ALLOCATION_ID,
     layerFor: (writes) =>
@@ -1968,6 +2027,12 @@ describe('Nebius.compute.v1.NVLInstanceGroup convergence', () => {
     propsSchema: NvlSchema.NVLInstanceGroupPropsSchema,
     props: nvlProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-nvl' }, { action: 'replace' }),
       // Immutable platform. `replaceKeepingName`: the pinned name is reused, so the new group
@@ -1975,8 +2040,6 @@ describe('Nebius.compute.v1.NVLInstanceGroup convergence', () => {
       type: planned({ type: 'GB300' }, { action: 'replace', deleteFirst: true }),
       size: { size: 8 },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: nvlLive(),
     liveId: NVL_ID,
     layerFor: (writes) =>
@@ -2026,6 +2089,12 @@ describe('Nebius.compute.v1.Filesystem convergence', () => {
     propsSchema: FilesystemSchema.FilesystemPropsSchema,
     props: filesystemProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-fs' }, { action: 'replace' }),
       sizeGibibytes: { sizeGibibytes: 2048 },
@@ -2035,8 +2104,6 @@ describe('Nebius.compute.v1.Filesystem convergence', () => {
       type: planned({ type: 'WEKA' }, { action: 'replace', deleteFirst: true }),
       forbidDeletion: { forbidDeletion: true },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // Omitted `blockSizeBytes` must not fight the platform's 4096.
     omits: ['blockSizeBytes'],
     live: filesystemLive(),
@@ -2143,6 +2210,12 @@ describe('Nebius.iam.v1.Federation convergence', () => {
     propsSchema: FederationSchema.FederationPropsSchema,
     props: federationProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'tenant-2' }, { action: 'replace' }),
       name: planned({ name: 'other-federation' }, { action: 'replace' }),
       userAccountAutoCreation: { userAccountAutoCreation: false },
@@ -2150,8 +2223,6 @@ describe('Nebius.iam.v1.Federation convergence', () => {
         samlSettings: { idpIssuer: 'https://other.example.com', ssoUrl: 'https://other.example.com/sso' },
       },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     live: federationLive(),
     liveId: FEDERATION_ID,
     layerFor: (writes) =>
@@ -2191,13 +2262,17 @@ describe('Nebius.iam.v1.Invitation convergence', () => {
     propsSchema: InvitationSchema.InvitationPropsSchema,
     props: invitationProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'tenant-2' }, { action: 'replace' }),
       description: { description: 'still waiting' },
       email: { email: 'ops@example.com' },
     },
     declared: {
-      labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe',
       noSend:
         'create-time-only request field: `CreateInvitationInput.noSend` decides whether the invite is emailed, and `UpdateInvitationInput` cannot carry it (see the api-client types). A change is therefore a no-op until the invitation is re-created — the documented declared category, not a silent one.',
       expiresInSeconds:
@@ -2275,6 +2350,12 @@ describe('Nebius.storage.v1.Transfer convergence', () => {
     propsSchema: TransferSchema.TransferPropsSchema,
     props: transferProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-copy' }, { action: 'replace' }),
       source: { source: { nebius: { ...transferSource.nebius, region: 'eu-west1' } } },
@@ -2294,8 +2375,6 @@ describe('Nebius.storage.v1.Transfer convergence', () => {
       touchUnmanaged: { touchUnmanaged: true },
       interIterationIntervalSeconds: { interIterationIntervalSeconds: 60 },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // The API materializes its own defaults for these (`limiters: {}`, 900s interval) — an
     // omitted prop must not drive an update (see the mirror in the provider).
     omits: ['limiters', 'interIterationIntervalSeconds', 'enableDeletesInDestination', 'touchUnmanaged'],
@@ -2493,6 +2572,12 @@ describe('Nebius.mk8s.v1.Cluster convergence', () => {
     propsSchema: Mk8sClusterSchema.ClusterPropsSchema,
     props: mk8sClusterProps,
     change: {
+      // Labels CONVERGE (2026-09-24): the update carries the merged map (`Factory.mergedLabels`) and the
+      // guard fires on a labels-only change (`Factory.labelsDrifted(live, news.labels, olds?.labels)`),
+      // including a removal — which deletes the label in the cloud. Measured in
+      // `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
+
       parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
       name: planned({ name: 'other-cluster' }, { action: 'replace' }),
       // Create-only: measured `13 INTERNAL` and no change, so the replace is planned.
@@ -2505,8 +2590,6 @@ describe('Nebius.mk8s.v1.Cluster convergence', () => {
       auditLogs: { auditLogs: true },
       karpenter: { karpenter: true },
     },
-    declared: { labels:
-        'labels-only changes do NOT converge yet: the merged map is carried on every update since 2026-09-24, but the trigger condition (Factory.labelsDrifted) is not extended here — so a labels-only change still waits for an unrelated update. vpc/v1 has the full behaviour (change rows, not declared); TASKS.md §"labels convergence" has the recipe' },
     // `serviceCidrs` is deliberately absent: it is create-only, so *removing* it cannot be
     // expressed in place and plans a replace (see its `change` row) — the anti-loop row
     // only covers props whose omission must be a no-op.
@@ -2617,6 +2700,10 @@ describe('Nebius.mk8s.v1.NodeGroup convergence', () => {
       // Identity changes: a different parent cluster, or a different physical name. Both are
       // create-first — uniqueness is per parent, and the new name is free — so neither is
       // delete-first (AGENTS.md §"Replace ordering").
+      // The node group's labels converge too (2026-09-24): `reconcile` carries the merged map on its update
+      // and `Factory.labelsDrifted(nodeGroup.metadata?.labels, news.labels, olds?.labels)` makes a
+      // labels-only change fire the update — measured semantics in `spikes/labels-convergence-probe.ts`.
+      labels: { labels: { 'converged': 'true' } },
       parentId: planned({ parentId: 'mk8scluster-2' }, { action: 'replace' }),
       name: planned({ name: 'nodes-2' }, { action: 'replace' }),
       // Written in place by `nodeGroupSpecDrifted` (the whole template is a roll-out, not a
@@ -2636,10 +2723,6 @@ describe('Nebius.mk8s.v1.NodeGroup convergence', () => {
       template: {
         template: { ...mk8sNodeGroupProps.template, os: 'ubuntu22.04' },
       },
-    },
-    declared: {
-      labels:
-        'create-time only: no update path sends labels (AGENTS.md §Convergence — the fleet-wide decision, not a mk8s one)',
     },
     // `fixedNodeCount` is deliberately **absent**: `exactlyOneSizing` makes "omit it" invalid props
     // (a node group needs a size), and the harness rejects a required prop in `omits` — so

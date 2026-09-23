@@ -126,10 +126,13 @@ Every user-facing prop **MUST** be one of:
   implementation is `Factory.mergedLabels(id, news.labels)` on every update plus
   `Factory.labelsDrifted(live, news.labels, olds.labels)` as the **trigger** (these providers only update
   on spec drift, so without it a labels-only change writes nothing — the silent-no-op class this section
-  exists to prevent). `vpc/v1` (6 resources) has both halves and the table rows to prove it; 18 further
-  resources carry the map but not the trigger; 7 have a different create-label shape. **A `declared`
-  entry must say which of those it is** — an undifferentiated "declared" is how the table rots. The
-  remaining list and the recipe are in TASKS.md §"labels convergence"; or
+  exists to prevent). **Every resource with an update path now has both halves** — 28 of them, each
+  with a `labels` *change row* in the convergence sweep so the behaviour is proven, not asserted (2026-09-24).
+  The only resources still declaring labels are the ones that **cannot** converge them: no `Update` RPC at
+  all (`compute/v1 GpuCluster`, `iam/v1 {Group, AccessPermit, GroupMembership}`, `mysterybox/v1
+  SecretVersion`, `ai/v1 {Job, Endpoint}`) and `billing/v1 PricingPolicy`, whose service *discards*
+  `metadata.labels` outright. **A `declared` entry must say which of those it is** — an undifferentiated
+  "declared" is how the table rots; or
 - a **selector of a sibling field**: a props-only field that has *no* wire field, because the
   API derives it from which sibling message is present and reports it back through `status`.
   `security-rule.direction` is the one such prop — `SecurityRuleSpec` has no `direction` at

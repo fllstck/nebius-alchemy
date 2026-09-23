@@ -5,7 +5,6 @@ import * as Alchemy from 'alchemy'
 import * as AlchemyProvider from 'alchemy/Provider'
 import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
-import * as AlchemyTags from 'alchemy/Tags'
 
 import * as NebiusPoolSchema from '../../../../schemas/nebius/vpc/v1/pool.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
@@ -86,7 +85,7 @@ export const NebiusPoolProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusPool>, never, any>)
   : AlchemyProvider.succeed(NebiusPool, {
-  reconcile: Effect.fn('Nebius.vpc.v1.Pool.reconcile')(function* ({ id, news, output, session }) {
+  reconcile: Effect.fn('Nebius.vpc.v1.Pool.reconcile')(function* ({ id, news, output, session, olds }) {
     news = news || {}
     news = yield* PoolSchema.validatePoolProps(news)
 
@@ -99,12 +98,14 @@ export const NebiusPoolProvider: Layer.Layer<
         .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
     }
 
+    // The merged labels are computed **once** and sent on the update as well as the create: an update
+    // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change
+    // means carrying the full intended set every time (and a label removed from config is then removed in
+    // the cloud — measured 2026-09-24, AGENTS.md §Convergence).
+    const labels = yield* Factory.mergedLabels(id, news.labels)
     if (!pool) {
       const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
       const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      const internalLabels = yield* AlchemyTags.createInternalTags(id)
-      const labels = { ...internalLabels, ...news.labels }
-
       yield* session.note(`Creating Nebius.vpc.v1.Pool (${name})`)
       pool = yield* vpcGrpcService.pool.create({
         metadata: { parentId, name, labels },
@@ -114,10 +115,17 @@ export const NebiusPoolProvider: Layer.Layer<
     }
 
     const desired = NebiusPoolSchema.PoolSpec.fromJSON(news)
-    if (pool.spec && specDrifted(pool.spec, desired, news)) {
+    if ((pool.spec && specDrifted(pool.spec, desired, news)) ||
+      // A labels-only change is not a spec drift, so it needs its own trigger — carrying the merged map
+      // in `metadata.labels` converges only if this fires.
+      Factory.labelsDrifted(pool.metadata?.labels, news.labels, olds?.labels)) {
       yield* session.note(`Updating Nebius.vpc.v1.Pool (${pool.metadata!.name})`)
       pool = yield* vpcGrpcService.pool.update({
-        metadata: { id: pool.metadata!.id, resourceVersion: pool.metadata!.resourceVersion.toString() },
+        metadata: {
+          id: pool.metadata!.id,
+          resourceVersion: pool.metadata!.resourceVersion.toString(),
+          labels,
+        },
         spec: desired,
       })
     }
