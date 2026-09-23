@@ -1,3 +1,26 @@
+## [0.9.1](https://github.com/fllstck/nebius-alchemy/compare/v0.9.0...v0.9.1) (2026-09-23)
+
+
+### ⚠️ Upgrade notes
+
+* **Coming from 0.8.x, read the 0.9.0 notes below first** — that release carries the
+  breaking changes (seven attribute types, `transfer.source.nebius.accessKey`, `AuthPublicKey`
+  RSA-4096, the security-rule match block). The same list is now in the README
+  (§*Upgrading from 0.8.x*), because npm shows the README and not this file.
+* **This package no longer ships `@effect/sql-d1`, `@effect/sql-sqlite-do` or `@effect/vitest`.** They are
+  **alchemy's** dependencies — on the Effect 4 line (`4.0.0-rc.115+`), which alchemy installs itself —
+  while this package's copies pinned the **Effect 3** line (`^0.50.0` / `^0.30.0`). Every consumer
+  therefore had *two* versions of each (`npm ls` showed both), and the 0.x copies peer-require
+  `effect@^3.22.1` (via `@effect/experimental@0.61.1`), which npm reported as four
+  `ERESOLVE overriding peer dependency` warnings on every install. If you relied on them arriving
+  through this package, add them to your own project, matched to the Effect 4 line.
+
+### Bug Fixes
+
+* **deps:** drop the Effect-3 copies of `@effect/sql-d1`, `@effect/sql-sqlite-do` and `@effect/vitest` —
+  an install is now one `@effect/*` line with no `ERESOLVE` warnings
+* **readme:** document the 0.9.0 consumer-visible changes where consumers actually look
+
 ## [0.9.0](https://github.com/fllstck/nebius-alchemy/compare/v0.8.3...v0.9.0) (2026-09-22)
 
 

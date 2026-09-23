@@ -2,7 +2,7 @@
   "name": "@fllstck/nebius-alchemy",
   "type": "module",
   "sideEffects": false,
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Nebius AI Cloud resource providers for Alchemy",
   "keywords": [
     "nebius",
@@ -81,9 +81,6 @@
   "dependencies": {
     "@bradenmacdonald/s3-lite-client": "1.0.0",
     "@bufbuild/protobuf": "2.13.0",
-    "@effect/sql-d1": "^0.50.0",
-    "@effect/sql-sqlite-do": "^0.30.0",
-    "@effect/vitest": "^0.30.0",
     "@grpc/grpc-js": "^1.14.5",
     "alchemy": "2.0.0-beta.79",
     "long": "5.3.2"

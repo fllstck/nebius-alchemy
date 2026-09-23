@@ -153,6 +153,31 @@ at import (see _Install Dependencies_ above):
 | `typescript`                   | Optional | TypeScript 6 or 7 (verified: 6.0.3, 7.0.2) — declared `>=6 <8` and marked **optional** so npm never tries to install a compiler version for you. Non-optional, npm auto-installs the newest match and collides with alchemy's optional `typescript@^6` chain (`ERESOLVE`). Install `typescript` in your own project. |
 | `alchemy`                      | Yes      | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which points at an _older_ beta      |
 
+### Upgrading from 0.8.x
+
+**0.9.0** changed four things a consumer can feel; the rest of that release is behaviour fixes.
+
+* **Seven attributes are strings, and are now typed as such.** In `0.8.x`
+  `FilesystemAttributes.{sizeGibibytes,blockSizeBytes}`, `DiskAttributes.{sizeGibibytes,blockSizeBytes}`,
+  `DiskSnapshotAttributes.{contentSizeBytes,storageSizeBytes}` and
+  `FederationCertificateAttributes.keySize` were declared `number` while the runtime value was already
+  `"4096"`. Wrap them in `Number(...)` (or `BigInt(...)`) where you do arithmetic — code written against
+  the old type now fails to compile instead of concatenating silently.
+* **`Nebius.storage.v1.Transfer` requires `source.nebius.accessKey`.** The API rejects a Nebius source
+  without it (`3 INVALID_ARGUMENT`, for every stop condition), so a missing key is now a plan-time error
+  instead of an apply-time one.
+* **`Nebius.iam.v1.AuthPublicKey.data` must be an RSA-4096 public key** — the only shape the service
+  accepts (RSA-2048/3072 and every non-RSA key are refused).
+* **`Nebius.vpc.v1.SecurityRule` requires the match block its `direction` selects** (`ingress` for
+  INGRESS, `egress` for EGRESS) — the API derives the direction from that block, so a rule declaring a
+  direction without it could not express it at all.
+
+**0.9.1** stopped shipping three `@effect/sql-*` packages. `@effect/sql-d1`, `@effect/sql-sqlite-do`
+and `@effect/vitest` are **alchemy's** dependencies (the Effect 4 line), and this package's copies pinned
+Effect **3** — so an install contained both lines and npm printed four
+`ERESOLVE overriding peer dependency` warnings. If you were relying on those arriving through this
+package, install them in your own project at the Effect 4 line (`4.0.0-rc.117`).
+
 ### tsconfig.json
 
 The package uses `.ts` extensions in imports, so your `tsconfig.json` must enable bundler-style module resolution:
