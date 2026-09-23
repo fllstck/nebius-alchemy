@@ -143,9 +143,9 @@ Rules this earned:
 4. **Verify by name from the registry**, not only the packed tarball — 0.8.0's
    publish-time breakage was invisible to a local-tarball install.
 
-## "Publishing…" + exit 0 is NOT a publish — verify the registry, every time
+## A 202 is a QUEUE — the publish lands minutes later, and the tarball lands after that
 
-Learned the hard way at 0.9.0 (2026-09-23). `npm publish` printed:
+Learned at 0.9.0 (2026-09-23). `npm publish` printed:
 
 ```
 npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access
@@ -155,33 +155,63 @@ verbose exit 0
 info ok
 ```
 
-…and **nothing was ever published**: half an hour later `GET /@fllstck%2fnebius-alchemy/0.9.0` was still
-404, the tarball URL was 404 and `dist-tags` still said `latest: 0.8.3`. A **202** means *queued*, and
-when the queued publish is dropped the CLI says nothing — it exits **0**. (Same class as npm/cli#8936
-and npm/npm#20077; the OTP path additionally regressed in npm/cli#8208.)
+Nothing was visible for the next ~3 minutes — `GET /@fllstck%2fnebius-alchemy/0.9.0` was 404, the tarball
+URL was 404, `dist-tags` still said `latest: 0.8.3` — and then the version appeared, and a few minutes
+after *that* the tarball started serving. **It was never dropped.** Do not conclude from a 404 in the
+first minutes that the publish failed, and do not reach for tokens or unpublish: give the queue its
+"few minutes" and poll.
 
-So never read success off the notice, and never off `exit 0`. Ask the registry, in the same breath:
+Two traps live in that window:
+
+1. **The packument can list the version while its tarball still 404s.** `dist.shasum`, `dist.integrity`
+   and `dist.fileCount` are already populated (the registry computed them from the upload), but the blob
+   is not being served yet — so the version is *registered and uninstallable*, and because `latest`
+   already points at it, a plain `npm install <pkg>` fails with `E404 …-<version>.tgz`. Metadata is not
+   proof; the tarball is.
+2. **`npm install` may resolve a cached packument.** An install that "verified" 0.9.0 silently installed
+   **0.8.3** because npm's metadata cache still said `latest: 0.8.3`. Always verify with
+   `--prefer-online` (or a clean cache), or you are verifying the *previous* release and calling it a
+   success.
+
+So poll for the artifact a consumer actually gets, then verify the install:
 
 ```bash
 npm publish
-sleep 20   # a real publish lands in seconds; 202's "few minutes" is the tell that it did not
-curl -s -o /dev/null -w 'version:   %{http_code}\n' "https://registry.npmjs.org/@fllstck%2fnebius-alchemy/0.9.0"   # want 200
-curl -s -o /dev/null -w 'tarball:   %{http_code}\n' "https://registry.npmjs.org/@fllstck/nebius-alchemy/-/nebius-alchemy-0.9.0.tgz"   # want 200
-curl -s "https://registry.npmjs.org/-/package/@fllstck%2fnebius-alchemy/dist-tags"                              # want latest: 0.9.0
+for i in $(seq 1 20); do          # the "few minutes" is literal: up to ~5 minutes
+  code=$(curl -s -o /dev/null -w '%{http_code}' \
+    "https://registry.npmjs.org/@fllstck/nebius-alchemy/-/nebius-alchemy-<version>.tgz")
+  [ "$code" = 200 ] && break
+  sleep 15
+ done
+echo "tarball: $code"            # 200 = the registry can serve it; 404 = still replicating
+npm view @fllstck/nebius-alchemy@<version> dist --json   # shasum/integrity must match the dry run
+npm install --prefer-online @fllstck/nebius-alchemy       # the only check that uses the real path
 ```
 
-`npm view <pkg>@<version>` is the same ground truth (its packument read can lag the CDN; the
-per-version and tarball URLs do not). A retry is always safe while the version is absent — and once it
-is present, a retry fails loudly with `403 You cannot publish over the previously published versions`,
-which is the *good* failure mode.
+If the tarball URL is **still** 404 well past ~15 minutes, then the publish really did lose its blob:
+`npm unpublish @scope/pkg@<version> --force` and publish again (unpublishing a fresh version with no
+dependents is allowed), or publish a bumped version and `npm deprecate` the broken one. Short-term, if
+`latest` points at an uninstallable version, point it back: `npm dist-tag add @scope/pkg@<previous> latest`.
 
-**Why it was queued-and-dropped:** publishing requires either 2FA (OTP) or a **granular access token
-with "bypass 2FA"** enabled. This account publishes with `auth-type=web` (browser login) plus
-`--otp`, and that path can 202 silently. The reliable path is the token: npmjs.com → Access Tokens →
-Granular, *Read and write* on the scope, **bypass 2FA** ticked, written to `~/.npmrc` as
-`//registry.npmjs.org/:_authToken=…`. Note that with `auth-type=web` set, npm prefers the **keychain**,
-so a fresh file token can be shadowed by a stale keychain entry — `npm logout --auth-type=web` (or
-delete the "npm" keychain item) before switching to the token.
+## The credential that actually bites: a stale one hides behind a 404
+
+The same release's *first* attempt failed for a different reason worth recognising, because npm does not
+say "unauthenticated" for a publish:
+
+```
+npm error 404 Not Found - PUT https://registry.npmjs.org/@fllstck%2fnebius-alchemy
+```
+
+`npm whoami` returned **401**, and `~/.npmrc` held an old `//registry.npmjs.org/:_authToken` while
+`npm config get auth-type` said `web` (a browser/keychain login) — so the leftover file token was what
+npm sent, and it had expired. Two lessons: an *unauthenticated* publish is reported as **404**, not 401,
+so run `npm whoami` before blaming the registry or the package name; and a file `_authToken` can be
+shadowed by a stale keychain entry when `auth-type=web`, so switching to a token means
+`npm logout --auth-type=web` first (or deleting the keychain item).
+
+Publishing needs 2FA **or** a granular access token with *bypass 2FA*; the OTP path has its own
+regressions (npm/cli#8208), so a token is the calmer choice for automation — but it is a *fallback*, not
+the fix for a 202 that is still queueing.
 
 ## "Did it publish?" — the diagnostic ladder
 
