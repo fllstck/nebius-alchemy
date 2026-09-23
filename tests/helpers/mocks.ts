@@ -21,6 +21,7 @@ import * as Dns from '../../modules/api-client/dns.ts'
 import * as Vpc from '../../modules/api-client/vpc.ts'
 import * as Kms from '../../modules/api-client/kms.ts'
 import * as Mysterybox from '../../modules/api-client/mysterybox.ts'
+import * as Mk8s from '../../modules/api-client/mk8s.ts'
 import { GrpcError } from '../../modules/api-client/grpc-utils.ts'
 import { Stack } from 'alchemy/Stack'
 import { Stage } from 'alchemy/Stage'
@@ -146,6 +147,10 @@ export const mockVpcLayer = (partial: unknown) =>
 /** Build a KmsGrpcService layer with only the sub-services under test. */
 export const mockKmsLayer = (partial: unknown) =>
   Layer.succeed(Kms.KmsGrpcService, partial as Kms.KmsGrpcServiceShape)
+
+/** Build an Mk8sGrpcService layer with only the sub-services under test. */
+export const mockMk8sLayer = (partial: unknown) =>
+  Layer.succeed(Mk8s.Mk8sGrpcService, partial as Mk8s.Mk8sGrpcServiceShape)
 
 /** Build a MysteryBoxGrpcService layer with only the sub-services under test. */
 export const mockMysteryboxLayer = (partial: unknown) =>

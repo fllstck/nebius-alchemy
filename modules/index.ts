@@ -10,5 +10,6 @@ import * as kms from './resources/kms/v1/index.ts'
 import * as quotas from './resources/quotas/v1/index.ts'
 import * as capacity from './resources/capacity/v1/index.ts'
 import * as ai from './resources/ai/v1/index.ts'
+import * as mk8s from './resources/mk8s/v1/index.ts'
 
-export { storage, iam, vpc, compute, dns, mysterybox, kms, quotas, capacity, ai }
+export { storage, iam, vpc, compute, dns, mysterybox, kms, quotas, capacity, ai, mk8s }

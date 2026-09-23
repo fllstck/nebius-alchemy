@@ -379,12 +379,30 @@ was exactly this hole.
 
 ### Namespace hierarchy examples
 
+The namespace is **flat** — the service is the only level, and resource types keep their
+version in the *type string*, not in the import path:
+
 ```ts
 import * as Nebius from '@fllstck/nebius-alchemy'
-Nebius.storage.v1.Bucket
-Nebius.iam.v2.Project
-Nebius.vpc.v1.Network
+Nebius.storage.Bucket      // resource type string: 'Nebius.storage.v1.Bucket'
+Nebius.iam.Project         // 'Nebius.iam.v2.Project'
+Nebius.iam.StaticKey       // 'Nebius.iam.v1.StaticKey' — v1 and v2 share ONE namespace
+Nebius.vpc.Network         // 'Nebius.vpc.v1.Network'
+Nebius.mk8s.Cluster        // 'Nebius.mk8s.v1.Cluster'
 ```
+
+`modules/index.ts` maps each service straight to its version directory
+(`vpc` → `resources/vpc/v1/index.ts`), and `iam/index.ts` re-exports **both** versions
+with `export *`, so `Nebius.iam.v2` does not exist — `Nebius.iam.AccessKey` (v2) and
+`Nebius.iam.StaticKey` (v1) sit side by side. Verify with a one-liner rather than
+assuming a `v1` level:
+
+```bash
+bun -e "import('./modules/index.ts').then(n => console.log(Object.keys(n.compute).sort().join(', ')))"
+```
+
+(An earlier version of this file showed `Nebius.storage.v1.Bucket` / `Nebius.iam.v2.Project`;
+both are `undefined` at runtime — checked 2026-09-23.)
 
 ## Vendored Repositories
 
@@ -551,6 +569,24 @@ Some Nebius APIs don't follow the standard CRUD pattern:
   `modules/resources/capacity/v1/capacity-allowance.schema.ts` and TASKS.md. All three services live
   on `capacity-blocks.billing-cpl…` (a different host from the advisor's `capacity-advisor.billing-cpl…`),
   already in `modules/endpoints.ts`.
+- **mk8s (`Cluster`/`NodeGroup`) has no `FieldMask`** — `Update{Cluster,NodeGroup}Request` is just
+  `{ metadata, spec }`, so **an absent field means "leave unchanged", not "clear"**, and a prop whose
+  omission must be a no-op needs the `news.x !== undefined &&` guard (the `omits` rows in
+  `tests/convergence.test.ts`). Verified 2026-09-23: a deploy that omits a prop gets that prop back
+  **unset** in `spec` — nothing is materialised — so the two directions are different failures: a
+  *defaulted echo* would drift, a *removal* would loop. Two more measured quirks: deleting a **Cluster
+  cascades** to its node groups + their instances + disks (no `…NotEmpty` pre-check, and every
+  `NodeGroup.delete` must therefore tolerate `NOT_FOUND`), and an in-place `controlPlane.subnetId`
+  change is answered with an **opaque `13 INTERNAL`** and changes nothing — so plan a replace instead
+  of letting a user meet that error.
+- **`nebius.common.v1.PreflightCheck` exists but is not an immutability oracle** —
+  `NodeGroupService/PreflightCheck` takes a generic context (`action`: CREATE/UPDATE/RECREATE/DELETE,
+  `tool`, `unknownPaths`) and returns `diagnostics`/`pathsRequireRecreate`/`requiresUserApproval`.
+  Measured 2026-09-23: `pathsRequireRecreate` was **empty for every UPDATE**, including changes the CLI
+  treats as create-only, and CREATE returns nothing even for a bogus `os` — so it is neither a spec
+  validator nor a source of replace decisions. What it *does* give is a **disruption** signal:
+  `requiresUserApproval` + a `WARNING` fire for template changes ("will roll out the node group") and
+  stay silent for `fixedNodeCount`. Do not design a `diff` around it.
 - **IAM v1 metadata has no `resourceVersion`** (`0` for every resource type, measured 2026-09-22),
   so a drift check for IAM cannot use the version as its witness — and `AuthPublicKey` echoes the
   submitted PEM normalized (one byte longer). `StaticKey`/`AuthPublicKey` also validate an

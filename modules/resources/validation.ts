@@ -19,29 +19,38 @@ export const isDnsCompliantResourceName = Schema.makeFilter(
  * Validate IPv4 CIDR notation (e.g. "10.0.0.0/24", "0.0.0.0/0").
  * Rejects prefix-only form like "/24" — the Nebius API requires full CIDR notation.
  */
-export const isValidCIDR = Schema.makeFilter(
-  (s: string) => {
-    // Prefix-only form: "/24", "/32" — rejected by Nebius API
-    if (/^\/\d{1,2}$/.test(s)) {
-      return `Prefix-only CIDR "${s}" is not accepted by the API. Use full notation e.g. "10.0.0.0${s}"`
-    }
-    // Full CIDR: "10.0.0.0/24"
-    const parts = s.split('/')
-    if (parts.length !== 2) return `Invalid CIDR notation: "${s}"`
-    const ip = parts[0]!
-    const prefixStr = parts[1]!
-    const prefix = parseInt(prefixStr, 10)
-    if (isNaN(prefix) || prefix < 0 || prefix > 32) return `CIDR prefix must be 0-32, got "${prefixStr}"`
-    const octets = ip.split('.')
-    if (octets.length !== 4) return `Invalid IP address in CIDR: "${ip}"`
-    for (const octet of octets) {
-      const n = parseInt(octet, 10)
-      if (isNaN(n) || n < 0 || n > 255) return `IP octet out of range 0-255: "${octet}"`
-    }
-    return undefined
-  },
-  { title: 'IPv4 CIDR' },
-)
+/**
+ * Plain predicate form of {@link isValidCIDR}: returns a message describing the
+ * problem, or `undefined` when the value is a full IPv4 CIDR.
+ *
+ * Exported because a `Schema.Filter` is **not callable** — a field whose rules are a
+ * *superset* cannot reuse the filter object, and duplicating the octet/prefix checks
+ * would let the two drift. `mk8s/v1 Cluster.kubeNetwork.serviceCidrs` is that case:
+ * it accepts a bare prefix length (`/12`–`/28`) *in addition to* a full CIDR, where
+ * every other address field in this package rejects the prefix-only form.
+ */
+export const ipv4CidrIssue = (s: string): string | undefined => {
+  // Prefix-only form: "/24", "/32" — rejected by Nebius API
+  if (/^\/\d{1,2}$/.test(s)) {
+    return `Prefix-only CIDR "${s}" is not accepted by the API. Use full notation e.g. "10.0.0.0${s}"`
+  }
+  // Full CIDR: "10.0.0.0/24"
+  const parts = s.split('/')
+  if (parts.length !== 2) return `Invalid CIDR notation: "${s}"`
+  const ip = parts[0]!
+  const prefixStr = parts[1]!
+  const prefix = parseInt(prefixStr, 10)
+  if (isNaN(prefix) || prefix < 0 || prefix > 32) return `CIDR prefix must be 0-32, got "${prefixStr}"`
+  const octets = ip.split('.')
+  if (octets.length !== 4) return `Invalid IP address in CIDR: "${ip}"`
+  for (const octet of octets) {
+    const n = parseInt(octet, 10)
+    if (isNaN(n) || n < 0 || n > 255) return `IP octet out of range 0-255: "${octet}"`
+  }
+  return undefined
+}
+
+export const isValidCIDR = Schema.makeFilter(ipv4CidrIssue, { title: 'IPv4 CIDR' })
 
 /** TCP/UDP port range 1–65535. */
 export const isValidPort = Schema.makeFilter(

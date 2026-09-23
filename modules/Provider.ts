@@ -31,6 +31,7 @@ import * as InstanceResource from './resources/compute/v1/instance.ts'
 import * as FilesystemResource from './resources/compute/v1/filesystem.ts'
 import * as DiskSnapshotResource from './resources/compute/v1/disk-snapshot.ts'
 import * as GpuClusterResource from './resources/compute/v1/gpu-cluster.ts'
+import * as Mk8sClusterResource from './resources/mk8s/v1/cluster.ts'
 import * as NVLInstanceGroupResource from './resources/compute/v1/nvl-instance-group.ts'
 import * as ZoneResource from './resources/dns/v1/zone.ts'
 import * as RecordResource from './resources/dns/v1/record.ts'
@@ -153,7 +154,11 @@ export const providers = () =>
     Layer.provideMerge(QuotasGrpc.QuotasGrpcServiceLive),
     Layer.provideMerge(CapacityGrpc.CapacityGrpcServiceLive),
     Layer.provideMerge(AiGrpc.AiGrpcServiceLive),
+  ).pipe(
+    // Split because `pipe` takes at most 20 functions — the chain above is exactly
+    // at the limit (this is why the provider list is already split into two merges).
     Layer.provideMerge(Mk8sGrpc.Mk8sGrpcServiceLive),
+    Layer.provideMerge(Mk8sClusterResource.NebiusClusterProvider),
   ).pipe(
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),
     Layer.provideMerge(Credentials.fromAuthProvider),

@@ -85,6 +85,9 @@ import * as NebiusRecordSchema from '../schemas/nebius/dns/v1/record.ts'
 import * as NebiusZoneSchema from '../schemas/nebius/dns/v1/zone.ts'
 import * as NebiusDiskSchema from '../schemas/nebius/compute/v1/disk.ts'
 import * as NebiusGpuClusterSchema from '../schemas/nebius/compute/v1/gpu_cluster.ts'
+import * as NebiusMk8sClusterSchema from '../schemas/nebius/mk8s/v1/cluster.ts'
+import * as Mk8sClusterModule from '../modules/resources/mk8s/v1/cluster.ts'
+import * as Mk8sClusterSchema from '../modules/resources/mk8s/v1/cluster.schema.ts'
 import * as NebiusDiskSnapshotSchema from '../schemas/nebius/compute/v1/disk_snapshot.ts'
 import * as NebiusFilesystemSchema from '../schemas/nebius/compute/v1/filesystem.ts'
 import * as EndpointModule from '../modules/resources/ai/v1/endpoint.ts'
@@ -136,6 +139,7 @@ import {
   mockDnsLayer,
   mockIamLayer,
   mockKmsLayer,
+  mockMk8sLayer,
   mockQuotasLayer,
   mockMysteryboxLayer,
   mockStorageLayer,
@@ -2363,5 +2367,103 @@ describe('Nebius.ai.v1.Job convergence', () => {
     },
     declared: AI_DECLARED,
     probe: async (svc, news, baseline) => (await runDiff(svc, news, baseline)) !== undefined,
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Nebius.mk8s.v1.Cluster
+// ---------------------------------------------------------------------------
+//
+// The interesting half of this table is the split between the two convergence
+// paths, because mk8s has **no `FieldMask`** (measured 2026-09-23): an absent field
+// means "leave unchanged", so every optional prop needs the news-side guard that the
+// `omits` rows below assert.
+//
+//   - `subnetId` and `serviceCidrs` are **create-only** (planned as a replace by
+//     `diff`) — a real `UpdateCluster` with a different subnet answers an opaque
+//     `13 INTERNAL` and changes nothing, so attempting it is not an option;
+//   - `version`, `etcdClusterSize`, `publicEndpoint`, `auditLogs`, `karpenter` are
+//     written in place by `clusterSpecDrifted`.
+//
+// The baseline deliberately **sets** every optional prop, so the `omits` rows are
+// meaningful: omitting `version`/`etcdClusterSize`/`publicEndpoint` is a real change
+// from the baseline, and must still write nothing. `auditLogs`/`karpenter` are the
+// exception — they are presence-only switches (the proto models them as empty
+// messages), so they are probed being *turned on* from a baseline that omits them; a
+// `false` is a plan-time error rather than a silent no-op.
+
+const MK8S_CLUSTER_ID = 'mk8scluster-1'
+const mk8sClusterProps = {
+  parentId: 'project-test-1',
+  name: 'k8s-test',
+  subnetId: 'vpcsubnet-1',
+  version: '1.35',
+  etcdClusterSize: 3,
+  publicEndpoint: { allowedCidrs: ['203.0.113.0/24'] },
+  serviceCidrs: ['/16'],
+}
+
+const mk8sClusterLive = (): NebiusMk8sClusterSchema.Cluster => ({
+  metadata: protoMetadata(MK8S_CLUSTER_ID, mk8sClusterProps.name, mk8sClusterProps.parentId),
+  // `fromJSON` (not `fromPartial`) so the int64 `etcdClusterSize` arrives as a real
+  // `Long` — the shape the api-client actually returns, and the one the drift list
+  // must compare with `.equals`.
+  spec: NebiusMk8sClusterSchema.ClusterSpec.fromJSON({
+    controlPlane: {
+      version: '1.35',
+      subnetId: 'vpcsubnet-1',
+      etcdClusterSize: '3',
+      endpoints: { publicEndpoint: { allowedCidrs: ['203.0.113.0/24'] } },
+    },
+    kubeNetwork: { serviceCidrs: ['/16'] },
+  }),
+  status: undefined,
+})
+
+describe('Nebius.mk8s.v1.Cluster convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.mk8s.v1.Cluster',
+    provider: Mk8sClusterModule.NebiusCluster.Provider,
+    providerLayer: Mk8sClusterModule.NebiusClusterProvider,
+    propsSchema: Mk8sClusterSchema.ClusterPropsSchema,
+    props: mk8sClusterProps,
+    change: {
+      parentId: planned({ parentId: 'project-2' }, { action: 'replace' }),
+      name: planned({ name: 'other-cluster' }, { action: 'replace' }),
+      // Create-only: measured `13 INTERNAL` and no change, so the replace is planned.
+      // The baseline pins `name`, hence delete-first (AGENTS.md §"Replace ordering").
+      subnetId: planned({ subnetId: 'vpcsubnet-2' }, { action: 'replace', deleteFirst: true }),
+      serviceCidrs: planned({ serviceCidrs: ['/12'] }, { action: 'replace', deleteFirst: true }),
+      version: { version: '1.34' },
+      etcdClusterSize: { etcdClusterSize: 5 },
+      publicEndpoint: { publicEndpoint: { allowedCidrs: ['198.51.100.0/24'] } },
+      auditLogs: { auditLogs: true },
+      karpenter: { karpenter: true },
+    },
+    declared: { labels: 'create-time only: no update path sends labels (AGENTS.md §Convergence)' },
+    // `serviceCidrs` is deliberately absent: it is create-only, so *removing* it cannot be
+    // expressed in place and plans a replace (see its `change` row) — the anti-loop row
+    // only covers props whose omission must be a no-op.
+    omits: ['version', 'etcdClusterSize', 'publicEndpoint'],
+    live: mk8sClusterLive(),
+    liveId: MK8S_CLUSTER_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockMk8sLayer({
+            cluster: {
+              get: () => Effect.succeed(mk8sClusterLive()),
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(mk8sClusterLive())
+              },
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(mk8sClusterLive())
+              },
+            },
+          }),
+        ),
+      ),
   })
 })
