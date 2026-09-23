@@ -1,5 +1,10 @@
 # Nebius AI Cloud Providers for Alchemy V2
 
+> **Working on this repo? Start with `TASKS.md`** (gitignored, so it is local-only). Its top block,
+> **⏭ NEXT SESSION — START HERE**, names the next task, the commands that verify the starting state, the
+> decisions still waiting on a human, and the spend/cleanup discipline for live probes. The sections
+> below it are the local plan of record; this file stays the authority on *invariants*.
+
 ## 1. Critical Rules
 
 These rules are hard requirements. Violations must be corrected immediately.
