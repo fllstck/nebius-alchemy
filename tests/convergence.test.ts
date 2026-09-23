@@ -88,6 +88,9 @@ import * as NebiusGpuClusterSchema from '../schemas/nebius/compute/v1/gpu_cluste
 import * as NebiusMk8sClusterSchema from '../schemas/nebius/mk8s/v1/cluster.ts'
 import * as Mk8sClusterModule from '../modules/resources/mk8s/v1/cluster.ts'
 import * as Mk8sClusterSchema from '../modules/resources/mk8s/v1/cluster.schema.ts'
+import * as NebiusNodeGroupSchema from '../schemas/nebius/mk8s/v1/node_group.ts'
+import * as NodeGroupModule from '../modules/resources/mk8s/v1/node-group.ts'
+import * as NodeGroupSchema from '../modules/resources/mk8s/v1/node-group.schema.ts'
 import * as NebiusDiskSnapshotSchema from '../schemas/nebius/compute/v1/disk_snapshot.ts'
 import * as NebiusFilesystemSchema from '../schemas/nebius/compute/v1/filesystem.ts'
 import * as EndpointModule from '../modules/resources/ai/v1/endpoint.ts'
@@ -2460,6 +2463,118 @@ describe('Nebius.mk8s.v1.Cluster convergence', () => {
               create: (req: unknown) => {
                 writes.push(req)
                 return Effect.succeed(mk8sClusterLive())
+              },
+            },
+          }),
+        ),
+      ),
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Nebius.mk8s.v1.NodeGroup
+// ---------------------------------------------------------------------------
+//
+// The arm-1 (minimal CPU) props surface: `version`, `fixedNodeCount` and the whole
+// `template`. Three things make this table different from every other one:
+//
+//   1. **`template` is one nested message here, not a prop per field.** The completeness
+//      check reads the top-level props schema, and `template` is 6 fields with 2 nested
+//      messages of their own — so the *nested* omission cases (`bootDisk.blockSizeBytes`,
+//      `resources.preset`, the optional `networkInterfaces`) are pinned by the unit tests
+//      in `tests/resources/mk8s/v1/node-group.test.ts` (`nodeGroupSpecDrifted`), which can
+//      express them directly.
+//   2. **There is no create-only spec field in arm 1.** Every spec prop is updatable in
+//      place, so the only replaces are identity changes — which is why this table has two
+//      `planned()` rows and no `deleteFirst` anywhere.
+//   3. **The live fixture carries the platform's own additions** (`maxPods: 110`, the empty
+//      repeated fields, a `blockSizeBytes` echo). Those are precisely what a whole-message
+//      comparison would trip over on the first reconcile, so they belong in the fixture:
+//      without them the `omits` rows and the baseline row prove nothing.
+//
+// ⚠️ `omits` cannot list `template` itself: it is a **required** prop, and the harness
+// rejects a required prop in `omits` ("the table's patch is not valid props") — the table
+// being right, not wrong.
+
+const MK8S_NODE_GROUP_ID = 'mk8snodegroup-1'
+const mk8sNodeGroupProps = {
+  parentId: 'mk8scluster-1',
+  name: 'nodes-1',
+  version: '1.35',
+  fixedNodeCount: 2,
+  template: {
+    os: 'ubuntu24.04',
+    resources: { platform: 'cpu-d3', preset: '2vcpu-8gb' },
+    bootDisk: { sizeGibibytes: 64, blockSizeBytes: 4096, type: 'NETWORK_SSD' },
+    networkInterfaces: [{ subnetId: 'vpcsubnet-1' }],
+    serviceAccountId: 'serviceaccount-abc123',
+    cloudInitUserData: '#cloud-config\n',
+  },
+} as const
+
+/** The spec the API would hold for {@link mk8sNodeGroupProps} — built with `fromJSON`, so the
+ * int64s are real `Long`s (the shape the api-client returns), plus the platform's additions. */
+const mk8sNodeGroupLive = (): NebiusNodeGroupSchema.NodeGroup => ({
+  metadata: protoMetadata(MK8S_NODE_GROUP_ID, mk8sNodeGroupProps.name, mk8sNodeGroupProps.parentId),
+  spec: NebiusNodeGroupSchema.NodeGroupSpec.fromJSON({
+    version: '1.35',
+    fixedNodeCount: '2',
+    template: {
+      os: 'ubuntu24.04',
+      resources: { platform: 'cpu-d3', preset: '2vcpu-8gb' },
+      bootDisk: { sizeGibibytes: '64', blockSizeBytes: '4096', type: 'NETWORK_SSD' },
+      networkInterfaces: [{ subnetId: 'vpcsubnet-1' }],
+      serviceAccountId: 'serviceaccount-abc123',
+      cloudInitUserData: '#cloud-config\n',
+      maxPods: '110',
+      taints: [],
+      filesystems: [],
+    },
+  }),
+  status: undefined,
+})
+
+describe('Nebius.mk8s.v1.NodeGroup convergence', () => {
+  convergenceSweep({
+    resource: 'Nebius.mk8s.v1.NodeGroup',
+    provider: NodeGroupModule.NebiusNodeGroup.Provider,
+    providerLayer: NodeGroupModule.NebiusNodeGroupProvider,
+    propsSchema: NodeGroupSchema.NodeGroupPropsSchema,
+    props: mk8sNodeGroupProps,
+    change: {
+      // Identity changes: a different parent cluster, or a different physical name. Both are
+      // create-first — uniqueness is per parent, and the new name is free — so neither is
+      // delete-first (AGENTS.md §"Replace ordering").
+      parentId: planned({ parentId: 'mk8scluster-2' }, { action: 'replace' }),
+      name: planned({ name: 'nodes-2' }, { action: 'replace' }),
+      // Written in place by `nodeGroupSpecDrifted` (the whole template is a roll-out, not a
+      // replace — the API has no create-only template path in this arm).
+      version: { version: '1.34' },
+      fixedNodeCount: { fixedNodeCount: 5 },
+      template: {
+        template: { ...mk8sNodeGroupProps.template, os: 'ubuntu22.04' },
+      },
+    },
+    declared: {
+      labels:
+        'create-time only: no update path sends labels (AGENTS.md §Convergence — the fleet-wide decision, not a mk8s one)',
+    },
+    omits: ['version', 'fixedNodeCount'],
+    live: mk8sNodeGroupLive(),
+    liveId: MK8S_NODE_GROUP_ID,
+    layerFor: (writes) =>
+      Effect.provide(
+        base(
+          mockMk8sLayer({
+            nodeGroup: {
+              get: () => Effect.succeed(mk8sNodeGroupLive()),
+              create: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(mk8sNodeGroupLive())
+              },
+              update: (req: unknown) => {
+                writes.push(req)
+                return Effect.succeed(mk8sNodeGroupLive())
               },
             },
           }),

@@ -32,6 +32,7 @@ import * as FilesystemResource from './resources/compute/v1/filesystem.ts'
 import * as DiskSnapshotResource from './resources/compute/v1/disk-snapshot.ts'
 import * as GpuClusterResource from './resources/compute/v1/gpu-cluster.ts'
 import * as Mk8sClusterResource from './resources/mk8s/v1/cluster.ts'
+import * as Mk8sNodeGroupResource from './resources/mk8s/v1/node-group.ts'
 import * as NVLInstanceGroupResource from './resources/compute/v1/nvl-instance-group.ts'
 import * as ZoneResource from './resources/dns/v1/zone.ts'
 import * as RecordResource from './resources/dns/v1/record.ts'
@@ -100,6 +101,14 @@ const resources = AlchemyProvider.collection([
   QuotaAllowanceResource.NebiusQuotaAllowance,
   JobResource.NebiusJob,
   EndpointResource.NebiusEndpoint,
+  // mk8s: the node group is parented by a **cluster**, not the project (see its
+  // `list` lifecycle, which fans out projects → clusters → node groups).
+  //
+  // `Cluster` was missing here until 2026-09-23 — the deploy-time lookup finds a
+  // provider by its Context **tag** first, so nothing failed, but the collection is
+  // what the `aliases` fallback and `alchemy unsafe nuke`'s collection scan read.
+  Mk8sClusterResource.NebiusCluster,
+  Mk8sNodeGroupResource.NebiusNodeGroup,
 ])
 
 export const providers = () =>
@@ -159,6 +168,7 @@ export const providers = () =>
     // at the limit (this is why the provider list is already split into two merges).
     Layer.provideMerge(Mk8sGrpc.Mk8sGrpcServiceLive),
     Layer.provideMerge(Mk8sClusterResource.NebiusClusterProvider),
+    Layer.provideMerge(Mk8sNodeGroupResource.NebiusNodeGroupProvider),
   ).pipe(
     Layer.provideMerge(GrpcTransport.NebiusGrpcTransportLive),
     Layer.provideMerge(Credentials.fromAuthProvider),

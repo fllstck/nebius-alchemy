@@ -82,7 +82,7 @@ for (const file of files) {
  * update here — a discovery bug (renamed export, moved file) would otherwise
  * shrink the sweep silently and the policy would stop being enforced.
  */
-const EXPECTED_PROVIDER_COUNT = 39
+const EXPECTED_PROVIDER_COUNT = 40
 
 type Lifecycle = 'read' | 'diff'
 

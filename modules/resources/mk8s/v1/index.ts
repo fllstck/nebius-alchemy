@@ -7,4 +7,11 @@
 // and `storage/v1alpha1`.
 export { NebiusCluster as Cluster, NebiusClusterProvider as ClusterProvider, type NebiusCluster as ClusterResource } from './cluster.ts'
 export { clusterSpecDrifted } from './cluster.ts'
+export {
+  NebiusNodeGroup as NodeGroup,
+  NebiusNodeGroupProvider as NodeGroupProvider,
+  type NebiusNodeGroup as NodeGroupResource,
+} from './node-group.ts'
+export { nodeGroupSpecDrifted } from './node-group.ts'
+export * as action from './actions.ts'
 export { ClusterId, NodeGroupId } from './ids.ts'

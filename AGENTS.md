@@ -60,6 +60,27 @@ These rules are hard requirements. Violations must be corrected immediately.
   the value never converges (the same hazard the drift lists dodge with
   `news.<optional> !== undefined &&`).
 
+  **When the API has no `FieldMask`, the same rule has a mechanical form — prefer it there.**
+  A 17-field template of 12 nested messages cannot carry a hand-written guard per field without
+  one eventually being forgotten (each omission is a *silent* no-op), so `mk8s/v1 NodeGroup`
+  compares only what the props pinned instead:
+
+  ```ts
+  // `protoPinnedFields` drops the proto3 defaults `fromJSON` fills in ("", 0, Long.ZERO,
+  // []) — and keeps an empty *object*, which is how a presence-only switch is expressed;
+  // `pinnedSpecDeepEqual` then compares only the surviving fields, with `specDeepEqual`
+  // at the leaves so int64s stay visible.
+  export const nodeGroupSpecDrifted = (live, desired) =>
+    !ResourceUtils.pinnedSpecDeepEqual(live, ResourceUtils.protoPinnedFields(desired))
+  ```
+
+  Two properties a hand-written guard list cannot offer: a prop that reaches `desired` is
+  compared automatically (so it cannot be forgotten), and a field the platform *materializes*
+  into the echo — mk8s `maxPods: 110`, `vpc/v1 Network`'s pools, `transfer.limiters` — can
+  never loop, because it is exactly a field nobody pinned. `tests/resources/utilities.test.ts`
+  pins both helpers; the resource's own convergence table and unit tests pin the per-field
+  behaviour.
+
 ### Convergence — every prop must be planned, reconciled, or declared
 
 A provider only applies a change if one of two places looks at the field:
@@ -130,7 +151,7 @@ There is **one mechanism**: a table per resource that
   create-first replacement while the old generation still holds the identity
   (`storage/v1/transfer`, found live 2026-09-22, and the only one of the 38 resources it caught).
 
-The coverage test discovers all 38 providers from `modules/` and fails when one has no table, so
+The coverage test discovers all 40 providers from `modules/` and fails when one has no table, so
 a new resource cannot slip in unclassified; the table's own completeness check fails on a new
 prop until someone classifies it. Two earlier mechanisms are **retired**, not layered on top:
 *by construction* (asserting a whole-spec comparison pattern in the source — it proved that a
@@ -266,7 +287,7 @@ casing truth**. Never re-case a name to satisfy a style guide.
 - File names are kebab-case for multi-word resources (`route-table.ts`,
   `nvl-instance-group.ts`); the proto's own file name stays lowercase in `schemas/`.
 
-Audit status: `modules/resources` has **0** casing deviations today (36/36 resource type
+Audit status: `modules/resources` has **0** casing deviations today (40/40 resource type
 strings match their generated message names; 0 casing-only prop/spec field mismatches,
 nested structs included). This rule exists to keep it that way — re-check with
 `bun tools/schema-conformance.ts` (exits 1 on any deviation) and see TASKS.md
@@ -607,6 +628,24 @@ Some Nebius APIs don't follow the standard CRUD pattern:
   oneof fields (`afterOneIteration`/`afterNEmptyIterations`/`infinite`) with no `stopCondition`
   message — `fromJSON` silently dropped the prop before 2026-09-21, so the transfer ran with the
   server's default stop behaviour on create *and* update.
+- **mk8s (`Cluster`, `NodeGroup`) has no `FieldMask`** — `Update{Cluster,NodeGroup}Request` is just
+  `{ metadata, spec }`, so an absent field means "leave unchanged", never "clear" (the same shape as
+  the note above). There is **no create-only template field** in the NodeGroup's minimal arm — the
+  whole `template` is a roll-out, not a replace — so its only replaces are identity changes
+  (`parentId` = the **cluster**, `name`), and `NodeGroup`'s drift check is the
+  `pinnedSpecDeepEqual`/`protoPinnedFields` pair described in §"Resource provider patterns".
+  Measured 2026-09-23: deleting a **Cluster cascades** to its node groups (so every
+  `NodeGroup.delete` must tolerate `NOT_FOUND`), and `PreflightCheck` is **not** an immutability
+  oracle — `pathsRequireRecreate` was empty for every UPDATE, including changes the CLI treats as
+  create-only; its `requiresUserApproval` + `WARNING` is a *disruption* signal ("will roll out the
+  node group") and nothing more. `NodeGroup.template.os` is validated live, not locally:
+  `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix` is the authority (the set depends on the
+  Kubernetes version *and* the platform, and it moves).
+- **`template.cloudInitUserData` is required but its SSH key is NOT validated** — the proto says it
+  "should contain at least one SSH key" and the solutions library enforces that, but the **API does
+  not**: the 2026-09-23 write probe created a node group with `'#cloud-config\n'` and no key. A
+  validator here would reject a configuration the platform serves, so the props document the
+  consequence (no SSH path into a node) instead of enforcing it.
 
 ### Naming Conventions
 

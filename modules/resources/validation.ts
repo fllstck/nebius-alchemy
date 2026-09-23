@@ -242,3 +242,53 @@ export const isValidBlockSize = Schema.makeFilter(
   },
   { title: 'valid block size' },
 )
+
+/**
+ * A presence-only switch: `true` enables, and there is no way to express "off".
+ *
+ * Some Nebius specs model a feature as an **empty message** whose mere presence
+ * enables it (`AuditLogsSpec`, `Karpenter`, `PreemptibleSpec`, a node group's
+ * `publicIpAddress`), and these APIs have **no `FieldMask`** (measured for mk8s
+ * 2026-09-23) — so an absent field means "leave unchanged", not "disable". A
+ * `false` would therefore be a silent no-op, and the convergence doctrine prefers
+ * a plan-time error to a silently-lost prop: the API cannot express it, so neither
+ * can the props.
+ *
+ * `subject` names what would have to be recreated to turn it off, so the message
+ * stays true where the switch lives on more than one resource.
+ */
+export const presenceOnly = (prop: string, subject: string) =>
+  Schema.makeFilter((value: boolean) =>
+    value === true
+      ? undefined
+      : `${prop} can only be turned ON: the proto models it as an empty message (presence enables it) and this API has no FieldMask, so an absent field means "leave unchanged" — there is no way to disable it after creation, short of recreating the ${subject}`,
+  )
+
+/**
+ * Reject `""` for a **required** string prop.
+ *
+ * proto3 scalars have no presence, so `""` and "field absent" are the same bytes on
+ * the wire. A required prop that is allowed to be empty therefore means "not sent"
+ * the moment it is omitted or blanked — the API answers a default, or an error that
+ * names a field the caller never touched, and the props look satisfied either way.
+ * Rejecting it at plan time is what keeps `Schema.String` (not `Schema.optional`)
+ * an honest statement about the request.
+ */
+export const isNonEmptyString = (prop: string) =>
+  Schema.makeFilter(
+    (value: string) => (value.length > 0 ? undefined : `${prop} must not be empty: an empty string is indistinguishable from an omitted field on the wire (proto3 scalars have no presence), so it would be sent as "no value"`),
+    { title: `non-empty ${prop}` },
+  )
+
+/**
+ * The `<major>.<minor>` form the managed-Kubernetes API accepts for a *requested*
+ * Kubernetes version — a patch version is rejected on purpose.
+ *
+ * Shared as a predicate (not as a filter) so each resource can name the authority in
+ * its own message: the Cluster points at the control-plane version catalogue, the
+ * NodeGroup at the cluster's resolved version. Note the asymmetry it does *not*
+ * cover: `status.version` is a different, longer format
+ * (`1.36.3-nebius-node.75`), so nothing here parses a version — it only checks the
+ * requested side's shape.
+ */
+export const isMajorMinorVersion = (value: string): boolean => /^\d+\.\d+$/.test(value)

@@ -22,9 +22,9 @@ import * as VpcIds from '../../vpc/v1/ids.ts'
  * error message would rot.
  */
 const versionValid = Schema.makeFilter((value: string) =>
-  /^\d+\.\d+$/.test(value)
+  Validation.isMajorMinorVersion(value)
     ? undefined
-    : `version must be "<major>.<minor>" (e.g. "1.35") — patch versions are not accepted yet; omit it to use the backend default, or list the current options with Nebius.capacity.action / \`nebius mk8s cluster list-control-plane-versions\``,
+    : `version must be "<major>.<minor>" (e.g. "1.35") — patch versions are not accepted yet; omit it to use the backend default, or list the current options with Nebius.mk8s.action.ListClusterControlPlaneVersions / \`nebius mk8s cluster list-control-plane-versions\``,
 )
 
 /**
@@ -41,23 +41,6 @@ const etcdClusterSizeValid = Schema.makeFilter((value: number) =>
     ? undefined
     : `etcdClusterSize must be 1, 3 or 5 (got ${value}); 1 is a single-instance non-HA control plane, 3 (the default) is the smallest highly-available one`,
 )
-
-/**
- * A presence-only switch: `true` enables, and there is no way to express "off".
- *
- * `AuditLogsSpec` and `Karpenter` are **empty messages** in the proto whose mere
- * presence enables the feature, and mk8s has **no `FieldMask`** (measured
- * 2026-09-23) — so an absent field means "leave unchanged", not "disable". A
- * `false` would therefore be a silent no-op, and the convergence doctrine prefers a
- * plan-time error to a silently-lost prop: the API cannot express it, so neither
- * can the props.
- */
-const presenceOnly = (prop: string) =>
-  Schema.makeFilter((value: boolean) =>
-    value === true
-      ? undefined
-      : `${prop} can only be turned ON: the proto models it as an empty message (presence enables it) and this API has no FieldMask, so an absent field means "leave unchanged" — there is no way to disable it after creation, short of recreating the cluster`,
-  )
 
 /**
  * Service-ClusterIP CIDR — **deliberately not `Validation.isValidCIDR`**.
@@ -148,7 +131,7 @@ export const ClusterPropsSchema = Schema.Struct({
    * "field present ⇒ enabled" into a boolean, documented here as AGENTS.md
    * requires.
    */
-  auditLogs: Schema.optional(Schema.Boolean.check(presenceOnly('auditLogs'))),
+  auditLogs: Schema.optional(Schema.Boolean.check(Validation.presenceOnly('auditLogs', 'cluster'))),
 
   /**
    * Install Karpenter in the cluster (same empty-message→boolean reshape as
@@ -160,7 +143,7 @@ export const ClusterPropsSchema = Schema.Struct({
    * its dependents), and the proto warns there is "no feature parity between
    * Karpenter node pools and public node groups".
    */
-  karpenter: Schema.optional(Schema.Boolean.check(presenceOnly('karpenter'))),
+  karpenter: Schema.optional(Schema.Boolean.check(Validation.presenceOnly('karpenter', 'cluster'))),
 
   /**
    * CIDR blocks for Service ClusterIP allocation. Only one value is supported
