@@ -348,11 +348,13 @@ export const NebiusNodeGroupProvider: Layer.Layer<
         // Plan-time props validation — fail `alchemy plan` fast, before any API call.
         yield* NodeGroupSchema.validateNodeGroupProps(news)
 
-        // Arm 1 has **no** create-only spec field: every prop here (`version`,
-        // `fixedNodeCount`, the whole template) is updatable in place, and the API applies
-        // template changes as a roll-out per the deployment strategy. So the only replace
-        // is a changed identity — parent cluster or physical name — which is create-first
-        // because a different identity is a different resource.
+        // Arm 1 has **no** create-only spec field: every prop here (`version`, the sizing pair, the
+        // whole template) is updatable in place, and the API applies template changes as a roll-out
+        // per the deployment strategy. The sizing swap is **measured** to be in-place too
+        // (2026-09-23: sending one side clears the other, the id is kept and `resourceVersion` moves by
+        // one — see AGENTS.md §"Non-standard APIs" and the live test), which is why it is not planned
+        // as a replace. So the only replace is a changed identity — parent cluster or physical name —
+        // which is create-first because a different identity is a different resource.
         //
         // ⚠️ `template.nvlink` is the one exception the arms add later: the CLI omits it
         // from `node-group update`, and probe 1 of TASKS.md §N5 (adding a synthetic id and

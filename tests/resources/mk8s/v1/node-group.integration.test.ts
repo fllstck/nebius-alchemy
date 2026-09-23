@@ -53,7 +53,7 @@ integrationTest(
 
       // `etcdClusterSize: 1` keeps the control plane non-HA and cheap (the Cluster test's
       // measurement); the node group itself is the expensive half.
-      const declare = (labels?: Record<string, string>) =>
+      const declare = (options: { labels?: Record<string, string>; autoscaling?: boolean } = {}) =>
         Effect.gen(function* () {
           const network = yield* Nebius.vpc.Network('Mk8sNg-Network', {})
           const subnet = yield* Nebius.vpc.Subnet('Mk8sNg-Subnet', { networkId: network.id })
@@ -76,7 +76,12 @@ integrationTest(
           })
           const nodeGroup = yield* Nebius.mk8s.NodeGroup('Mk8sNg-NodeGroup', {
             parentId: cluster.id,
-            fixedNodeCount: 1,
+            // **Exactly one** of the two (the props enforce it), and switching between them is an
+            // in-place update — measured 2026-09-23: the API clears the omitted side
+            // (`spikes/mk8s-sizing-swap-probe.ts` ran the swap in both directions).
+            ...(options.autoscaling === true
+              ? { autoscaling: { minNodeCount: 1, maxNodeCount: 1 } }
+              : { fixedNodeCount: 1 }),
             // The measured working shape (2026-09-23): cpu-d3 + 2vcpu-8gb + one node +
             // ubuntu24.04. 64 GiB is the platform's boot-disk floor (a smaller disk never
             // reaches cloud-init, so provisioning hangs with no diagnostic).
@@ -97,7 +102,7 @@ integrationTest(
               // a mapping that passed the string through would show up here as NaN.
               taints: [{ key: 'alchemy.test/dedicated', value: 'yes', effect: 'NO_SCHEDULE' }],
             },
-            ...(labels === undefined ? {} : { labels }),
+            ...(options.labels === undefined ? {} : { labels: options.labels }),
           })
           return { cluster, nodeGroup }
         })
@@ -177,7 +182,7 @@ integrationTest(
       // change `diff` ignores → the framework plans `action: update` → reconcile RUNS. It must
       // then find no drift: every optional template field the props omit must be invisible to
       // the comparison, or this writes on every pass forever.
-      const redeployed = yield* stack.deploy(declare({ 'alchemy-test': 'forced-reconcile' }))
+      const redeployed = yield* stack.deploy(declare({ labels: { 'alchemy-test': 'forced-reconcile' } }))
       const afterReconcile = yield* mk8s.nodeGroup.get(redeployed.nodeGroup.id)
 
       expect(
@@ -188,6 +193,31 @@ integrationTest(
       ).toBe('1')
       // Same node group — no replace was planned either.
       expect(afterReconcile.metadata?.id).toBe(nodeGroup.id)
+
+      // ── The sizing swap: in place, and the API clears the omitted side ──────
+      // Measured 2026-09-23 (`spikes/mk8s-sizing-swap-probe.ts`, both directions): switching
+      // `fixedNodeCount` ⇄ `autoscaling` is accepted as an update, the group is **not** replaced, and
+      // the side that is no longer in the payload disappears from `spec` — so the provider's
+      // in-place `diff` is right and a stale second sizing field cannot accumulate. Without that
+      // measurement the honest alternative was a planned replace, because with no `FieldMask` there
+      // is no way to *send* a clear.
+      const swapped = yield* stack.deploy(
+        declare({ labels: { 'alchemy-test': 'forced-reconcile' }, autoscaling: true }),
+      )
+      // Same identity: the swap did not replace the group.
+      expect(swapped.nodeGroup.id).toBe(nodeGroup.id)
+      // The fixed count is gone from the spec the API now holds.
+      expect(swapped.nodeGroup.fixedNodeCount).toBeUndefined()
+      expect(swapped.nodeGroup.state).toBe('RUNNING')
+      // Exactly one write: the create (1) and this update (2). The forced reconcile above wrote
+      // nothing and the swap is one update, so anything else means a pass wrote twice.
+      const afterSwap = yield* mk8s.nodeGroup.get(swapped.nodeGroup.id)
+      expect(afterSwap.metadata?.resourceVersion?.toString()).toBe('2')
+      console.log(
+        `PROBE mk8s sizing swap: id=${swapped.nodeGroup.id} (unchanged) ` +
+          `fixedNodeCount=${swapped.nodeGroup.fixedNodeCount ?? '(cleared)'} ` +
+          `resourceVersion=${afterSwap.metadata?.resourceVersion?.toString()}`,
+      )
     }).pipe(safeDestroy(stack)),
   // Cluster (~3 min) + node group provisioning and node join + a forced reconcile + destroy,
   // with headroom: a node group is the slowest thing this suite creates.

@@ -632,11 +632,24 @@ Some Nebius APIs don't follow the standard CRUD pattern:
   message — `fromJSON` silently dropped the prop before 2026-09-21, so the transfer ran with the
   server's default stop behaviour on create *and* update.
 - **mk8s (`Cluster`, `NodeGroup`) has no `FieldMask`** — `Update{Cluster,NodeGroup}Request` is just
-  `{ metadata, spec }`, so an absent field means "leave unchanged", never "clear" (the same shape as
-  the note above). There is **no create-only template field** in the NodeGroup's minimal arm — the
-  whole `template` is a roll-out, not a replace — so its only replaces are identity changes
-  (`parentId` = the **cluster**, `name`), and `NodeGroup`'s drift check is the
-  `pinnedSpecDeepEqual`/`protoPinnedFields` pair described in §"Resource provider patterns".
+  `{ metadata, spec }`. What an absent field *means* is **measured for the cases that matter**
+  (2026-09-23, `spikes/mk8s-sizing-swap-probe.ts`), because the missing mask alone does not settle it
+  (the CLI's `update --patch`/`--clear-mask` is client-side read-modify-write, which would be pointless
+  if a sent spec were not at least partly authoritative):
+  * **Message fields merge, field by field.** An update that omitted `strategy` entirely left a pinned
+    `strategy.drainTimeout = 900s` in `spec`, and an update that sent only
+    `strategy.maxUnavailable = {count: 2}` kept that `drainTimeout`. So "omit ⇒ leave unchanged" holds
+    for messages, which is why the news-side guards stay load-bearing.
+  * **`fixedNodeCount` ⇄ `autoscaling` is an exclusive pair and the API clears the omitted side.**
+    Sending `autoscaling` alone dropped `fixedNodeCount` from `spec`, and the reverse did the same — so
+    the swap is a **valid in-place update** (no replace, same id, `resourceVersion` +1, no roll-out) and
+    `diff` is right to leave it to `reconcile`.
+  * A scalar that is *not* part of such a pair is **not** measured either way; do not generalise from
+    these two rows.
+  There is **no create-only template field** in the NodeGroup's arms 1–4 — the whole `template` is a
+  roll-out, not a replace — so its only replaces are identity changes (`parentId` = the **cluster**,
+  `name`), and `NodeGroup`'s drift check is the `pinnedSpecDeepEqual`/`protoPinnedFields` pair described
+  in §"Resource provider patterns".
   Measured 2026-09-23: deleting a **Cluster cascades** to its node groups (so every
   `NodeGroup.delete` must tolerate `NOT_FOUND`), and `PreflightCheck` is **not** an immutability
   oracle — `pathsRequireRecreate` was empty for every UPDATE, including changes the CLI treats as
