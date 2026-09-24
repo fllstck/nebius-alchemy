@@ -3,6 +3,7 @@ import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { computeLabelMap } from '../../shared/label-map.ts'
 
 // ---------------------------------------------------------------------------
 // Disk Props (user input)
@@ -59,7 +60,7 @@ const atMostOneDiskSource = Schema.makeFilter(
 export const DiskPropsSchema = Schema.Struct({
   parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  labels: Schema.optional(computeLabelMap),
   /** Disk size in gibibytes. One of the size fields must be set. */
   sizeGibibytes: Schema.optional(Schema.Finite),
   /** Block size in bytes. Must be a power of two between 4096 and 131072. Default: 4096. */

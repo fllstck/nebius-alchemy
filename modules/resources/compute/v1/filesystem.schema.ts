@@ -3,6 +3,7 @@ import * as Schema from 'effect/Schema'
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { computeLabelMap } from '../../shared/label-map.ts'
 
 // ---------------------------------------------------------------------------
 // Filesystem Props (user input)
@@ -18,7 +19,7 @@ const FilesystemTypeSchema = Schema.Union([
 export const FilesystemPropsSchema = Schema.Struct({
   parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  labels: Schema.optional(computeLabelMap),
   /** Size in gibibytes. */
   sizeGibibytes: Schema.Finite,
   /** Block size in bytes. Must be power of two between 4096 and 131072. Default 4096. Immutable after creation. */

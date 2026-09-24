@@ -7,6 +7,7 @@ import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
 import * as CapacityIds from '../../capacity/v1/ids.ts'
 import { pricingMatchesPresenceOnlyPreemptible, PricingModelSchema } from '../../shared/pricing.schema.ts'
+import { computeLabelMap } from '../../shared/label-map.ts'
 
 // ---------------------------------------------------------------------------
 // Nested sub-schemas
@@ -140,7 +141,8 @@ const ManagedDiskSpecSchema = Schema.Struct({
 
 const ManagedDiskSchema = Schema.Struct({
   name: Schema.String,
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  /** Compute labels (this disk is created by the compute service) — see `shared/label-map.ts`. */
+  labels: Schema.optional(computeLabelMap),
   /** Specification of the managed disk to be created. Required by the API. */
   spec: Schema.optional(ManagedDiskSpecSchema),
 })
@@ -334,7 +336,7 @@ const InstanceServiceAccountId = Schema.Union([IamIds.ServiceAccountId, Schema.L
 export const InstancePropsSchema = Schema.Struct({
   parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  labels: Schema.optional(computeLabelMap),
   /** Service account ID to associate with this instance, or `''` for none. */
   serviceAccountId: InstanceServiceAccountId,
   /** Compute resources specification. */

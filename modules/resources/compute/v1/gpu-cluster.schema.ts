@@ -3,6 +3,7 @@ import * as Schema from 'effect/Schema'
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { computeLabelMap } from '../../shared/label-map.ts'
 
 // ---------------------------------------------------------------------------
 // Domain validations
@@ -30,7 +31,7 @@ const fabricValid = Schema.makeFilter((value: string) =>
 export const GpuClusterPropsSchema = Schema.Struct({
   parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  labels: Schema.optional(computeLabelMap),
   /**
    * The identifier of the physical InfiniBand fabric to connect GPU instances
    * to. Immutable after creation — changing it replaces the cluster (see the

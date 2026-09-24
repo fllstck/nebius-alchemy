@@ -3,6 +3,7 @@ import * as Schema from 'effect/Schema'
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { computeLabelMap } from '../../shared/label-map.ts'
 
 // ---------------------------------------------------------------------------
 // Domain validations
@@ -28,7 +29,7 @@ export const NVLInstanceGroupTypeSchema = Schema.Union([Schema.Literal('GB200'),
 export const NVLInstanceGroupPropsSchema = Schema.Struct({
   parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  labels: Schema.optional(computeLabelMap),
   /**
    * The NVLink platform this group is provisioned for. Immutable — changing the
    * type replaces the group (see the provider's `diff`).

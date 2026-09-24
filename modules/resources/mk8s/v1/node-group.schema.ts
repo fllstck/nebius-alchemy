@@ -2,6 +2,7 @@ import * as Schema from 'effect/Schema'
 
 import * as NebiusNodeGroupSchema from '../../../../schemas/nebius/mk8s/v1/node_group.ts'
 import { pricingMatchesPresenceOnlyPreemptible, PricingModelSchema } from '../../shared/pricing.schema.ts'
+import { computeLabelMap, kubernetesLabelMap } from '../../shared/label-map.ts'
 import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
 import * as IamIds from '../../iam/v1/ids.ts'
@@ -122,12 +123,12 @@ const taintEffect = Schema.Union([
 const attachMode = Schema.Union([Schema.Literal('READ_ONLY'), Schema.Literal('READ_WRITE')])
 
 /**
- * A Kubernetes node-label map, or the compute instance-metadata one.
+ * The **sticky** caveat that applies to both of the template's label maps, kept beside them.
  *
  * Keys and values must follow Kubernetes label syntax (the proto links the spec), and the platform
  * **ignores** any key containing `kubernetes.io` or `k8s.io` — so a `kubernetes.io/hostname` entry
  * here is accepted and silently dropped by the API, which is worth knowing before debugging it.
- * A map with an empty key is rejected by a filter on the whole map — **not** by
+ * A map with an invalid key is rejected by a filter on the whole map — **not** by
  * `Schema.Record(Schema.NonEmptyString, …)`, whose key schema *silently drops* the offending entry
  * (measured 2026-09-23: `{'': 'worker'}` decodes to `{}`, the same strip-don't-reject behaviour as
  * `Schema.Union` of structs — `agent-patterns/effect-schema.md`). The rest of the syntax (prefix,
@@ -137,16 +138,13 @@ const attachMode = Schema.Union([Schema.Literal('READ_ONLY'), Schema.Literal('RE
  * (`spikes/mk8s-rollout-arms-probe.ts`): a node-label change was accepted, landed in `spec`, and the
  * update returned in **1 s** with `replacedTheNode: false` and `outdatedNodeCount` never non-zero. So
  * the proto's claim holds — existing Nodes keep the old labels until something else recreates them.
+ *
+ * The two maps no longer share one schema, and the reason is measured: `metadata.labels` becomes a
+ * **Kubernetes** label (`kubernetesLabelMap` — blank is invalid), while `instanceMetadata.labels` is the
+ * **compute** instance's metadata (`computeLabelMap` — compute rejects only a strictly empty key; it
+ * *accepts* a blank one, so the old shared rule was over-strict; `spikes/labels-empty-key-probe.ts`).
  */
-const labelMap = Schema.Record(Schema.String, Schema.String).check(
-  Schema.makeFilter((labels: Record<string, string>) =>
-    Object.keys(labels).some((key) => key.trim().length === 0)
-      ? 'label keys must not be empty: Kubernetes has no such label, and an empty key would be silently dropped'
-      : undefined,
-  ),
-)
 
-/**
  * Passthrough local disks (`GB200`/`GB300`-class platforms) and what mk8s does with them.
  *
  * Both booleans can only be `true`: the proto enables passthrough "only when this field is
@@ -558,7 +556,7 @@ const NodeGroupTemplateSchema = Schema.Struct({
    */
   metadata: Schema.optional(
     Schema.Struct({
-      labels: labelMap,
+      labels: kubernetesLabelMap,
     }),
   ),
   /**
@@ -567,7 +565,7 @@ const NodeGroupTemplateSchema = Schema.Struct({
    */
   instanceMetadata: Schema.optional(
     Schema.Struct({
-      labels: labelMap,
+      labels: computeLabelMap,
     }),
   ),
   /**
@@ -712,6 +710,11 @@ export const NodeGroupPropsSchema = Schema.Struct({
    */
   parentId: Ids.ClusterId,
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
+  /**
+   * The node group **resource's own** metadata labels (the `mk8s` service's, not the nodes'): a bare
+   * `Record` on purpose — the `mk8s` service is unmeasured for empty keys, and a filter there would be a
+   * guess. The two *template* label maps below are the measured ones; see `shared/label-map.ts`.
+   */
   labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /**
    * Kubernetes version for the nodes, `<major>.<minor>`.

@@ -3,6 +3,7 @@ import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { computeLabelMap } from '../../shared/label-map.ts'
 
 // ---------------------------------------------------------------------------
 // Image Props (user input)
@@ -44,7 +45,7 @@ const exactlyOneImageSource = Schema.makeFilter(
 export const ImagePropsSchema = Schema.Struct({
   parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String.check(Validation.isDnsCompliantResourceName)),
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  labels: Schema.optional(computeLabelMap),
   /** Human-readable description of the image. */
   description: Schema.optional(Schema.String),
   /** Image family name for grouping related images. */

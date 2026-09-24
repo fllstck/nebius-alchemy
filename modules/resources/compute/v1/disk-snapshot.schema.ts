@@ -3,6 +3,7 @@ import * as Ids from './ids.ts'
 
 import * as Validation from '../../validation.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { computeLabelMap } from '../../shared/label-map.ts'
 
 // ---------------------------------------------------------------------------
 // DiskSnapshot Props (user input)
@@ -11,7 +12,7 @@ import * as IamV2Ids from '../../iam/v2/ids.ts'
 export const DiskSnapshotPropsSchema = Schema.Struct({
   parentId: Schema.optional(IamV2Ids.ProjectId),
   name: Schema.optional(Schema.String),
-  labels: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  labels: Schema.optional(computeLabelMap),
   /** ID of the source disk. Immutable after creation. */
   sourceDiskId: Ids.DiskId,
   /** Arbitrary description provided by user. */
