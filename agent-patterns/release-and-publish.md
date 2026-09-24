@@ -255,6 +255,24 @@ immediately. And don't reach for `npm version` when `package.json` already holds
 the target version — it re-bumps and triggers the `version` script (re-running the
 changelog generator).
 
+## Remote git operations are the MAINTAINER's, not the agent's
+
+Learned 2026-09-24, at the cost of two wedged sessions. An agent shell that runs `git ls-remote` (or `push`,
+`fetch`, `pull`, `clone`) can hit a credential or SSH-passphrase prompt. The prompt is not a normal blocking
+read — it **holds terminal input and hangs the tool call until it times out**, and until then the harness
+cannot accept typing. `GIT_TERMINAL_PROMPT=0` does not cover it (an SSH passphrase prompt is not the
+terminal prompt that disables), so there is no safe variant to reach for.
+
+Split the release accordingly:
+
+| the agent may | the maintainer runs |
+| local git: `status`, `log`, `diff`, `add`, `commit`, `tag`, `stash` | `npm publish --otp=<code>`, `git push origin <tag>`, `git push`, `git ls-remote` |
+| `npm view` / `npm install` (registry reads need no auth) | anything that authenticates: clones, fetches, remote tag lookups |
+| ask for a *remote* fact via the public GitHub API — `curl -s https://api.github.com/repos/<owner>/<repo>/git/refs/tags/<tag>` — which needs no credentials | publishing credentials, OTPs, key passphrases |
+
+The last row is how the `v0.10.2` tag was confirmed pushed after `git ls-remote` had already cost two
+timeouts: `refs/tags/v0.10.2` → the release commit, no prompt, no credentials.
+
 ## Related
 
 - `../agent-patterns/effect-versioning.md` — the peer/pin rules that make a

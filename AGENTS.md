@@ -414,6 +414,25 @@ was exactly this hole.
 - **Reference only**: Do NOT import from vendored repos in production code
 - **Prefer vendored source**: When unsure about Effect, Alchemy, or the Nebius API, check in `/repos` first
 
+### Remote git operations — maintainer only
+
+**Do NOT run remote git commands from the agent shell** — `push`, `fetch`, `pull`, `clone`, `ls-remote`. They
+can prompt for a credential or SSH-key passphrase, and a prompt **hangs the tool call until it times out**
+while it holds terminal input: the session becomes unusable and the work in flight is lost. `GIT_TERMINAL_PROMPT=0`
+and `ssh -o BatchMode=yes` do not make this safe either — an SSH passphrase prompt is not the terminal prompt
+those disable.
+
+Local git only (`status`, `log`, `diff`, `add`, `commit`, `tag`, `stash`). When a *remote* read is genuinely
+needed, use the public GitHub API instead — it needs no credentials:
+
+```bash
+# was a tag pushed? (verified 2026-09-24 for v0.10.2)
+curl -s https://api.github.com/repos/fllstck/nebius-alchemy/git/refs/tags/v0.10.2
+```
+
+…or hand the command to the maintainer and ask for the output. Publishing, tag pushing and `ls-remote`
+verification all belong in the maintainer's terminal (see `agent-patterns/release-and-publish.md`).
+
 ### Websites
 
 - https://v2.alchemy.run/llms.txt for Alchemy v2 docs for implementing custom resources/providers/auth
