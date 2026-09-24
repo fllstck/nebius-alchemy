@@ -878,7 +878,7 @@ Resource-level validations (they compare several props, so they are not attached
 
 ## `Nebius.mk8s.Cluster`
 
-*Defined in [`modules/resources/mk8s/v1/cluster.ts`](modules/resources/mk8s/v1/cluster.ts). Narrative and live-verification status: [README.md § Compute](README.md#compute).*
+*Defined in [`modules/resources/mk8s/v1/cluster.ts`](modules/resources/mk8s/v1/cluster.ts). Narrative and live-verification status: [README.md § Managed Kubernetes (mk8s)](README.md#managed-kubernetes-mk8s).*
 
 | prop | required | type | documented default | plan-time validation |
 | --- | --- | --- | --- | --- |
@@ -915,7 +915,7 @@ Resource-level validations (they compare several props, so they are not attached
 
 ## `Nebius.mk8s.NodeGroup`
 
-*Defined in [`modules/resources/mk8s/v1/node-group.ts`](modules/resources/mk8s/v1/node-group.ts). Narrative and live-verification status: [README.md § Compute](README.md#compute).*
+*Defined in [`modules/resources/mk8s/v1/node-group.ts`](modules/resources/mk8s/v1/node-group.ts). Narrative and live-verification status: [README.md § Managed Kubernetes (mk8s)](README.md#managed-kubernetes-mk8s).*
 
 | prop | required | type | documented default | plan-time validation |
 | --- | --- | --- | --- | --- |

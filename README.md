@@ -278,10 +278,19 @@ Deploy GPU-accelerated instances, disks, and managed filesystems.
 - **[`Nebius.compute.Image`](RESOURCES.md#nebiuscomputeimage)** — Dynamic image lookup by family (`ubuntu-22-04-lts`, etc.)
 - **[`Nebius.compute.Filesystem`](RESOURCES.md#nebiuscomputefilesystem)** — Managed NFS filesystems
 - **[`Nebius.compute.DiskSnapshot`](RESOURCES.md#nebiuscomputedisksnapshot)** — Point-in-time disk snapshots
-- **[`Nebius.compute.GpuCluster`](RESOURCES.md#nebiuscomputegpucluster)** — InfiniBand GPU clusters. The spec is a single immutable field (`infinibandFabric`), so any change replaces the cluster; `instances` is read-only (membership is declared on the Instance via `gpuCluster.id`), and deleting a cluster that still has members fails with `GpuClusterNotEmpty` naming them. **Verified against real infra (2026-09-18)**: create 1.6 s, delete 3.2 s, no leak, no GPU quota, no cost
-- **[`Nebius.compute.NVLInstanceGroup`](RESOURCES.md#nebiuscomputenvlinstancegroup)** — NVLink instance groups (`GB200`/`GB300` racks). `type` is immutable (a change replaces); `size` is the maximum member count and adjusts in place; `instances` is read-only (membership is declared on the Instance via `nvlInstanceGroupId`), and deleting a non-empty group fails with `NVLInstanceGroupNotEmpty`
-- **[`Nebius.mk8s.NodeGroup`](RESOURCES.md#nebiusmk8snodegroup)** — Worker node groups (the _CPU_ surface: sizing, `strategy`, `autoRepair` and the whole `template` — OS, hardware, boot disk, network interfaces, service account, cloud-init). The parent is the **cluster**, not the project, so `parentId` is required and there is no project fallback; deleting the cluster cascades to its node groups. **Exactly one** of `fixedNodeCount` / `autoscaling` must be set. `strategy.maxUnavailable`/`maxSurge` take _either_ `{ count }` or `{ percent }` (an integer 1–100); `strategy.drainTimeoutSeconds` and `autoRepair.conditions[].timeoutSeconds` are whole seconds (a `Duration` reshape — `0` is rejected, because a zero duration encodes as an absent field and would silently never apply). Read the **effective** strategy from `status`, not from your props: with `strategy` omitted the API answers its own defaults, which are migrating during Q3 2026. `template.os` and `resources.preset` are **not** validated against a list — which images a group may use depends on the cluster's Kubernetes version _and_ the platform, so `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix({ clusterKubernetesVersion, platform })` is the authority. The rest of the template: `template.metadata.labels` are **Kubernetes node labels** while `template.instanceMetadata.labels` are the **compute instances'** own metadata (two different maps — a label in the wrong one is invisible from the other side), and like `template.taints` and `template.cloudInitUserData` neither is **rolled out** to nodes that already exist, so a change needs a maintenance window; taints take `NO_EXECUTE`/`NO_SCHEDULE`/`PREFER_NO_SCHEDULE` with an optional (even empty) value; `template.filesystems[]` attaches an **existing** compute filesystem (`{ attachMode: 'READ_ONLY' | 'READ_WRITE', mountTag, existingFilesystem: { id } }`, mount tag ≤ 37 chars); `template.preemptible` and the two `template.localDisks` flags can only be turned **on** (`false` is a plan-time error); `template.maxPods` is optional (omit it and the platform's documented `110` applies server-side — measured live 2026-09-23, the default is **not** written back into `spec`, which keeps `0`) but cannot be `0`; and `template.reservationPolicy` takes `policy: 'FORBID' | 'STRICT'` (omit `policy` for AUTO — the proto's zero value cannot be sent as a change) with `reservationIds` from `Nebius.capacity.action.ListCapacityBlockGroups`. GPU placement: `template.gpuSettings` takes a `driversPreset` (the catalogue is the compatibility matrix — the same live query as `os`) and/or `dra: true` (Dynamic Resource Allocation; omit `driversPreset` for a driverless/DRA image), `template.gpuCluster.id` joins the nodes to a Compute GPU cluster's RDMA fabric, and `template.nvlink.nvlInstanceGroupId` (`GB200`/`GB300` racks) requires **fixed sizing** and **non-preemptible** nodes — the Nebius solutions library's preconditions, enforced at plan time because they are the two that are checkable locally (a driverfull image and no MIG/NUMA are documented at the field instead). An `nvlink` change is a roll-out, **not** a replace: measured 2026-09-23, the API accepts the field on an update and resolves the referenced group itself. `template.bootDisk.sizeGibibytes` is required (the platform's 64 GiB floor is enforced; a smaller disk hangs provisioning before cloud-init) and `template.networkInterfaces[].publicIpAddress` can only be turned **on** (`false` is a plan-time error). Omit `version` to inherit the cluster's resolved one. `template.cloudInitUserData` is **not** validated for an SSH key (the API accepts a key-less payload; the solutions library is what enforces one) and a change to it does **not** rewrite existing nodes — recreate nodes in a maintenance window. **Verified against real infra (2026-09-23)**: create → `RUNNING` with `nodeCount: 1`/`readyNodeCount: 1`, a forced reconcile wrote nothing (`resourceVersion` stayed `1`), node labels / instance-metadata labels / a taint round-tripped (the effect as its wire enum), a `fixedNodeCount` ⇄ `autoscaling` swap converged in place with the old side cleared, and the node group's `status.version` is the node image's own format `v1.36.3-nebius-node.75`. `template.filesystems`, `template.localDisks`, `template.reservationPolicy` and the GPU/NVLink arms are **not** live-verified (needs a mounted filesystem, a `GB200`/`GB300`-class platform, a capacity block group, and that same entitlement respectively — the NVLink arm has a gated test that documents what it would need)
-- **[`Nebius.mk8s.Cluster`](RESOURCES.md#nebiusmk8scluster)** — Managed Kubernetes control planes. `subnetId` and `serviceCidrs` are create-only (a change plans a replace, because an in-place subnet change is answered with an opaque `13 INTERNAL` and does nothing); `version`, `etcdClusterSize`, `publicEndpoint`, `auditLogs` and `karpenter` update in place. Omit `version` unless you need to pin it — the backend default is what the solutions library recommends, and `status` reports what it resolved (`requestedVersion` is what you asked for, `version` is what is running). `auditLogs`/`karpenter` can only be turned **on** (`false` is a plan-time error: the proto models them as empty messages and the API has no `FieldMask`, so "absent" means "leave unchanged", never "disable"). Deleting a cluster **cascades** to its node groups, their instances and their disks. **Verified against real infra (2026-09-23)**: create → `RUNNING` in ~3 min with `etcdClusterSize: 1`, and a forced reconcile wrote nothing (`resourceVersion` stayed `1`), so no drift loop
+
+**[`Nebius.compute.GpuCluster`](RESOURCES.md#nebiuscomputegpucluster)** — InfiniBand GPU clusters:
+
+- **One immutable field** (`infinibandFabric`), so any change replaces the cluster.
+- `instances` is **read-only** — membership is declared on the Instance (`gpuCluster.id`).
+- Deleting a cluster that still has members fails with `GpuClusterNotEmpty`, naming them.
+- **Verified against real infra (2026-09-18)**: create 1.6 s, delete 3.2 s, no leak, no GPU quota, no cost.
+
+**[`Nebius.compute.NVLInstanceGroup`](RESOURCES.md#nebiuscomputenvlinstancegroup)** — NVLink instance groups (`GB200`/`GB300` racks):
+
+- `type` is **immutable** (a change replaces); `size` is the maximum member count and adjusts in place.
+- `instances` is **read-only** — membership is declared on the Instance (`nvlInstanceGroupId`).
+- Deleting a non-empty group fails with `NVLInstanceGroupNotEmpty`, naming the members.
 
 > **Fabric ids come from the capacity advisor.** `infinibandFabric` is a
 > _physical_ InfiniBand fabric in the target region; read the available ones with
@@ -298,6 +307,81 @@ Deploy GPU-accelerated instances, disks, and managed filesystems.
 > `Nebius.compute.NVLInstanceGroup` is **not** yet exercised against real infra —
 > it needs a GB200/GB300 entitlement; its integration test is gated on
 > `NEBIUS_TEST_NVL_GROUP=1`.
+
+### Managed Kubernetes (mk8s)
+
+Control planes and worker node groups. Both are `Nebius.mk8s.*`; the node group's parent is the **cluster**,
+not the project.
+
+**[`Nebius.mk8s.Cluster`](RESOURCES.md#nebiusmk8scluster)** — managed Kubernetes control planes:
+
+- **Create-only:** `subnetId` and `serviceCidrs` — a change plans a **replace**, because an in-place subnet
+  change is answered with an opaque `13 INTERNAL` and does nothing (measured 2026-09-23).
+- **In place:** `version`, `etcdClusterSize`, `publicEndpoint`, `auditLogs`, `karpenter`.
+- **`version`:** omit it unless you must pin one — the backend default is what the solutions library
+  recommends. `status` reports what it resolved: `requestedVersion` is what you asked for, `version` is what
+  is running.
+- **One-way switches:** `auditLogs` and `karpenter` can only be turned **on** (`false` is a plan-time error;
+  the proto models them as empty messages and there is no `FieldMask`, so absent means "leave unchanged",
+  never "disable").
+- **Deleting a cluster cascades** to its node groups, their instances and their disks.
+- **Verified against real infra (2026-09-23):** create → `RUNNING` in ~3 min with `etcdClusterSize: 1`, and a
+  forced reconcile wrote nothing (`resourceVersion` stayed `1`), so no drift loop.
+
+**[`Nebius.mk8s.NodeGroup`](RESOURCES.md#nebiusmk8snodegroup)** — worker node groups (the _CPU_ surface:
+sizing, `strategy`, `autoRepair` and the whole `template`):
+
+- **Identity:** the parent is the **cluster**, so `parentId` is required and there is no project fallback.
+  Deleting the cluster **cascades** to its node groups, their instances and their disks.
+- **Sizing:** **exactly one** of `fixedNodeCount` / `autoscaling` must be set. Switching between them is an
+  in-place update that clears the omitted side (measured 2026-09-23).
+- **`strategy`:** `maxUnavailable` / `maxSurge` take _either_ `{ count }` or `{ percent }` (an integer 1–100);
+  `drainTimeoutSeconds` is whole seconds (a `Duration` reshape — `0` is rejected, because a zero duration
+  encodes as an absent field and would silently never apply). Read the **effective** strategy from `status`,
+  not from your props: with `strategy` omitted the API answers its own defaults, which are migrating during
+  Q3 2026.
+- **`autoRepair`:** conditions are `{ type, status, timeoutSeconds }`, plus `disabled` — which turns the
+  platform's **default** rules off, not the entry it sits on.
+- **`template.os` / `template.resources.preset` are not validated against a list:** which images a group may
+  use depends on the cluster's Kubernetes version _and_ the platform, so
+  `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix({ clusterKubernetesVersion, platform })` is the
+  authority.
+- **Two label maps, and neither is rolled out:** `template.metadata.labels` are **Kubernetes node labels**
+  while `template.instanceMetadata.labels` are the **compute instances'** own metadata (a label in the wrong
+  one is invisible from the other side). Like `template.taints` and `template.cloudInitUserData`, a change is
+  **not propagated to nodes that already exist** — it applies to nodes created afterwards, so plan a
+  maintenance window or a roll-out.
+- **Taints:** `NO_EXECUTE` / `NO_SCHEDULE` / `PREFER_NO_SCHEDULE` with an optional (even empty) value.
+- **`template.filesystems[]`:** attaches an **existing** compute filesystem —
+  `{ attachMode: 'READ_ONLY' | 'READ_WRITE', mountTag, existingFilesystem: { id } }`, mount tag ≤ 37 chars.
+- **One-way switches:** `template.preemptible`, the two `template.localDisks` flags and
+  `template.networkInterfaces[].publicIpAddress` can only be turned **on**; `false` is a plan-time error.
+- **`template.maxPods`:** optional — omit it and the platform's documented `110` applies server-side. Measured
+  2026-09-23: the default is **not** written back into `spec` (it keeps `0`), and `0` itself cannot be pinned.
+- **`template.reservationPolicy`:** `policy: 'FORBID' | 'STRICT'` (omit `policy` for AUTO — the proto's zero
+  value cannot be sent as a change) with `reservationIds` from
+  `Nebius.capacity.action.ListCapacityBlockGroups`.
+- **`template.bootDisk.sizeGibibytes` is required** — the platform's 64 GiB floor is enforced, and a smaller
+  disk hangs provisioning before cloud-init.
+- **`version`:** omit it to inherit the cluster's resolved one.
+- **GPU placement:** `template.gpuSettings` takes a `driversPreset` (the catalogue is the compatibility
+  matrix) and/or `dra: true` (Dynamic Resource Allocation — omit `driversPreset` for a driverless/DRA image);
+  `template.gpuCluster.id` joins the nodes to a Compute GPU cluster's RDMA fabric; and
+  `template.nvlink.nvlInstanceGroupId` (`GB200`/`GB300` racks) requires **fixed sizing** and
+  **non-preemptible** nodes — the two solutions-library preconditions that are checkable locally (a
+  driverfull image and no MIG/NUMA are documented at the field instead). An `nvlink` change is a **roll-out,
+  not a replace**: measured 2026-09-23, the API accepts the field on an update and resolves the referenced
+  group itself.
+- **`template.cloudInitUserData`** is **not** validated for an SSH key — the API accepts a key-less payload;
+  the solutions library is what enforces one.
+- **Verified against real infra (2026-09-23):** create → `RUNNING` with `nodeCount: 1` / `readyNodeCount: 1`;
+  a forced reconcile wrote nothing (`resourceVersion` stayed `1`); node labels, instance-metadata labels and a
+  taint round-tripped (the effect as its wire enum); a `fixedNodeCount` ⇄ `autoscaling` swap converged in
+  place with the old side cleared; and `status.version` is the node image's own format
+  `v1.36.3-nebius-node.75`.
+- **Not live-verified:** `template.filesystems`, `template.localDisks`, `template.reservationPolicy` and the
+  GPU/NVLink arms — they need a mounted filesystem, a `GB200`/`GB300`-class platform, a capacity block group
+  and that same entitlement respectively. The NVLink arm has a gated test documenting what it would need.
 
 ### AI
 
@@ -347,10 +431,6 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 - **[`Nebius.dns.Zone`](RESOURCES.md#nebiusdnszone)** — VPC-scoped DNS zones with custom domains
 - **[`Nebius.dns.Record`](RESOURCES.md#nebiusdnsrecord)** — A, AAAA, CNAME, TXT, MX, and other record types
 
-### Billing
-
-- **[`Nebius.billing.PricingPolicy`](RESOURCES.md#nebiusbillingpricingpolicy)** — a project-scoped auction bid (platform + max price per GPU hour) for **preemptible** GPU VMs, and the thing the `pricing` prop on `compute.Instance` / `mk8s.NodeGroup.template` / `ai.Job` / `ai.Endpoint` names through `spotPricingPolicy.id`. It provisions nothing, so it is the cheapest resource here to create and destroy. Two API sharp edges: the service **discards** `metadata.labels` (so `labels` is accepted and ignored, and every read reports `Unowned`), and its `Update` RPC rejects every documented request shape — so a change to `platform` or `maxPrice` is planned as a **replace**. **Verified against real infra (2026-09-24)**: create → `STATE_ACTIVE` with `SCHEDULING_STATE_ALLOWED`, a spec change via a `pricing`-only update accepted, delete clean
-
 ### KMS
 
 - **[`Nebius.kms.SymmetricKey`](RESOURCES.md#nebiuskmssymmetrickey)** — AES-256 encryption keys
@@ -360,6 +440,10 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 
 - **[`Nebius.mysterybox.Secret`](RESOURCES.md#nebiusmysteryboxsecret)** — Versioned secret storage with KMS encryption and inline payloads
 - **[`Nebius.mysterybox.SecretVersion`](RESOURCES.md#nebiusmysteryboxsecretversion)** — Secret versions with primary-version promotion. The service has no `Update` RPC, so `description`, `payload` and `setPrimary` are immutable: a change replaces the version, delete-first (the physical name is `sv-<logicalId>` on every generation). `name` is the version's immutable `metadata.name` and defaults to `sv-<logicalId>`
+
+### Billing
+
+- **[`Nebius.billing.PricingPolicy`](RESOURCES.md#nebiusbillingpricingpolicy)** — a project-scoped auction bid (platform + max price per GPU hour) for **preemptible** GPU VMs, and the thing the `pricing` prop on `compute.Instance` / `mk8s.NodeGroup.template` / `ai.Job` / `ai.Endpoint` names through `spotPricingPolicy.id`. It provisions nothing, so it is the cheapest resource here to create and destroy. Two API sharp edges: the service **discards** `metadata.labels` (so `labels` is accepted and ignored, and every read reports `Unowned`), and its `Update` RPC rejects every documented request shape — so a change to `platform` or `maxPrice` is planned as a **replace**. **Verified against real infra (2026-09-24)**: create → `STATE_ACTIVE` with `SCHEDULING_STATE_ALLOWED`, a spec change via a `pricing`-only update accepted, delete clean
 
 ### Quotas
 
