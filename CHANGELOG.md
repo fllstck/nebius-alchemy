@@ -1,3 +1,36 @@
+## [0.10.2](https://github.com/fllstck/nebius-alchemy/compare/v0.10.1...v0.10.2) (2026-09-24)
+
+### ⚠️ Upgrade notes
+
+* **Fixes the 0.10.1 known issue: an unchanged deploy of a `compute.Instance` no longer writes an update.**
+  The drift check compared whole messages against the spec the API echoes back, and the platform fills in
+  fields your props never set — `managedDisk.spec.diskEncryption: {}`, `managedDisk.labels: {}`,
+  `managedDisk.spec.blockSizeBytes: "0"`, a materialized `reservationPolicy: {}`/`gpuCluster: {}`. The
+  provider now compares **only the fields you pinned**, so:
+  * `metadata.resourceVersion` stops moving on deploys that changed nothing (measured live: a forced
+    reconcile wrote `resourceVersion` 1 → 2 before the fix, nothing after it, on the same VM);
+  * a hosted instance — whose props carry Outputs and therefore always plan an update — no longer re-sends
+    its spec on every deploy;
+  * a genuine change still converges: a `hostname` edit wrote and took effect in the same measurement.
+  Nothing to migrate: a configuration you did not change simply stops churning.
+* **BEHAVIOUR CHANGE — removing an optional prop is no longer sent as "clear it", because the API cannot
+  express it.** This affects `secondaryDisks`, `filesystems`, `hostname`, `recoveryPolicy`,
+  `nvlInstanceGroupId` and `cloudInitUserData`. A proto3 field has no presence, so an omitted prop *is* the
+  field's zero value and "absent" means "leave unchanged" (measured on a live VM: an update that omitted an
+  attached managed data disk left it attached, `resourceVersion` 4 → 5, and one that omitted `hostname` left
+  the value in place, `resourceVersion` 5 → 6). What changes for you:
+  * dropping one of these props from a configuration now writes nothing — and, notably, **stops the update
+    that used to fire on every reconcile and could never converge** (`Updating Nebius.compute.v1.Instance`
+    on every apply);
+  * if you actually need the cloud to change, do it where it is expressible: detach/delete a data disk
+    through the disk service (or recreate the instance), and recreate the instance to change your mind about
+    a `hostname` or `recoveryPolicy`. Adding a value, or changing one you pinned, converges in place as
+    before.
+
+### Bug Fixes
+
+* **compute/v1:** stop Instance drift loop on omitted optional props ([380a684](https://github.com/fllstck/nebius-alchemy/commit/380a68404531f8bad20f3b2539933d6cde1c1a82))
+
 ## [0.10.1](https://github.com/fllstck/nebius-alchemy/compare/v0.10.0...v0.10.1) (2026-09-24)
 
 ### ⚠️ Upgrade notes

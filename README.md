@@ -162,6 +162,23 @@ at import (see _Install Dependencies_ above):
 | `typescript`                   | Not declared      | Bring TypeScript 6 or 7 (verified: 6.0.3, 7.0.2). It was a `>=6 <8` **optional** peer until 0.9.1, which made `npm install` fail against alchemy's optional TypeScript-5 chains (`ERESOLVE … peerOptional typescript`) — a compiler range here can only break installs, so the choice is yours. |
 | `alchemy`                      | Yes (peer, exact) | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which is an _older_ beta. Exact on purpose: the CLI and this package's providers must share one `alchemy` (and one Effect instance), so a mismatch is an install error rather than two copies                                              |
 
+### Upgrading from 0.10.1
+
+* **An unchanged deploy of a `compute.Instance` no longer writes an update.** The drift check compared whole
+  messages against the spec the API echoes back, which carries fields your props never set
+  (`diskEncryption: {}`, `labels: {}`, `blockSizeBytes: "0"`, a materialized `reservationPolicy`/`gpuCluster`).
+  The provider now compares **only the fields you pinned** — so `metadata.resourceVersion` stops moving on a
+  deploy that changed nothing, and a hosted instance no longer re-sends its spec on every apply. A genuine
+  change still converges (a `hostname` edit wrote and took effect, measured). Nothing to migrate.
+* **Removing an optional prop is not sent as "clear it" — the API cannot express it.** For `secondaryDisks`,
+  `filesystems`, `hostname`, `recoveryPolicy`, `nvlInstanceGroupId` and `cloudInitUserData`, an omitted prop
+  is the field's zero value and absent means "leave unchanged" (measured: an update omitting an attached
+  managed data disk left it attached; one omitting `hostname` left the value). So dropping one now writes
+  nothing — which also ends the update that used to fire on every reconcile for it. To actually change the
+  cloud, detach a disk through the disk service (or recreate the instance), and recreate the instance to
+  change your mind about a `hostname`/`recoveryPolicy`. Adding or changing a pinned value converges as
+  before.
+
 ### Upgrading from 0.10.0
 
 * **`compute.Instance.stopped` is a one-way switch now, and `stopped: false` is a plan-time error.** It never
@@ -173,12 +190,10 @@ at import (see _Install Dependencies_ above):
   (it only accepts a pricing change on a stopped instance). Change the arm while stopped, or recreate.
 * **[RESOURCES.md](RESOURCES.md)** — a generated per-resource API reference (props required/optional, types,
   documented defaults, plan-time validations, nested props, and returned values) — now ships in the package.
-* **Known issue (fixed after 0.10.1 — see TASKS.md §"the `compute/v1 Instance` drift loop"):** an unchanged
-  deploy of a `compute.Instance` still wrote an update, because the drift check whole-compared
+* **Known issue (fixed in 0.10.2 — see the section above):** an unchanged deploy of a `compute.Instance`
+  still wrote an update, because the drift check whole-compared
   `bootDisk`/`networkInterfaces`/`resources` while the platform echoes fields your props never carried
-  (`diskEncryption: {}`, `blockSizeBytes: "0"`, …). Silent churn, not a failure. The provider now compares only
-  the fields you pinned, and an omitted optional prop is never read as "clear it". Install `0.10.2` (or later)
-  for the fix.
+  (`diskEncryption: {}`, `blockSizeBytes: "0"`, …). Silent churn, not a failure.
 
 ### Upgrading from 0.9.x
 
