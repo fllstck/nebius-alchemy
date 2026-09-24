@@ -13,6 +13,14 @@ Environment variables are read from `.env` (see [`.env.example`](.env.example)):
 
 > ⚠️ These stacks create real, billable resources in your Nebius project. Always run `alchemy destroy --yes` when you're done.
 
+> The **mermaid diagrams** below show each stack's resource graph as it is declared, with the
+> **logical ids** from the source (`TestSubnet` is the `yield*` call's first argument) and the props that
+> create each edge (`network -- networkId --> subnet` is `networkId: network.id`). Dashed edges are
+> snippets that are commented out in the file. They are generated from the files by
+> [`../spikes/extract-example-graphs.mjs`](../spikes/extract-example-graphs.mjs), so they can be
+> re-derived rather than trusted. `storage.ts` (one bucket) and `actions.ts` (read-only, no state) are left
+> without one: there is no graph to draw.
+
 ## Core Resources
 
 ### [storage.ts](storage.ts) — Object Storage bucket
@@ -23,29 +31,111 @@ The minimal starting point: creates a single Nebius Bucket and returns its id, n
 
 Creates a complete networking stack: Network, Subnet, RouteTable, Route (default egress gateway), SecurityGroup, SecurityRule (stateful, TCP 80/443 ingress), IP Pool, and Allocation. All names are omitted from props and auto-generated from logical IDs.
 
+```mermaid
+flowchart TD
+  network["vpc.Network<br/>TestNetwork"]
+  subnet["vpc.Subnet<br/>TestSubnet"]
+  routeTable["vpc.RouteTable<br/>TestRouteTable"]
+  route["vpc.Route<br/>TestRoute"]
+  securityGroup["vpc.SecurityGroup<br/>TestSecurityGroup"]
+  securityRule["vpc.SecurityRule<br/>TestSecurityRule"]
+  pool["vpc.Pool<br/>TestPool"]
+  allocation["vpc.Allocation<br/>TestAllocation"]
+  network -- networkId --> subnet
+  network -- networkId --> routeTable
+  routeTable -- parentId --> route
+  network -- networkId --> securityGroup
+  securityGroup -- parentId --> securityRule
+  pool -- ipv4Private --> allocation
+```
+
 ### [dns.ts](dns.ts) — DNS zone and record
 
 Creates a VPC network (as zone scope), a VPC-scoped DNS zone for `alchemy-demo-test.com.`, and an `A` record at the zone apex (`@`) pointing to `192.0.2.1`.
+
+```mermaid
+flowchart TD
+  network["vpc.Network<br/>DnsDemoNetwork"]
+  zone["dns.Zone<br/>DemoZone"]
+  record["dns.Record<br/>DemoRecord"]
+  network -- "vpc scope" --> zone
+  zone -- "parentId" --> record
+```
 
 ### [iam.ts](iam.ts) — Service account, static key **and S3 access key**
 
 Creates a ServiceAccount, then both credential types: a `StaticKey` (CONTAINER_REGISTRY — the non-standard `Issue` lifecycle, where the token exists only in the issue response) and a v2 `AccessKey` — the **AWS-format** `awsAccessKeyId`/`secretAccessKey` pair Object Storage needs, which a StaticKey is not. Both are one-time secrets; `secretDeliveryMode` is where you choose whether that secret stays inline (local state) or lands in a MysteryBox instead.
 
+```mermaid
+flowchart TD
+  sa["iam.ServiceAccount<br/>DemoServiceAccount"]
+  sk["iam.StaticKey<br/>DemoStaticKey"]
+  accessKey["iam.AccessKey<br/>DemoAccessKey"]
+  sa -- "parentId" --> sk
+  sa -- "parentId" --> accessKey
+```
+
 ### [kms.ts](kms.ts) — KMS keys
 
 Creates both KMS key types: a SymmetricKey (AES_256) and an AsymmetricKey (ECDSA_NIST_P256_SHA_256), each with auto-generated names.
+
+```mermaid
+flowchart TD
+  symmetricKey["kms.SymmetricKey<br/>SymmetricKey"]
+  asymmetricKey["kms.AsymmetricKey<br/>AsymmetricKey"]
+```
 
 ### [mysterybox.ts](mysterybox.ts) — Secrets and versions
 
 Creates a Secret with an initial version and payload, then adds a second version (`v2`) with updated credentials and `setPrimary: true` to promote it as primary.
 
+```mermaid
+flowchart TD
+  secret["mysterybox.Secret<br/>TestSecret"]
+  version["mysterybox.SecretVersion<br/>TestVersion"]
+  secret -- "parentId" --> version
+```
+
 ### [compute.ts](compute.ts) — Image → Disk → Filesystem → Instance
 
 Dynamically looks up the latest Ubuntu 22.04 LTS image by family, creates a NETWORK_SSD boot disk from it, creates a shared `NETWORK_SSD` filesystem, then launches a preemptible instance (`gpu-h200-sxm`) with that disk as its boot disk and the filesystem mounted at `mountTag: 'data'`. Requires `SUBNET_ID` and `SERVICE_ACCOUNT_ID`; `IMAGE_FAMILY` and `DISK_SIZE_GB` are optional. A commented snippet after the stack shows the snapshot → restore pair (`DiskSnapshot` as a third disk create source). One attribute looks like a number and is not: `Filesystem.sizeGibibytes` is an int64 in the JSON rendering, so it reads back as a **string**.
 
+```mermaid
+flowchart TD
+  image["compute.Image<br/>UbuntuImage"]
+  disk["compute.Disk<br/>TestDisk"]
+  filesystem["compute.Filesystem<br/>TestFilesystem"]
+  instance["compute.Instance<br/>TestInstance"]
+  image -- "sourceImageFamily" --> disk
+  disk -- "bootDisk.existingDisk" --> instance
+  filesystem -- "filesystems" --> instance
+  disk -. "commented snippet" .-> snapshot["compute.DiskSnapshot"]
+  snapshot -. "create source" .-> restored["compute.Disk"]
+```
+
 ### [mk8s.ts](mk8s.ts) — Managed Kubernetes cluster + one worker node
 
 Creates a working control plane and a real worker node: network → subnet → cluster, plus a service account with an `editor` grant (group → permit → membership) whose id the node template needs for registry pulls and API access, then a `cpu-d3` node group with a 64 GiB boot disk and cloud-init user-data. It is the example that shows the non-obvious parts: the parent is the **cluster** (no project fallback), `fixedNodeCount` and `autoscaling` are mutually exclusive and one is required, `os`/`driversPreset` come from `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix` rather than a local list, and `etcdClusterSize: 1` keeps the demo cheap (non-HA). The commented block in the node template lists the optional surface — `strategy`, `autoRepair`, node/instance labels, taints, `maxPods`, `preemptible`, filesystems, capacity reservations, GPU and NVLink — with the caveats for each. **⚠️ Provisions a real billable VM** and is the slowest stack here (a node group takes minutes to `RUNNING` and its delete waits for the VM).
+
+```mermaid
+flowchart TD
+  network["vpc.Network<br/>Mk8sNetwork"]
+  subnet["vpc.Subnet<br/>Mk8sSubnet"]
+  serviceAccount["iam.ServiceAccount<br/>Mk8sNodes-SA"]
+  grantGroup["iam.Group<br/>Mk8sNodes-Group"]
+  permit["iam.AccessPermit<br/>Mk8sNodes-Permit"]
+  membership["iam.GroupMembership<br/>Mk8sNodes-Membership"]
+  cluster["mk8s.Cluster<br/>Mk8sCluster"]
+  nodeGroup["mk8s.NodeGroup<br/>Mk8sNodes"]
+  network -- networkId --> subnet
+  grantGroup -- "parentId" --> permit
+  grantGroup -- "parentId" --> membership
+  serviceAccount -- "memberId" --> membership
+  subnet -- "subnetId" --> cluster
+  cluster -- "parentId" --> nodeGroup
+  subnet -- "networkInterfaces" --> nodeGroup
+  serviceAccount -- "template.serviceAccountId" --> nodeGroup
+```
 
 ### [spot-pricing.ts](spot-pricing.ts) — Spot pricing: a bid and the `pricing` prop
 
@@ -61,6 +151,14 @@ blocks scheduling (`SCHEDULING_STATE_BLOCKED`), the service **discards** `metada
 rejects every documented shape (so a spec change is a replace), and on `compute.Instance` a pricing change is
 only accepted on a **stopped** VM. **⚠️ Deploys a real VM** (one `4vcpu-16gb`).
 
+```mermaid
+flowchart TD
+  policy["billing.PricingPolicy<br/>GpuH100Bid<br/>bid: gpu-h100-sxm @ 3.000"]
+  instance["compute.Instance<br/>OnDemandVm<br/>pricing: { onDemand: true }"]
+  policy -. "pricing.spotPricingPolicy (commented: needs GPU)" .-> spotVm["compute.Instance<br/>SpotVm"]
+  policy -. "same arm on a node group" .-> spotNodes["mk8s.NodeGroup<br/>SpotNodes"]
+```
+
 ## Discovery Actions
 
 ### [actions.ts](actions.ts) — Read-only list/get actions
@@ -75,13 +173,58 @@ The bindings examples ship typed Nebius S3 clients to a Cloudflare Worker at dep
 
 The Worker entry ([storage.bindings-worker.ts](storage.bindings-worker.ts)) is a `Cloudflare.Worker` with an inline `Effect.gen` implementation. It declares the bucket, consumes the typed `GetObject`/`PutObject` runtime clients, and exposes a `GET`/`POST` HTTP API. Uses narrow deep-subpath imports so rolldown can tree-shake the handler bundle. Requires a Cloudflare API token or `alchemy profile edit --add Cloudflare`.
 
+```mermaid
+flowchart TD
+  subgraph worker["storage.bindings-worker.ts — the Worker construct the stack yields"]
+    bucket["storage.Bucket<br/>'assets'"]
+    getObject{{"GetObject binding"}}
+    putObject{{"PutObject binding"}}
+    bucket --> getObject
+    bucket --> putObject
+    getObject --> handler["GET / handler"]
+    putObject --> handler
+  end
+  identity["host identity: SA → group → membership → AccessKey<br/>(minted by the binding impl, not declared here)"]
+  identity -. "NEBIUS_S3_* env + secret" .-> handler
+  stack["storage.bindings.ts<br/>Cloudflare.Worker + Nebius.providers()"] -. "yield* Api" .-> worker
+```
+
 ### [storage-async.bindings.ts](storage-async.bindings.ts) — Async Worker (tiny bundle)
 
 Same deploy-time wiring as `storage.bindings.ts`, but the Worker entry ([storage-async.bindings-worker.ts](storage-async.bindings-worker.ts)) is a plain async function with no Effect runtime — it reads `env` and drives s3-lite-client directly. Deployed size is a fraction of the Effect-native variant (~50–150 KB vs ~2 MB). The trade: you lose the typed `GetObject`/`PutObject` contracts inside the worker.
 
+```mermaid
+flowchart TD
+  bucket["storage.Bucket<br/>'assets'"]
+  sa["iam.ServiceAccount<br/>ApiBindingSA"]
+  membership["iam.GroupMembership<br/>ApiBindingMembership"]
+  key["iam.AccessKey<br/>ApiBindingKey"]
+  sa -- "memberId" --> membership
+  sa -- "parentId" --> key
+  worker["Cloudflare.Worker<br/>main: storage-async.bindings-worker.ts"]
+  bucket -- "NEBIUS_S3_BUCKET + endpoint" --> worker
+  key -- "NEBIUS_S3_KEY_ID / SECRET (env)" --> worker
+  membership -- "grant" --> worker
+```
+
 ### [ai.bindings.ts](ai.bindings.ts) — AI endpoint ChatCompletions
 
 The Worker entry ([ai.bindings-worker.ts](ai.bindings-worker.ts)) declares an inference endpoint (network + subnet + the official vLLM Qwen3-0.6B config from the Nebius Serverless AI cookbook — L40S GPU) and consumes the typed `ChatCompletions` runtime client: deploy-time `NEBIUS_ENDPOINT_URL`/`NEBIUS_ENDPOINT_AUTH_TOKEN` injection (the token deploys as a Cloudflare secret), a fetch-based OpenAI-compatible client at runtime. Auth is a bearer token — unlike the S3 bindings there is no identity minting or IAM grant. The provider awaits the endpoint to RUNNING before wiring the URL (progress notes included); a broken endpoint fails with `EndpointNotReady`. See [AI_BINDINGS.md](../AI_BINDINGS.md) for the design.
+
+```mermaid
+flowchart TD
+  subgraph worker["ai.bindings-worker.ts — the Worker construct the stack yields"]
+    network["vpc.Network<br/>'Network'"]
+    subnet["vpc.Subnet<br/>'Subnet'"]
+    endpoint["ai.Endpoint<br/>'llm' — vLLM Qwen3-0.6B on L40S"]
+    chat{{"ChatCompletions binding"}}
+    network -- networkId --> subnet
+    subnet -- "networkInterfaces" --> endpoint
+    endpoint --> chat
+    chat --> handler["OpenAI-compatible handler"]
+  end
+  stack["ai.bindings.ts<br/>Cloudflare.Worker + Nebius.providers()"] -. "yield* Api" .-> worker
+```
 
 ## Hosted programs on a VM
 
@@ -97,6 +240,27 @@ systemd EnvironmentFile the VM reads at runtime. **This file defaults to the che
 CPU-only endpoint serving `Qwen2.5-0.5B-Instruct` with llama.cpp — with the production-shaped GPU variant
 (L40S + vLLM) kept as a commented block; measured on real infra: deploy 341 s, a completion on the first
 `curl`, 36 SSE frames for `&stream=1`, destroy 192 s. **⚠️ Billable**, and the GPU variant much more so.
+
+```mermaid
+flowchart TD
+  network["vpc.Network<br/>AiChat-Network"]
+  subnet["vpc.Subnet<br/>AiChat-Subnet"]
+  sg["vpc.SecurityGroup<br/>AiChat-SG"]
+  ingress["vpc.SecurityRule<br/>AiChat-SG-Ingress"]
+  egress["vpc.SecurityRule<br/>AiChat-SG-Egress"]
+  endpoint["ai.Endpoint<br/>llm"]
+  instance["compute.Instance<br/>AiChatInstance"]
+  bundle["program bundle → S3 assets archive"]
+  network -- networkId --> subnet
+  network -- networkId --> sg
+  sg -- "parentId" --> ingress
+  sg -- "parentId" --> egress
+  subnet -- "networkInterfaces" --> endpoint
+  subnet -- "networkInterfaces" --> instance
+  sg -- "securityGroups" --> instance
+  bundle -. "main / hosted env" .-> instance
+  instance -. "ChatCompletions binding<br/>(resolved deploy-side into env)" .-> endpoint
+```
 
 ## Coverage — every resource, audited
 
