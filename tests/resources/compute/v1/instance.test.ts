@@ -371,6 +371,83 @@ describe('Nebius.compute.v1.Instance', () => {
   // `hostedSpecInput` spreads it back. The API also couples the arm to `preemptible`
   // ("Must match the preemptible flag"), which is a plan-time error here.
 
+  describe('stopped is a one-way switch, and pricing changes need it (2026-09-24)', () => {
+    /** The live/desired pair the drift assertions use — same shape as the spec-drift describe's. */
+    const liveSpec = (overrides: Record<string, unknown> = {}) =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        serviceAccountId: 'serviceaccount-abc123',
+        bootDisk: { attachMode: 'READ_WRITE', managedDisk: { spec: { type: 'NETWORK_SSD', sizeGibibytes: '64' } } },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+        ...overrides,
+      })
+    const desiredFrom = (props: Record<string, unknown>) =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        serviceAccountId: 'serviceaccount-abc123',
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        bootDisk: { attachMode: 'READ_WRITE', managedDisk: { spec: { type: 'NETWORK_SSD', sizeGibibytes: '64' } } },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+        ...props,
+      })
+
+    // `stopped: false` cannot be transmitted — a proto3 bool default is encoded as absent, and absent means
+    // "leave unchanged" (measured live: the update was accepted, `spec.stopped` still read `true`, the VM
+    // stayed STOPPED for the whole 180 s wait). So the prop is `trueOnly`, and the provider expresses
+    // "start it" through the service's `Start` RPC instead.
+    const invalidStopped = (patch: Record<string, unknown>) =>
+      runEffect(SchemaModule.validateInstanceProps({ ...validInstanceProps, ...patch }).pipe(Effect.flip))
+
+    test('`stopped: false` is a plan-time error; `true` and omission are fine', async () => {
+      expect(String(await invalidStopped({ stopped: false }))).toContain('can only be set to true')
+      expect(String(await invalidStopped({ stopped: false }))).toContain('omitting it means "running"')
+      await runEffect(SchemaModule.validateInstanceProps({ ...validInstanceProps, stopped: true }))
+      await runEffect(SchemaModule.validateInstanceProps(validInstanceProps))
+    })
+
+    test('a stopped live VM with `stopped` omitted does NOT drift (the loop that was measured)', () => {
+      // The old comparison read `live.stopped (true) !== desired.stopped (false)` and so wrote an update on
+      // every reconcile that could never converge. Only `stopped: true` is comparable now; the other
+      // direction is the `Start` call.
+      const liveStopped = liveSpec({ stopped: true })
+      expect(Module.instanceSpecDrifted(liveStopped, desiredFrom({}), {} as never)).toBe(false)
+      // …and asking for stopped when it is running IS drift (the update that transmits `stopped: true`).
+      expect(Module.instanceSpecDrifted(liveSpec({ stopped: false }), desiredFrom({ stopped: true }), {
+        stopped: true,
+      } as never)).toBe(true)
+      // Asking for stopped when it already is: converged.
+      expect(Module.instanceSpecDrifted(liveStopped, desiredFrom({ stopped: true }), { stopped: true } as never)).toBe(
+        false,
+      )
+    })
+
+    test('a pricing change without `stopped: true` fails the plan instead of the apply', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      // The coupling with `preemptible` is enforced by the props (and a breach fails first), so the arms used
+      // below are both legal on a preemptible VM — leaving the stopped-instance rule as the only one in play.
+      const policyId = BillingIds.PricingPolicyId.make('pricingpolicy-1')
+      const pinned = { ...validInstanceProps, preemptible: { onPreemption: 'STOP' }, pricing: { followsSpotPrice: true } }
+      // Both arms are legal on a preemptible VM, so this is a pricing *change* and nothing else.
+      const switched = { ...pinned, pricing: { spotPricingPolicy: { id: policyId } } }
+
+      const refusal = async (news: Record<string, unknown>, olds: Record<string, unknown>) =>
+        runDiff(svc, news as never, olds as never)
+          .then(() => undefined)
+          .catch((caught: unknown) => String(caught))
+
+      // Identical pricing on both sides: nothing to change, so the rule does not apply.
+      expect(await refusal(pinned, pinned)).toBeUndefined()
+
+      // Setting the arm on an instance whose props had none **is** a change (absent → set) — the very case the
+      // API refused in the pricing probe — so it needs `stopped: true`, exactly like switching arms.
+      expect(await refusal(pinned, validInstanceProps)).toContain('FAILED_PRECONDITION')
+      expect(await refusal(switched, pinned)).toContain('FAILED_PRECONDITION')
+
+      // …and it is accepted when the same deploy stops the VM, which is what the message tells you to do.
+      expect(await refusal({ ...switched, stopped: true }, pinned)).toBeUndefined()
+      expect(await refusal({ ...pinned, stopped: true }, validInstanceProps)).toBeUndefined()
+    })
+  })
+
   describe('pricing (pricing_model)', () => {
     /** The live/desired pair the drift assertions use — the same shape as the drift describe above. */
     const liveSpec = (overrides: Record<string, unknown> = {}) =>

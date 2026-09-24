@@ -235,6 +235,15 @@ const gpuClusterChanged = (news: { gpuCluster?: { id?: string } }, olds?: { gpuC
   (news.gpuCluster?.id ?? '') !== (olds?.gpuCluster?.id ?? '')
 
 /**
+ * Whether the *requested* pricing arm changed between two prop sets — both sides are props here, which is why
+ * this is a plain comparison rather than `pricingDrifted`'s live-vs-desired one.
+ */
+const pricingChanged = (
+  news: { pricing?: { onDemand?: boolean; followsSpotPrice?: boolean; spotPricingPolicy?: { id: string } } },
+  olds?: { pricing?: { onDemand?: boolean; followsSpotPrice?: boolean; spotPricingPolicy?: { id: string } } },
+): boolean => JSON.stringify(news.pricing ?? null) !== JSON.stringify(olds?.pricing ?? null)
+
+/**
  * Whether a **pinned** pricing arm differs from the live spec.
  *
  * The wire is flat — `InstanceSpec` carries `onDemand`/`followsSpotPrice`/`spotPricingPolicy` as
@@ -293,12 +302,15 @@ export const instanceSpecDrifted = (
       !ResourceUtils.specDeepEqual(live.reservationPolicy, desired.reservationPolicy)) ||
     !ResourceUtils.specDeepEqual(live.serviceAccountId, desired.serviceAccountId) ||
     live.cloudInitUserData !== desired.cloudInitUserData ||
-    // ⚠️ Not news-guarded, and that is a measured hazard (2026-09-24): a user who pinned `stopped: true`
-    // and later removes it leaves the instance stopped — `desired.stopped` is `false`, which proto3 encodes
-    // as **absent**, and absent means "leave unchanged" — while this comparison reads `live.stopped (true)
-    // !== false` and therefore reports drift on **every** reconcile, writing an update that can never
-    // converge. Needs `news.stopped !== undefined &&` (or a `Start` call — see the restart path below).
-    live.stopped !== desired.stopped ||
+    // Guarded on the news side **and one-directional**: only `stopped: true` is comparable, because `false`
+    // cannot be transmitted (proto3 bool default → absent → "leave unchanged"). Comparing
+    // `live.stopped !== desired.stopped` read `true !== false` for a user who removed the prop, which made
+    // every reconcile write an update that could never converge (measured 2026-09-24).
+    //
+    // The *other* direction — a stopped VM that should be running — is not a spec difference at all: the
+    // provider calls the service's `Start` RPC for it (see `reconcile`), which is the only thing that can
+    // express it.
+    (news.stopped === true && live.stopped !== true) ||
     live.recoveryPolicy !== desired.recoveryPolicy ||
     live.hostname !== desired.hostname ||
     // Guarded on the news side, and the measurement is why (live 2026-09-24): an update that *omits* the
@@ -553,21 +565,17 @@ export const NebiusInstanceProvider: Layer.Layer<
         spec: stoppedSpec,
       })
       yield* waitForInstanceState({ instanceId, targetStates: ['STOPPED'], session })
-      const stopped = yield* computeGrpcService.instance.get(instanceId)
-      // ⚠️ This update re-sends `desired`, whose `stopped` is `false` — and **`false` cannot be
-      // transmitted** (proto3 default = absent = "leave unchanged"), measured 2026-09-24: the call is
-      // accepted, `spec.stopped` still reads `true`, the VM stays STOPPED and the `RUNNING` wait below
-      // fails. The service has a `Start` RPC and `computeGrpcService.instance.start` is already exposed
-      // (and polled), so the fix is to call it. See TASKS.md §"Found in passing".
-      instance = yield* computeGrpcService.instance.update({
-        metadata: {
-          id: instanceId,
-          parentId,
-          resourceVersion: stopped.metadata!.resourceVersion.toString(),
-          labels,
-        },
-        spec: desired,
-      })
+      // Started through the service's `Start` RPC, **not** by re-sending the spec: `stopped: false` cannot be
+      // transmitted (proto3 bool default = absent = "leave unchanged"), so an update here was accepted and
+      // changed nothing, leaving the VM stopped while the `RUNNING` wait below failed. Measured 2026-09-24.
+      instance = yield* computeGrpcService.instance.start(instanceId)
+      yield* waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session })
+    } else if (news.stopped !== true && instance.spec?.stopped === true) {
+      // `stopped: true` was removed (or the VM was stopped out of band) and the caller wants it running:
+      // the same constraint, handled for the ordinary path rather than only for a bundle restart.
+      yield* session.note(`Starting Nebius.compute.v1.Instance (${instance.metadata!.name}) — \`stopped\` is no longer set`)
+      instance = yield* computeGrpcService.instance.start(instanceId)
+      yield* waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session })
     }
 
     // 5. Wait for a terminal state — on create AND on observed transient
@@ -675,6 +683,29 @@ export const NebiusInstanceProvider: Layer.Layer<
     // floor, network-interface ipAddress, GPU/platform pairing, …
     // (Side-effect only: diff reads the raw props, not the validated defaults.)
     yield* InstanceSchema.validateInstanceProps(news)
+
+    // ── A pricing **change** needs a stopped VM — a plan-time error, not an apply-time one ──
+    //
+    // Measured live 2026-09-24: *introducing* or changing a pricing arm on a running instance is refused
+    // with `9 FAILED_PRECONDITION: spec fields [pricing_model] update could be done with stopped instance`,
+    // while *repeating* an already-set arm is accepted (so an unrelated update with a pinned arm converges
+    // fine), and the provider handles a stop→start restart through the `Start` RPC. The refusal is
+    // expressible here because `diff` sees both sides: a changed `pricing` with the VM not being stopped is
+    // a plan the API will reject, so it fails the plan instead of the apply.
+    //
+    // The coupling with `preemptible` is separate and lives on the props schema
+    // (`pricingMatchesPresenceOnlyPreemptible`) — that one needs no `olds`.
+    if (pricingChanged(news, olds) && news.stopped !== true) {
+      return yield* Effect.fail(
+        new InstanceSchema.PricingChangeRequiresStoppedInstance({
+          detail:
+            '`pricing` changed, and the API only accepts a pricing change on a stopped instance ' +
+            '(`9 FAILED_PRECONDITION: spec fields [pricing_model] update could be done with stopped instance`). ' +
+            'Set `stopped: true` for the deploy that changes it (the provider starts the VM again through the ' +
+            '`Start` RPC on the deploy after that, or as soon as `stopped` is omitted), or recreate the instance.',
+        }),
+      )
+    }
 
     const nameRequiresReplace = Factory.identityChangeRequiresReplace(news, olds)
 

@@ -395,7 +395,7 @@ Resource-level validations (they compare several props, so they are not attached
 | `reservationPolicy.policy` | **yes** | `Schema.Union([Schema.Literal('AUTO'), Schema.Literal('FORBID'), Schema.Literal('STRICT')])` | — | — |
 | `reservationPolicy.reservationIds` | **yes** | `Schema.Array(CapacityIds.CapacityBlockGroupId)` | — | — |
 | `secondaryDisks` | no | `Schema.Array(AttachedDiskSpecSchema)` | — | — |
-| `stopped` | no | `Schema.Boolean` | — | — |
+| `stopped` | no | `Schema.Boolean` | — | `inline filter` |
 
 Resource-level validations (they compare several props, so they are not attached to one row): `bootDiskImageRequired`, `pricingMatchesPresenceOnlyPreemptible`.
 

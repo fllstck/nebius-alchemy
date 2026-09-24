@@ -1269,7 +1269,9 @@ describe('Nebius.compute.v1.Instance convergence', () => {
       // table's baseline is **not** preemptible, so the row pins `onDemand`. The arm's wire shape is flat
       // (`onDemand`/`followsSpotPrice`/`spotPricingPolicy` on `InstanceSpec`), so the mocked `live` below
       // never carries a `pricing` key at all — that flatness is the reshape `pricingModelFields` performs.
-      pricing: { pricing: { onDemand: true } },
+      // `stopped: true` rides along: the API (and now the plan) refuses a pricing change on a running
+      // instance, so the row has to be a valid plan before it can prove the write.
+      pricing: { pricing: { onDemand: true }, stopped: true },
       stopped: { stopped: true },
       hostname: { hostname: 'my-instance.example.com' },
       cloudInitUserData: { cloudInitUserData: '#cloud-config\nruncmd: []' },

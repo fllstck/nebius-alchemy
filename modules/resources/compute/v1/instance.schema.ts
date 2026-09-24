@@ -360,6 +360,37 @@ export const InstancePropsSchema = Schema.Struct({
   /** Set to create a preemptible VM (cheaper, can be stopped by platform). */
   preemptible: Schema.optional(PreemptibleSchema),
   /**
+   * **`stopped: true` keeps the VM stopped; omitting it means "running"** — and the provider *starts* a
+   * stopped VM to get there.
+   *
+   * That asymmetry is a measured API constraint, not a design preference. A proto3 `bool` has no presence,
+   * so `stopped: false` **is** the field's default and is encoded as *absent* — and absent means "leave
+   * unchanged" here (measured live 2026-09-24: an update carrying `stopped: false` was accepted,
+   * `spec.stopped` still read `true`, and the instance stayed `STOPPED` for the whole 180 s wait). `true`
+   * transmits; `false` never can.
+   *
+   * Two consequences the provider handles for you:
+   *
+   *  * **removing this prop starts the instance** — `reconcile` calls the service's `Start` RPC (the spec
+   *    flag cannot express it), so `stopped: true` → omit is a working transition rather than a silent
+   *    no-op;
+   *  * **`false` is a plan-time error** (`Validation.trueOnly`), because a value that cannot leave the
+   *    process must not look like a request. Before 2026-09-24 this prop accepted `false`, planned an
+   *    update that could never converge, and — for a hosted instance whose bundle hash changed — left the
+   *    VM stopped while the deploy waited for `RUNNING`.
+   *
+   * ⚠️ A **pricing** change is only accepted on a stopped instance, so the two interact: see
+   * `pricingModelChangeRequiresStoppedInstance` below, which turns that API refusal into a plan-time error.
+   */
+  stopped: Schema.optional(
+    Schema.Boolean.check(
+      Validation.trueOnly(
+        'stopped',
+        'omitting it means "running" and the provider starts the VM through the `Start` RPC; `stopped: false` cannot be transmitted (a proto3 bool default is encoded as absent, and absent means leave-unchanged)',
+      ),
+    ),
+  ),
+  /**
    * How the VM is priced — `{ onDemand: true }`, `{ followsSpotPrice: true }` or
    * `{ spotPricingPolicy: { id } }` (arms and rules shared: `shared/pricing.schema.ts`). **Optional —
    * omitting it is the platform's default**, and the API does **not** materialize a default into `spec`
@@ -392,8 +423,6 @@ export const InstancePropsSchema = Schema.Struct({
    * (recreating a VM to change a bid is a bigger hammer than stopping it).
    */
   pricing: Schema.optional(PricingModelSchema),
-  /** Whether the instance should be created in stopped state. */
-  stopped: Schema.optional(Schema.Boolean),
   /** Hostname for the VM. Used for internal DNS: <hostname>.<network_id>.compute.internal. */
   hostname: Schema.optional(Schema.String),
   /** Cloud-init user data for instance initialization. */
@@ -424,6 +453,27 @@ export const InstancePropsSchema = Schema.Struct({
    */
   hosted: Schema.optional(Schema.Unknown),
 }).check(bootDiskImageRequired).check(pricingMatchesPresenceOnlyPreemptible('preemptible'))
+
+
+// ---------------------------------------------------------------------------
+// Plan-time errors
+// ---------------------------------------------------------------------------
+
+/**
+ * A pricing change on a running instance: the API refuses it
+ * (`9 FAILED_PRECONDITION: spec fields [pricing_model] update could be done with stopped instance`,
+ * measured live 2026-09-24), and `diff` can see that the change needs a stopped VM — so it fails the plan
+ * instead of letting the apply meet the refusal. `stopped: false` cannot express the workaround (a proto3
+ * bool default is encoded as absent), which is why the message names `stopped: true` and the `Start` RPC.
+ */
+export class PricingChangeRequiresStoppedInstance extends Schema.TaggedError<PricingChangeRequiresStoppedInstance>()(
+  'PricingChangeRequiresStoppedInstance',
+  { detail: Schema.String },
+) {
+  override get message(): string {
+    return this.detail
+  }
+}
 
 export type InstanceProps = typeof InstancePropsSchema.Type
 
