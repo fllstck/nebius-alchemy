@@ -162,6 +162,21 @@ at import (see _Install Dependencies_ above):
 | `typescript`                   | Not declared      | Bring TypeScript 6 or 7 (verified: 6.0.3, 7.0.2). It was a `>=6 <8` **optional** peer until 0.9.1, which made `npm install` fail against alchemy's optional TypeScript-5 chains (`ERESOLVE … peerOptional typescript`) — a compiler range here can only break installs, so the choice is yours. |
 | `alchemy`                      | Yes (peer, exact) | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which is an _older_ beta. Exact on purpose: the CLI and this package's providers must share one `alchemy` (and one Effect instance), so a mismatch is an install error rather than two copies                                              |
 
+### Upgrading from 0.10.0
+
+* **`compute.Instance.stopped` is a one-way switch now, and `stopped: false` is a plan-time error.** It never
+  worked: a proto3 `bool` default is encoded as *absent*, so `false` was sent as nothing and an instance
+  declared with it stayed stopped. `stopped: true` stops the VM; **omitting** it means running, and the
+  provider starts a stopped VM through the service's `Start` RPC — so removing the prop is a working
+  transition. If you had `stopped: false` in a configuration, delete the line.
+* **A `pricing` change needs `stopped: true` in the same deploy**, or the plan fails with the API's rule
+  (it only accepts a pricing change on a stopped instance). Change the arm while stopped, or recreate.
+* **[RESOURCES.md](RESOURCES.md)** — a generated per-resource API reference (props required/optional, types,
+  documented defaults, plan-time validations, nested props, and returned values) — now ships in the package.
+* **Known issue:** an unchanged deploy of a `compute.Instance` still writes an update, because the drift check
+  whole-compares `bootDisk`/`networkInterfaces`/`resources` while the platform echoes fields your props never
+  carried (`diskEncryption: {}`, `blockSizeBytes: "0"`, …). Silent churn, not a failure; the fix is next.
+
 ### Upgrading from 0.9.x
 
 **One behaviour change, and four new resources.**

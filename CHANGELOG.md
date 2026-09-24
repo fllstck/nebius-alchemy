@@ -1,3 +1,48 @@
+## [0.10.1](https://github.com/fllstck/nebius-alchemy/compare/v0.10.0...v0.10.1) (2026-09-24)
+
+### ⚠️ Upgrade notes
+
+* **BEHAVIOUR CHANGE — `compute.Instance.stopped` is a one-way switch, and `false` is now a plan-time
+  error.** It always was *untransmittable*: a proto3 `bool` default is encoded as absent, and absent means
+  "leave unchanged", so `stopped: false` was accepted by the plan, sent as nothing, and silently ignored —
+  an instance declared with it stayed stopped. Now:
+  * `stopped: true` **stops** the VM (unchanged behaviour);
+  * **omitting** `stopped` means *running*, and the provider calls the service's `Start` RPC to get there —
+    so removing the prop from a configuration is a working transition. Before this release it wrote an
+    update that could never converge and left the VM stopped (and, for a hosted instance whose bundle hash
+    changed, the deploy waited for `RUNNING` until it timed out);
+  * `stopped: false` **fails the plan** instead of being ignored. If you had it in a configuration, delete
+    the line — that is what expresses "running" now;
+  * the drift comparison is one-directional (`stopped: true` is comparable, its absence is not), so an
+    unchanged configuration no longer reports drift for it.
+* **BEHAVIOUR CHANGE — a `pricing` change now requires `stopped: true` in the same deploy**, and otherwise
+  fails at plan time with the API's rule in the message
+  (`9 FAILED_PRECONDITION: spec fields [pricing_model] update could be done with stopped instance`, measured
+  live). Change the arm while the VM is stopped, or recreate the instance. The `preemptible` coupling
+  (unchanged) is still a plan-time error too.
+* **`RESOURCES.md` is now in the package**: a generated per-resource API reference — required vs optional
+  props, types, documented defaults, plan-time validations, one level of nested props, and a typed table of
+  returned values. `bun run docs:resources` regenerates it; a test fails when it drifts.
+
+### Known issue (not fixed in this release)
+
+* **An unchanged `alchemy deploy` of a `compute.Instance` still writes an update.** Found while verifying the
+  `stopped` fix: the drift check whole-compares `bootDisk` (and `networkInterfaces`, `resources`) against a
+  desired spec built from your props, while the platform echoes fields the props never carried —
+  `managedDisk.spec.diskEncryption: {}`, `managedDisk.spec.blockSizeBytes: "0"`, `managedDisk.labels: {}`,
+  `deviceId: ""`. The update is accepted and `metadata.resourceVersion` moves, so it is silent churn rather
+  than a failure. The fix (compare only the fields your props pinned) is the next change on the list.
+
+
+### Bug Fixes
+
+* **compute/instance:** reject `stopped: false` and guard stopped-drift comparison ([1837a7d](https://github.com/fllstck/nebius-alchemy/commit/1837a7d332c909c2e9d9065ac30816e98ec17c89))
+* **compute:** guard stopped drift and document start RPC for restart ([51ab1cb](https://github.com/fllstck/nebius-alchemy/commit/51ab1cb97c89912a52237ce8c1d4c08ae913971a))
+
+
+### Features
+
+* **examples:** add spot pricing example with billing.PricingPolicy ([2dc990c](https://github.com/fllstck/nebius-alchemy/commit/2dc990ca3f9f71f1bb3a0783fd39cbb71eb4f57f))
 # [0.10.0](https://github.com/fllstck/nebius-alchemy/compare/v0.9.1...v0.10.0) (2026-09-23)
 
 ### ⚠️ Upgrade notes
