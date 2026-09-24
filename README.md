@@ -28,7 +28,7 @@ bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.117 @effect/platform-bun@4.0.0-rc.
 > `effect@4.0.0-rc.117`.
 >
 > **Why `rc.117` and not `rc.115`:** `@effect/platform-node@rc.115` declares
-> `@effect/platform-node-shared: ^4.0.0-rc.115` — a range that resolves *upward* to
+> `@effect/platform-node-shared: ^4.0.0-rc.115` — a range that resolves _upward_ to
 > the newest prerelease. Once rc.117 existed, bun (which ignores peer ranges)
 > resolved the shared package to rc.117 while `effect` stayed rc.115: a mixed
 > family. Pinning the whole constellation to the newest release is what keeps one
@@ -145,7 +145,7 @@ The older `$STAGE` variable is **no longer consulted**.
 The package ships raw TypeScript source and requires these peer dependencies in your project.
 
 `typescript` is the exception to the exact-pin rule below, and deliberately so: declaring a compiler
-*range* as a peer makes a plain `npm install` fail, because npm then has to place a compiler version
+_range_ as a peer makes a plain `npm install` fail, because npm then has to place a compiler version
 next to alchemy's optional frontend chains (`octane`, `@xata.io/client`, …), which ask for TypeScript
 5.x — `ERESOLVE … peerOptional typescript@">=6 <8"`. So this package declares **no** TypeScript
 dependency or peer at all: **bring your own** compiler (6 or 7 is verified: 6.0.3, 7.0.2), configured
@@ -153,57 +153,57 @@ as shown in § tsconfig.json.
 Versions are **pinned exactly** — alchemy and Effect move together, so a mismatched pair fails
 at import (see _Install Dependencies_ above):
 
-| Package                        | Required | Pinned to                                                                                 |
-| ------------------------------ | -------- | ----------------------------------------------------------------------------------------- |
-| `effect`                       | Yes      | `4.0.0-rc.117`                                                                            |
-| `@effect/platform-bun`         | Yes      | `4.0.0-rc.117`                                                                            |
-| `@effect/platform-node`        | Yes      | `4.0.0-rc.117` — required by the Alchemy CLI                                              |
-| `@effect/platform-node-shared` | Yes      | `4.0.0-rc.117` — declared exact so npm resolves the whole `@effect/*` family consistently |
-| `typescript`                   | Not declared | Bring TypeScript 6 or 7 (verified: 6.0.3, 7.0.2). It was a `>=6 <8` **optional** peer until 0.9.1, which made `npm install` fail against alchemy's optional TypeScript-5 chains (`ERESOLVE … peerOptional typescript`) — a compiler range here can only break installs, so the choice is yours. |
-| `alchemy`                      | Yes (peer, exact) | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which is an _older_ beta. Exact on purpose: the CLI and this package's providers must share one `alchemy` (and one Effect instance), so a mismatch is an install error rather than two copies |
+| Package                        | Required          | Pinned to                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `effect`                       | Yes               | `4.0.0-rc.117`                                                                                                                                                                                                                                                                                  |
+| `@effect/platform-bun`         | Yes               | `4.0.0-rc.117`                                                                                                                                                                                                                                                                                  |
+| `@effect/platform-node`        | Yes               | `4.0.0-rc.117` — required by the Alchemy CLI                                                                                                                                                                                                                                                    |
+| `@effect/platform-node-shared` | Yes               | `4.0.0-rc.117` — declared exact so npm resolves the whole `@effect/*` family consistently                                                                                                                                                                                                       |
+| `typescript`                   | Not declared      | Bring TypeScript 6 or 7 (verified: 6.0.3, 7.0.2). It was a `>=6 <8` **optional** peer until 0.9.1, which made `npm install` fail against alchemy's optional TypeScript-5 chains (`ERESOLVE … peerOptional typescript`) — a compiler range here can only break installs, so the choice is yours. |
+| `alchemy`                      | Yes (peer, exact) | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which is an _older_ beta. Exact on purpose: the CLI and this package's providers must share one `alchemy` (and one Effect instance), so a mismatch is an install error rather than two copies                                              |
 
 ### Upgrading from 0.9.x
 
 **One behaviour change, and four new resources.**
 
-* **`labels` now converge on update** (28 resources — every one with an update path). Every update carries
-  the full label map (internal ownership tags + yours), and a change to *labels alone* now triggers that
+- **`labels` now converge on update** (28 resources — every one with an update path). Every update carries
+  the full label map (internal ownership tags + yours), and a change to _labels alone_ now triggers that
   update. So: a label **removed from your configuration is deleted in the cloud** (it used to survive until
   something unrelated rewrote the resource), and a label added **out of band** (console, script) is dropped
   by the next update, because the map is replaced rather than merged. Configurations you did not change are
   unaffected — the trigger only fires when a declared label is missing/different, or one you declared
   before is gone. The few resources that cannot converge labels (no `Update` RPC, or a service that
   discards them) are listed per resource in the convergence sweep.
-* **New resources:** `Nebius.mk8s.Cluster`, `Nebius.mk8s.NodeGroup`, `Nebius.billing.PricingPolicy`, plus
+- **New resources:** `Nebius.mk8s.Cluster`, `Nebius.mk8s.NodeGroup`, `Nebius.billing.PricingPolicy`, plus
   the read-only `Nebius.capacity.action.*` discovery actions and two new brands
   (`Nebius.billing.PricingPolicyId`, `Nebius.capacity.CapacityBlockGroupId`).
-* **Spot pricing is expressible** via `pricing` on `compute.Instance`, `mk8s.NodeGroup.template`, `ai.Job`
+- **Spot pricing is expressible** via `pricing` on `compute.Instance`, `mk8s.NodeGroup.template`, `ai.Job`
   and `ai.Endpoint` — `{ onDemand: true }`, `{ followsSpotPrice: true }` or
   `{ spotPricingPolicy: { id } }`. The API's requirement that the arm match `preemptible` is a plan-time
   error. Two measured caveats: on `compute.Instance` a pricing change is only accepted on a **stopped**
   instance, and on `mk8s.NodeGroup` it is treated as a template change (expect a node roll-out).
-* **`Nebius.billing.PricingPolicy` has two sharp edges from the API:** its service **discards**
+- **`Nebius.billing.PricingPolicy` has two sharp edges from the API:** its service **discards**
   `metadata.labels` (accepted and ignored; every read reports `Unowned`), and its `Update` RPC rejects every
   documented request shape, so any spec change is planned as a **replace**.
-* **`mk8s.NodeGroup` attributes** gained the effective `maxUnavailable` / `maxSurge` /
+- **`mk8s.NodeGroup` attributes** gained the effective `maxUnavailable` / `maxSurge` /
   `drainTimeoutSeconds` (read from `status`, where the platform reports what it is actually using).
 
 ### Upgrading from 0.8.x
 
 **0.9.0** changed four things a consumer can feel; the rest of that release is behaviour fixes.
 
-* **Seven attributes are strings, and are now typed as such.** In `0.8.x`
+- **Seven attributes are strings, and are now typed as such.** In `0.8.x`
   `FilesystemAttributes.{sizeGibibytes,blockSizeBytes}`, `DiskAttributes.{sizeGibibytes,blockSizeBytes}`,
   `DiskSnapshotAttributes.{contentSizeBytes,storageSizeBytes}` and
   `FederationCertificateAttributes.keySize` were declared `number` while the runtime value was already
   `"4096"`. Wrap them in `Number(...)` (or `BigInt(...)`) where you do arithmetic — code written against
   the old type now fails to compile instead of concatenating silently.
-* **`Nebius.storage.v1.Transfer` requires `source.nebius.accessKey`.** The API rejects a Nebius source
+- **`Nebius.storage.v1.Transfer` requires `source.nebius.accessKey`.** The API rejects a Nebius source
   without it (`3 INVALID_ARGUMENT`, for every stop condition), so a missing key is now a plan-time error
   instead of an apply-time one.
-* **`Nebius.iam.v1.AuthPublicKey.data` must be an RSA-4096 public key** — the only shape the service
+- **`Nebius.iam.v1.AuthPublicKey.data` must be an RSA-4096 public key** — the only shape the service
   accepts (RSA-2048/3072 and every non-RSA key are refused).
-* **`Nebius.vpc.v1.SecurityRule` requires the match block its `direction` selects** (`ingress` for
+- **`Nebius.vpc.v1.SecurityRule` requires the match block its `direction` selects** (`ingress` for
   INGRESS, `egress` for EGRESS) — the API derives the direction from that block, so a rule declaring a
   direction without it could not express it at all.
 
@@ -248,24 +248,28 @@ The package uses Bun-native APIs and requires **Bun >= 1.2.0** or **Node >= 22.0
 
 All resources that are currently implemented.
 
+Per-prop detail — required vs optional, the type of each prop, and every **plan-time validation** — is in
+[**RESOURCES.md**](RESOURCES.md), generated from the schemas (each heading below links to its entry there).
+The prose here is the narrative: what the resource is for, and what has been measured against real infra.
+
 All resources use the `NEBIUS_PROJECT_ID` environment variable as default `parentId` where appropriate.
 
 ### Compute
 
 Deploy GPU-accelerated instances, disks, and managed filesystems.
 
-- **`Nebius.compute.Instance`** — GPU VMs with H200 support, preemptible instances, custom boot disks and network interfaces
-- **`Nebius.compute.Disk`** — Network SSD and HDD disks, bootable from images or snapshots
-- **`Nebius.compute.Image`** — Dynamic image lookup by family (`ubuntu-22-04-lts`, etc.)
-- **`Nebius.compute.Filesystem`** — Managed NFS filesystems
-- **`Nebius.compute.DiskSnapshot`** — Point-in-time disk snapshots
-- **`Nebius.compute.GpuCluster`** — InfiniBand GPU clusters. The spec is a single immutable field (`infinibandFabric`), so any change replaces the cluster; `instances` is read-only (membership is declared on the Instance via `gpuCluster.id`), and deleting a cluster that still has members fails with `GpuClusterNotEmpty` naming them. **Verified against real infra (2026-09-18)**: create 1.6 s, delete 3.2 s, no leak, no GPU quota, no cost
-- **`Nebius.compute.NVLInstanceGroup`** — NVLink instance groups (`GB200`/`GB300` racks). `type` is immutable (a change replaces); `size` is the maximum member count and adjusts in place; `instances` is read-only (membership is declared on the Instance via `nvlInstanceGroupId`), and deleting a non-empty group fails with `NVLInstanceGroupNotEmpty`
-- **`Nebius.mk8s.NodeGroup`** — Worker node groups (the *CPU* surface: sizing, `strategy`, `autoRepair` and the whole `template` — OS, hardware, boot disk, network interfaces, service account, cloud-init). The parent is the **cluster**, not the project, so `parentId` is required and there is no project fallback; deleting the cluster cascades to its node groups. **Exactly one** of `fixedNodeCount` / `autoscaling` must be set. `strategy.maxUnavailable`/`maxSurge` take *either* `{ count }` or `{ percent }` (an integer 1–100); `strategy.drainTimeoutSeconds` and `autoRepair.conditions[].timeoutSeconds` are whole seconds (a `Duration` reshape — `0` is rejected, because a zero duration encodes as an absent field and would silently never apply). Read the **effective** strategy from `status`, not from your props: with `strategy` omitted the API answers its own defaults, which are migrating during Q3 2026. `template.os` and `resources.preset` are **not** validated against a list — which images a group may use depends on the cluster's Kubernetes version *and* the platform, so `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix({ clusterKubernetesVersion, platform })` is the authority. The rest of the template: `template.metadata.labels` are **Kubernetes node labels** while `template.instanceMetadata.labels` are the **compute instances'** own metadata (two different maps — a label in the wrong one is invisible from the other side), and like `template.taints` and `template.cloudInitUserData` neither is **rolled out** to nodes that already exist, so a change needs a maintenance window; taints take `NO_EXECUTE`/`NO_SCHEDULE`/`PREFER_NO_SCHEDULE` with an optional (even empty) value; `template.filesystems[]` attaches an **existing** compute filesystem (`{ attachMode: 'READ_ONLY' | 'READ_WRITE', mountTag, existingFilesystem: { id } }`, mount tag ≤ 37 chars); `template.preemptible` and the two `template.localDisks` flags can only be turned **on** (`false` is a plan-time error); `template.maxPods` is optional (omit it and the platform's documented `110` applies server-side — measured live 2026-09-23, the default is **not** written back into `spec`, which keeps `0`) but cannot be `0`; and `template.reservationPolicy` takes `policy: 'FORBID' | 'STRICT'` (omit `policy` for AUTO — the proto's zero value cannot be sent as a change) with `reservationIds` from `Nebius.capacity.action.ListCapacityBlockGroups`. GPU placement: `template.gpuSettings` takes a `driversPreset` (the catalogue is the compatibility matrix — the same live query as `os`) and/or `dra: true` (Dynamic Resource Allocation; omit `driversPreset` for a driverless/DRA image), `template.gpuCluster.id` joins the nodes to a Compute GPU cluster's RDMA fabric, and `template.nvlink.nvlInstanceGroupId` (`GB200`/`GB300` racks) requires **fixed sizing** and **non-preemptible** nodes — the Nebius solutions library's preconditions, enforced at plan time because they are the two that are checkable locally (a driverfull image and no MIG/NUMA are documented at the field instead). An `nvlink` change is a roll-out, **not** a replace: measured 2026-09-23, the API accepts the field on an update and resolves the referenced group itself. `template.bootDisk.sizeGibibytes` is required (the platform's 64 GiB floor is enforced; a smaller disk hangs provisioning before cloud-init) and `template.networkInterfaces[].publicIpAddress` can only be turned **on** (`false` is a plan-time error). Omit `version` to inherit the cluster's resolved one. `template.cloudInitUserData` is **not** validated for an SSH key (the API accepts a key-less payload; the solutions library is what enforces one) and a change to it does **not** rewrite existing nodes — recreate nodes in a maintenance window. **Verified against real infra (2026-09-23)**: create → `RUNNING` with `nodeCount: 1`/`readyNodeCount: 1`, a forced reconcile wrote nothing (`resourceVersion` stayed `1`), node labels / instance-metadata labels / a taint round-tripped (the effect as its wire enum), a `fixedNodeCount` ⇄ `autoscaling` swap converged in place with the old side cleared, and the node group's `status.version` is the node image's own format `v1.36.3-nebius-node.75`. `template.filesystems`, `template.localDisks`, `template.reservationPolicy` and the GPU/NVLink arms are **not** live-verified (needs a mounted filesystem, a `GB200`/`GB300`-class platform, a capacity block group, and that same entitlement respectively — the NVLink arm has a gated test that documents what it would need)
-- **`Nebius.mk8s.Cluster`** — Managed Kubernetes control planes. `subnetId` and `serviceCidrs` are create-only (a change plans a replace, because an in-place subnet change is answered with an opaque `13 INTERNAL` and does nothing); `version`, `etcdClusterSize`, `publicEndpoint`, `auditLogs` and `karpenter` update in place. Omit `version` unless you need to pin it — the backend default is what the solutions library recommends, and `status` reports what it resolved (`requestedVersion` is what you asked for, `version` is what is running). `auditLogs`/`karpenter` can only be turned **on** (`false` is a plan-time error: the proto models them as empty messages and the API has no `FieldMask`, so "absent" means "leave unchanged", never "disable"). Deleting a cluster **cascades** to its node groups, their instances and their disks. **Verified against real infra (2026-09-23)**: create → `RUNNING` in ~3 min with `etcdClusterSize: 1`, and a forced reconcile wrote nothing (`resourceVersion` stayed `1`), so no drift loop
+- **[`Nebius.compute.Instance`](RESOURCES.md#nebiuscomputeinstance)** — GPU VMs with H200 support, preemptible instances, custom boot disks and network interfaces
+- **[`Nebius.compute.Disk`](RESOURCES.md#nebiuscomputedisk)** — Network SSD and HDD disks, bootable from images or snapshots
+- **[`Nebius.compute.Image`](RESOURCES.md#nebiuscomputeimage)** — Dynamic image lookup by family (`ubuntu-22-04-lts`, etc.)
+- **[`Nebius.compute.Filesystem`](RESOURCES.md#nebiuscomputefilesystem)** — Managed NFS filesystems
+- **[`Nebius.compute.DiskSnapshot`](RESOURCES.md#nebiuscomputedisksnapshot)** — Point-in-time disk snapshots
+- **[`Nebius.compute.GpuCluster`](RESOURCES.md#nebiuscomputegpucluster)** — InfiniBand GPU clusters. The spec is a single immutable field (`infinibandFabric`), so any change replaces the cluster; `instances` is read-only (membership is declared on the Instance via `gpuCluster.id`), and deleting a cluster that still has members fails with `GpuClusterNotEmpty` naming them. **Verified against real infra (2026-09-18)**: create 1.6 s, delete 3.2 s, no leak, no GPU quota, no cost
+- **[`Nebius.compute.NVLInstanceGroup`](RESOURCES.md#nebiuscomputenvlinstancegroup)** — NVLink instance groups (`GB200`/`GB300` racks). `type` is immutable (a change replaces); `size` is the maximum member count and adjusts in place; `instances` is read-only (membership is declared on the Instance via `nvlInstanceGroupId`), and deleting a non-empty group fails with `NVLInstanceGroupNotEmpty`
+- **[`Nebius.mk8s.NodeGroup`](RESOURCES.md#nebiusmk8snodegroup)** — Worker node groups (the _CPU_ surface: sizing, `strategy`, `autoRepair` and the whole `template` — OS, hardware, boot disk, network interfaces, service account, cloud-init). The parent is the **cluster**, not the project, so `parentId` is required and there is no project fallback; deleting the cluster cascades to its node groups. **Exactly one** of `fixedNodeCount` / `autoscaling` must be set. `strategy.maxUnavailable`/`maxSurge` take _either_ `{ count }` or `{ percent }` (an integer 1–100); `strategy.drainTimeoutSeconds` and `autoRepair.conditions[].timeoutSeconds` are whole seconds (a `Duration` reshape — `0` is rejected, because a zero duration encodes as an absent field and would silently never apply). Read the **effective** strategy from `status`, not from your props: with `strategy` omitted the API answers its own defaults, which are migrating during Q3 2026. `template.os` and `resources.preset` are **not** validated against a list — which images a group may use depends on the cluster's Kubernetes version _and_ the platform, so `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix({ clusterKubernetesVersion, platform })` is the authority. The rest of the template: `template.metadata.labels` are **Kubernetes node labels** while `template.instanceMetadata.labels` are the **compute instances'** own metadata (two different maps — a label in the wrong one is invisible from the other side), and like `template.taints` and `template.cloudInitUserData` neither is **rolled out** to nodes that already exist, so a change needs a maintenance window; taints take `NO_EXECUTE`/`NO_SCHEDULE`/`PREFER_NO_SCHEDULE` with an optional (even empty) value; `template.filesystems[]` attaches an **existing** compute filesystem (`{ attachMode: 'READ_ONLY' | 'READ_WRITE', mountTag, existingFilesystem: { id } }`, mount tag ≤ 37 chars); `template.preemptible` and the two `template.localDisks` flags can only be turned **on** (`false` is a plan-time error); `template.maxPods` is optional (omit it and the platform's documented `110` applies server-side — measured live 2026-09-23, the default is **not** written back into `spec`, which keeps `0`) but cannot be `0`; and `template.reservationPolicy` takes `policy: 'FORBID' | 'STRICT'` (omit `policy` for AUTO — the proto's zero value cannot be sent as a change) with `reservationIds` from `Nebius.capacity.action.ListCapacityBlockGroups`. GPU placement: `template.gpuSettings` takes a `driversPreset` (the catalogue is the compatibility matrix — the same live query as `os`) and/or `dra: true` (Dynamic Resource Allocation; omit `driversPreset` for a driverless/DRA image), `template.gpuCluster.id` joins the nodes to a Compute GPU cluster's RDMA fabric, and `template.nvlink.nvlInstanceGroupId` (`GB200`/`GB300` racks) requires **fixed sizing** and **non-preemptible** nodes — the Nebius solutions library's preconditions, enforced at plan time because they are the two that are checkable locally (a driverfull image and no MIG/NUMA are documented at the field instead). An `nvlink` change is a roll-out, **not** a replace: measured 2026-09-23, the API accepts the field on an update and resolves the referenced group itself. `template.bootDisk.sizeGibibytes` is required (the platform's 64 GiB floor is enforced; a smaller disk hangs provisioning before cloud-init) and `template.networkInterfaces[].publicIpAddress` can only be turned **on** (`false` is a plan-time error). Omit `version` to inherit the cluster's resolved one. `template.cloudInitUserData` is **not** validated for an SSH key (the API accepts a key-less payload; the solutions library is what enforces one) and a change to it does **not** rewrite existing nodes — recreate nodes in a maintenance window. **Verified against real infra (2026-09-23)**: create → `RUNNING` with `nodeCount: 1`/`readyNodeCount: 1`, a forced reconcile wrote nothing (`resourceVersion` stayed `1`), node labels / instance-metadata labels / a taint round-tripped (the effect as its wire enum), a `fixedNodeCount` ⇄ `autoscaling` swap converged in place with the old side cleared, and the node group's `status.version` is the node image's own format `v1.36.3-nebius-node.75`. `template.filesystems`, `template.localDisks`, `template.reservationPolicy` and the GPU/NVLink arms are **not** live-verified (needs a mounted filesystem, a `GB200`/`GB300`-class platform, a capacity block group, and that same entitlement respectively — the NVLink arm has a gated test that documents what it would need)
+- **[`Nebius.mk8s.Cluster`](RESOURCES.md#nebiusmk8scluster)** — Managed Kubernetes control planes. `subnetId` and `serviceCidrs` are create-only (a change plans a replace, because an in-place subnet change is answered with an opaque `13 INTERNAL` and does nothing); `version`, `etcdClusterSize`, `publicEndpoint`, `auditLogs` and `karpenter` update in place. Omit `version` unless you need to pin it — the backend default is what the solutions library recommends, and `status` reports what it resolved (`requestedVersion` is what you asked for, `version` is what is running). `auditLogs`/`karpenter` can only be turned **on** (`false` is a plan-time error: the proto models them as empty messages and the API has no `FieldMask`, so "absent" means "leave unchanged", never "disable"). Deleting a cluster **cascades** to its node groups, their instances and their disks. **Verified against real infra (2026-09-23)**: create → `RUNNING` in ~3 min with `etcdClusterSize: 1`, and a forced reconcile wrote nothing (`resourceVersion` stayed `1`), so no drift loop
 
 > **Fabric ids come from the capacity advisor.** `infinibandFabric` is a
-> *physical* InfiniBand fabric in the target region; read the available ones with
+> _physical_ InfiniBand fabric in the target region; read the available ones with
 > `Nebius.capacity.action.ListResourceAdvice({ region })` (see Discovery Actions
 > below; `nebius capacity resource-advice list` shows the same data). **Fabrics are
 > Nebius-provided infrastructure, not resources you create** — there is no Fabric
@@ -285,62 +289,66 @@ Deploy GPU-accelerated instances, disks, and managed filesystems.
 Run containerized AI workloads on Nebius AI Cloud. Neither resource supports
 in-place updates — any spec change (or name change) replaces the resource.
 
-- **`Nebius.ai.Job`** — Run-to-completion container workloads (one run per resource; replace to re-run). Supports private registries, MysteryBox secret injection, injected config files, S3 volume mounts, and SSH access
-- **`Nebius.ai.Endpoint`** — Long-running inference endpoints with public/private addresses, optional auth token (inline or MysteryBox secret), and start/stop lifecycle
+- **[`Nebius.ai.Job`](RESOURCES.md#nebiusaijob)** — Run-to-completion container workloads (one run per resource; replace to re-run). Supports private registries, MysteryBox secret injection, injected config files, S3 volume mounts, and SSH access
+- **[`Nebius.ai.Endpoint`](RESOURCES.md#nebiusaiendpoint)** — Long-running inference endpoints with public/private addresses, optional auth token (inline or MysteryBox secret), and start/stop lifecycle
 
 ### Networking (VPC)
 
 Build complete software-defined network topologies.
 
-- **`Nebius.vpc.Network`** — Software-defined networks with auto-generated default route tables
-- **`Nebius.vpc.Subnet`** — Subnets with zone assignment and CIDR blocks
-- **`Nebius.vpc.SecurityGroup`** — Firewall groups
-- **`Nebius.vpc.SecurityRule`** — Stateful or stateless ingress/egress rules with protocol and port ranges
-- **`Nebius.vpc.RouteTable`** — Custom route tables
-- **`Nebius.vpc.Route`** — Static routes with CIDR destinations and next-hop gateways
-- **`Nebius.vpc.Pool`** — IP address pools (IPv4, public or private)
-- **`Nebius.vpc.Allocation`** — Individual IP allocations from a pool
+- **[`Nebius.vpc.Network`](RESOURCES.md#nebiusvpcnetwork)** — Software-defined networks with auto-generated default route tables
+- **[`Nebius.vpc.Subnet`](RESOURCES.md#nebiusvpcsubnet)** — Subnets with zone assignment and CIDR blocks
+- **[`Nebius.vpc.SecurityGroup`](RESOURCES.md#nebiusvpcsecuritygroup)** — Firewall groups
+- **[`Nebius.vpc.SecurityRule`](RESOURCES.md#nebiusvpcsecurityrule)** — Stateful or stateless ingress/egress rules with protocol and port ranges
+- **[`Nebius.vpc.RouteTable`](RESOURCES.md#nebiusvpcroutetable)** — Custom route tables
+- **[`Nebius.vpc.Route`](RESOURCES.md#nebiusvpcroute)** — Static routes with CIDR destinations and next-hop gateways
+- **[`Nebius.vpc.Pool`](RESOURCES.md#nebiusvpcpool)** — IP address pools (IPv4, public or private)
+- **[`Nebius.vpc.Allocation`](RESOURCES.md#nebiusvpcallocation)** — Individual IP allocations from a pool
 
 ### IAM & Access
 
 Manage projects, service accounts, access keys, federation, groups, and permissions.
 
-- **`Nebius.iam.Project`** — Tenant projects
-- **`Nebius.iam.ServiceAccount`** — Machine identities for programmatic access
-- **`Nebius.iam.StaticKey`** — Long-lived static credentials (token only at creation time)
-- **`Nebius.iam.AccessKey`** — S3-compatible access keys (v2 API with MysteryBox delivery)
-- **`Nebius.iam.Federation`** — SAML/OIDC identity federation
-- **`Nebius.iam.FederationCertificate`** — X.509 certificates for federations
-- **`Nebius.iam.Group`** — Access groups
-- **`Nebius.iam.GroupMembership`** — Group member assignments. There is no `Update` RPC, so `revokeAfterHours` is create-only: changing it replaces the membership. No `name` prop — the API rejects `metadata.name` here
-- **`Nebius.iam.AccessPermit`** — Resource-level role grants (group-scoped)
-- **`Nebius.iam.Invitation`** — User invitations with resend support
-- **`Nebius.iam.AuthPublicKey`** — SSH public keys for authentication
-- **`Nebius.iam.FederatedCredentials`** — Federated credential bindings
+- **[`Nebius.iam.Project`](RESOURCES.md#nebiusiamproject)** — Tenant projects
+- **[`Nebius.iam.ServiceAccount`](RESOURCES.md#nebiusiamserviceaccount)** — Machine identities for programmatic access
+- **[`Nebius.iam.StaticKey`](RESOURCES.md#nebiusiamstatickey)** — Long-lived static credentials (token only at creation time)
+- **[`Nebius.iam.AccessKey`](RESOURCES.md#nebiusiamaccesskey)** — S3-compatible access keys (v2 API with MysteryBox delivery)
+- **[`Nebius.iam.Federation`](RESOURCES.md#nebiusiamfederation)** — SAML/OIDC identity federation
+- **[`Nebius.iam.FederationCertificate`](RESOURCES.md#nebiusiamfederationcertificate)** — X.509 certificates for federations
+- **[`Nebius.iam.Group`](RESOURCES.md#nebiusiamgroup)** — Access groups
+- **[`Nebius.iam.GroupMembership`](RESOURCES.md#nebiusiamgroupmembership)** — Group member assignments. There is no `Update` RPC, so `revokeAfterHours` is create-only: changing it replaces the membership. No `name` prop — the API rejects `metadata.name` here
+- **[`Nebius.iam.AccessPermit`](RESOURCES.md#nebiusiamaccesspermit)** — Resource-level role grants (group-scoped)
+- **[`Nebius.iam.Invitation`](RESOURCES.md#nebiusiaminvitation)** — User invitations with resend support
+- **[`Nebius.iam.AuthPublicKey`](RESOURCES.md#nebiusiamauthpublickey)** — SSH public keys for authentication
+- **[`Nebius.iam.FederatedCredentials`](RESOURCES.md#nebiusiamfederatedcredentials)** — Federated credential bindings
 
 ### Storage
 
-- **`Nebius.storage.Bucket`** — S3-compatible object storage buckets
-- **`Nebius.storage.Transfer`** — Data transfer operations with iteration history
+- **[`Nebius.storage.Bucket`](RESOURCES.md#nebiusstoragebucket)** — S3-compatible object storage buckets
+- **[`Nebius.storage.Transfer`](RESOURCES.md#nebiusstoragetransfer)** — Data transfer operations with iteration history
 
 ### DNS
 
-- **`Nebius.dns.Zone`** — VPC-scoped DNS zones with custom domains
-- **`Nebius.dns.Record`** — A, AAAA, CNAME, TXT, MX, and other record types
+- **[`Nebius.dns.Zone`](RESOURCES.md#nebiusdnszone)** — VPC-scoped DNS zones with custom domains
+- **[`Nebius.dns.Record`](RESOURCES.md#nebiusdnsrecord)** — A, AAAA, CNAME, TXT, MX, and other record types
+
+### Billing
+
+- **[`Nebius.billing.PricingPolicy`](RESOURCES.md#nebiusbillingpricingpolicy)** — a project-scoped auction bid (platform + max price per GPU hour) for **preemptible** GPU VMs, and the thing the `pricing` prop on `compute.Instance` / `mk8s.NodeGroup.template` / `ai.Job` / `ai.Endpoint` names through `spotPricingPolicy.id`. It provisions nothing, so it is the cheapest resource here to create and destroy. Two API sharp edges: the service **discards** `metadata.labels` (so `labels` is accepted and ignored, and every read reports `Unowned`), and its `Update` RPC rejects every documented request shape — so a change to `platform` or `maxPrice` is planned as a **replace**. **Verified against real infra (2026-09-24)**: create → `STATE_ACTIVE` with `SCHEDULING_STATE_ALLOWED`, a spec change via a `pricing`-only update accepted, delete clean
 
 ### KMS
 
-- **`Nebius.kms.SymmetricKey`** — AES-256 encryption keys
-- **`Nebius.kms.AsymmetricKey`** — ECDSA and RSA signing/encryption keys
+- **[`Nebius.kms.SymmetricKey`](RESOURCES.md#nebiuskmssymmetrickey)** — AES-256 encryption keys
+- **[`Nebius.kms.AsymmetricKey`](RESOURCES.md#nebiuskmsasymmetrickey)** — ECDSA and RSA signing/encryption keys
 
 ### Secrets (MysteryBox)
 
-- **`Nebius.mysterybox.Secret`** — Versioned secret storage with KMS encryption and inline payloads
-- **`Nebius.mysterybox.SecretVersion`** — Secret versions with primary-version promotion. The service has no `Update` RPC, so `description`, `payload` and `setPrimary` are immutable: a change replaces the version, delete-first (the physical name is `sv-<logicalId>` on every generation). `name` is the version's immutable `metadata.name` and defaults to `sv-<logicalId>`
+- **[`Nebius.mysterybox.Secret`](RESOURCES.md#nebiusmysteryboxsecret)** — Versioned secret storage with KMS encryption and inline payloads
+- **[`Nebius.mysterybox.SecretVersion`](RESOURCES.md#nebiusmysteryboxsecretversion)** — Secret versions with primary-version promotion. The service has no `Update` RPC, so `description`, `payload` and `setPrimary` are immutable: a change replaces the version, delete-first (the physical name is `sv-<logicalId>` on every generation). `name` is the version's immutable `metadata.name` and defaults to `sv-<logicalId>`
 
 ### Quotas
 
-- **`Nebius.quotas.QuotaAllowance`** — Project quota management by region
+- **[`Nebius.quotas.QuotaAllowance`](RESOURCES.md#nebiusquotasquotaallowance)** — Project quota management by region
 
 ### Discovery Actions
 
@@ -357,7 +365,7 @@ Manage projects, service accounts, access keys, federation, groups, and permissi
 - `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix` — `{ clusterKubernetesVersion, platform }` → the `os` + `driversPreset` pairs that combination supports. The authority behind `NodeGroup.template.os`; a live query, never a local constant
 
 ```ts
-const rows = yield* Nebius.capacity.action.ListResourceAdvice({ region: 'eu-north1', platform: 'gpu-h200-sxm' })
+const rows = yield * Nebius.capacity.action.ListResourceAdvice({ region: 'eu-north1', platform: 'gpu-h200-sxm' })
 // Not every row is fabric-scoped — filter out the empty ones.
 const fabrics = [...new Set(rows.map((row) => row.fabric).filter((fabric) => fabric !== ''))]
 const room = rows.find((row) => row.fabric === fabrics[0])?.onDemand?.available ?? 0
@@ -365,11 +373,11 @@ const room = rows.find((row) => row.fabric === fabrics[0])?.onDemand?.available 
 
 - `Nebius.capacity.action.ListCapacityBlockGroups` / `GetCapacityBlockGroup` / `GetCapacityBlockGroupByResourceAffinity` — the **reserved-capacity** family, and the source of the `CapacityBlockGroupId`s that `Instance.reservationPolicy.reservationIds` takes (in priority order). `GetCapacityBlockGroupByResourceAffinity({ region, fabric, platform })` is the lookup that turns an advice row above into a reservation. Read-only: a block group is allocated by the platform (`CapacityBlockGroupSpec` is an empty message and the service exposes no create/update/delete). ⚠️ **This tenant holds none**, so an empty list is expected here and the live test asserts that rather than a row. `GetCapacityBlockGroup`'s miss names the id (`Capacity Block Group (id=…) not found`); the affinity form names the whole `(region, fabric, platform)` it searched
 - `Nebius.capacity.action.ListCapacityIntervals` — the schedule behind a block group (which windows reserve how much). Parent is a **Capacity Block Group**, not a tenant: the API rejects a tenant with `parent_id: Value error, Expected capacityblockgroup type but got tenant`
-- `Nebius.capacity.action.ListCapacityAllowances` — the per-project quota limit on a block group (`limit: undefined` means **unlimited**, which is not the same as `0`). ⚠️ The API's `List` also returns *non-created* rows, so a row does **not** mean your stack created it — compare against the default instead of treating presence as ownership
+- `Nebius.capacity.action.ListCapacityAllowances` — the per-project quota limit on a block group (`limit: undefined` means **unlimited**, which is not the same as `0`). ⚠️ The API's `List` also returns _non-created_ rows, so a row does **not** mean your stack created it — compare against the default instead of treating presence as ownership
 
 ## Bindings
 
-**Bindings** are typed runtime clients you attach to **your own compute host** — a **Nebius Instance by default**, or a Cloudflare Worker (`Cloudflare.Worker` is the compatibility wrapper). No Nebius Function host required. One declaration derives three things at deploy time:
+**Bindings** are typed runtime clients you attach to **your own compute host** — a **Nebius Instance by default**, or a Cloudflare Worker (`Cloudflare.Worker` is the compatibility wrapper). One declaration derives three things at deploy time:
 
 1. **Credential minting + least-privilege grant** on Nebius — a per-host service account holding an S3 access key, placed in its own `<host>BindingGroup` (not the tenant's `editors` group), plus one **bucket-scoped** `iam.AccessPermit` per capability: `storage.viewer` for reads, `storage.editor` for writes. No project-wide role is granted,
 2. **env injection** into the host's runtime env — `plain_text`/`secret_text` bindings on a Worker, the shipped `EnvironmentFile` on an Instance,
@@ -381,26 +389,27 @@ const room = rows.find((row) => row.fabric === fabrics[0])?.onDemand?.available 
 import * as Effect from 'effect/Effect'
 import * as Nebius from '@fllstck/nebius-alchemy'
 
-const bucket = yield* Nebius.storage.Bucket('Assets')
+const bucket = yield * Nebius.storage.Bucket('Assets')
 
-yield* Nebius.compute.Instance(
-  'Api',
-  {
-    // The program bundled onto the VM (see below).
-    main: new URL('./program.ts', import.meta.url).href,
-    /* … serviceAccountId, resources, bootDisk, networkInterfaces … */
-  },
-  Effect.gen(function* () {
-    // DEPLOY TIME. The VM never runs this init Effect: it mints the host
-    // identity, grants bucket access, and injects `NEBIUS_S3_*` into the
-    // instance's systemd `EnvironmentFile`.
-    yield* Nebius.storage.GetObject(bucket).pipe(Effect.provide(Nebius.storage.GetObjectHttp))
-    yield* Nebius.storage.PutObject(bucket).pipe(Effect.provide(Nebius.storage.PutObjectHttp))
-  }),
-)
+yield *
+  Nebius.compute.Instance(
+    'Api',
+    {
+      // The program bundled onto the VM (see below).
+      main: new URL('./program.ts', import.meta.url).href,
+      /* … serviceAccountId, resources, bootDisk, networkInterfaces … */
+    },
+    Effect.gen(function* () {
+      // DEPLOY TIME. The VM never runs this init Effect: it mints the host
+      // identity, grants bucket access, and injects `NEBIUS_S3_*` into the
+      // instance's systemd `EnvironmentFile`.
+      yield* Nebius.storage.GetObject(bucket).pipe(Effect.provide(Nebius.storage.GetObjectHttp))
+      yield* Nebius.storage.PutObject(bucket).pipe(Effect.provide(Nebius.storage.PutObjectHttp))
+    }),
+  )
 ```
 
-`program.ts` is what actually runs on the VM. It *consumes* the binding — the
+`program.ts` is what actually runs on the VM. It _consumes_ the binding — the
 credentials are already in `process.env`, so it passes a plain `ref` handle and
 the same `*Http` layer:
 
@@ -468,7 +477,7 @@ bindings — there is no identity minting or IAM grant. Env derivation is
 deliberately **lenient**: an endpoint that is not RUNNING yet yields an empty
 `NEBIUS_ENDPOINT_URL` (a fail-fast here would fire during `alchemy plan`
 against persisted output and block the deploy), so the provider waits for
-readiness and the first *call* with an empty URL fails with
+readiness and the first _call_ with an empty URL fails with
 `EndpointNotRunning`. See [AI_BINDINGS.md](AI_BINDINGS.md) for the design
 and [`examples/ai.bindings.ts`](examples/ai.bindings.ts) for a full example.
 
@@ -478,15 +487,15 @@ Injected into the host's runtime env at deploy time (names are stable). Secrets
 are Cloudflare `secret_text` bindings on a Worker, and plaintext in the
 `EnvironmentFile` on an Instance host:
 
-| Env var                      | Meaning                                                              |
-| ---------------------------- | -------------------------------------------------------------------- |
-| `NEBIUS_S3_ENDPOINT`         | `https://storage.<region>.nebius.cloud`                              |
-| `NEBIUS_REGION`              | Region the access key was minted in                                  |
-| `NEBIUS_ACCESS_KEY_ID`       | AWS-style access key id (plain text)                                 |
-| `NEBIUS_SECRET_ACCESS_KEY`   | Secret access key (`secret_text` on a Worker)                        |
-| `NEBIUS_BUCKET_NAME`         | The bound bucket's name                                              |
-| `NEBIUS_ENDPOINT_URL`        | The endpoint's first public URL (AI bindings)                        |
-| `NEBIUS_ENDPOINT_AUTH_TOKEN` | The endpoint's bearer token (`''` when auth disabled)                |
+| Env var                      | Meaning                                               |
+| ---------------------------- | ----------------------------------------------------- |
+| `NEBIUS_S3_ENDPOINT`         | `https://storage.<region>.nebius.cloud`               |
+| `NEBIUS_REGION`              | Region the access key was minted in                   |
+| `NEBIUS_ACCESS_KEY_ID`       | AWS-style access key id (plain text)                  |
+| `NEBIUS_SECRET_ACCESS_KEY`   | Secret access key (`secret_text` on a Worker)         |
+| `NEBIUS_BUCKET_NAME`         | The bound bucket's name                               |
+| `NEBIUS_ENDPOINT_URL`        | The endpoint's first public URL (AI bindings)         |
+| `NEBIUS_ENDPOINT_AUTH_TOKEN` | The endpoint's bearer token (`''` when auth disabled) |
 
 See [`examples/ai-chat-instance.ts`](examples/ai-chat-instance.ts) for the
 instance-host pattern end to end, and
@@ -507,7 +516,7 @@ for the Worker-host one.
 > **Worker support is the compatibility wrapper.** The Nebius Instance is the
 > default host, and the Worker path is kept deliberately (removing it would be a
 > breaking change). It is regression-gated by the suite, which exercises the
-> Cloudflare `{ bindings: [...] }` payload against a *mock* host — there is no
+> Cloudflare `{ bindings: [...] }` payload against a _mock_ host — there is no
 > real-Cloudflare deploy in CI, so this is the one arm with mock-level coverage only.
 
 ## Examples

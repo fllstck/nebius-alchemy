@@ -33,7 +33,8 @@
   "files": [
     "modules/",
     "schemas/",
-    "README.md"
+    "README.md",
+    "RESOURCES.md"
   ],
   "scripts": {
     "audit": "bun audit",
@@ -47,7 +48,8 @@
     "typecheck": "bun run typecheck:ts && bun run typecheck:effect",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s",
     "mutation": "stryker run",
-    "version": "conventional-changelog -p angular -i CHANGELOG.md -s && git add CHANGELOG.md"
+    "version": "conventional-changelog -p angular -i CHANGELOG.md -s && git add CHANGELOG.md",
+    "docs:resources": "bun tools/generate-resources-doc.ts"
   },
   "prettier": {
     "printWidth": 120,
