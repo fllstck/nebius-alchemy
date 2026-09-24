@@ -222,6 +222,20 @@ contained. The three shapes seen so far, each with its own treatment (all found 
   *normalizes* rather than fills is the same trap: `iam/v1 AuthPublicKey` echoes the PEM one byte
   longer than it was sent (799 → 800), so its drift list compares `description` and a pinned
   `expiresAt` instead of the whole spec.
+- **A removal is not "clear it" either — for `repeated` fields *and* for plain scalars.** Both are the
+  same proto3 facts as above seen from the other side: a repeated field has no presence (so `[]`
+  encodes as absent) and a scalar's default *is* absent, and absent means "leave unchanged" wherever
+  this family has no `FieldMask`. So a list-valued prop must be compared **element-wise, with its own
+  length as the pin** (`compute/v1 Instance.secondaryDisks`/`filesystems` do this through
+  `pinnedListDrifted`: an **empty** desired list pins nothing, because `protoPinnedFields([])` is `{}` —
+  an object, not an array, so the empty case has to be handled before the comparison rather than
+  inside it), and an optional scalar must be compared **on the pin side**
+  (`desired.hostname !== ''`, not `live.hostname !== desired.hostname`). Measured live 2026-09-24
+  (`spikes/instance-drift-removal-probe.ts`, `compute/v1 Instance`): an update whose spec omitted an
+  attached managed data disk left it attached, and one that omitted `hostname` left the live value in
+  place — each with `resourceVersion` still moving, i.e. a write that cannot converge. What the
+  removal *should* be is then a classification: nothing to write (declare it at the prop, as
+  `Instance.secondaryDisks` does), or a plan-time replace if the field is genuinely immutable.
 
 **The live-echo audit is the oracle for this class** — `tests/resources/live-echo.integration.test.ts`
 with `tests/helpers/live-echo.ts` (`SLOW_TESTS=1`, gated; 8 families / 20 resources, ~2 min): one

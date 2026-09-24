@@ -265,43 +265,100 @@ const pricingDrifted = (
     !ResourceUtils.specDeepEqual(live?.spotPricingPolicy, { id: pricing.spotPricingPolicy.id }))
 
 /**
- * Which spec fields an in-place update converges.
+ * A repeated field's drift: element-wise, with the **pinned** length, because proto3 `repeated` has no
+ * presence — `[]` and "absent" are the same bytes, so an empty desired list pins nothing and a live list
+ * is not drift (the API cannot be asked to clear it either way). A non-empty one requires the same length:
+ * a list's identity is its order and count, so adding or dropping a data disk IS a real change rather
+ * than an unpinned field.
+ */
+const pinnedListDrifted = (live: unknown, desired: unknown): boolean =>
+  Array.isArray(desired) && desired.length === 0
+    ? false
+    : !ResourceUtils.pinnedSpecDeepEqual(live, ResourceUtils.protoPinnedFields(desired))
+
+/**
+ * The drift list as **named branches** — `instanceSpecDrifted` is `.some()` of it.
  *
- * The engine plans an `action: "update"` for **any** props change a `diff`
- * ignores (`Plan.ts`: `diff ?? { action: havePropsChanged(olds, news) ? "update" : "noop" }`),
- * so a field missing from this list is a change that plans an update and then
- * writes nothing — exactly how `gpuCluster` behaved before it was fixed. Search
- * that guard: this list IS the convergence contract for the Instance.
+ * Named so that a live diagnosis is honest rather than inferential: `spikes/instance-drift-diagnose.ts`
+ * reports which branch fires against a real spec by calling **this** function, not a re-implementation of
+ * it. (The first version of that script printed live fields and left the reader to infer the branch — and
+ * inferred a set of leaf fields instead of the branches that actually fire.)
  *
- * Deliberately absent: `gpuCluster` (create-only → the diff replaces) and
- * `preemptible` (cannot be toggled → the diff replaces).
+ * Which spec fields an in-place update converges. The engine plans an `action: "update"` for **any**
+ * props change a `diff` ignores (`Plan.ts`: `diff ?? { action: havePropsChanged(olds, news) ? "update" :
+ * "noop" }`), so a field missing from this list is a change that plans an update and then writes nothing —
+ * exactly how `gpuCluster` behaved before it was fixed. Search that guard: this list IS the convergence
+ * contract for the Instance.
+ *
+ * Deliberately absent: `gpuCluster` (create-only → the diff replaces) and `preemptible` (cannot be toggled
+ * → the diff replaces).
  *
  * `pricing` is present but **news-guarded** — the flat `pricing_model` arms are compared only when the
- * caller pinned one, because the platform's materialization and in-place-mutability behaviour for them is
- * unmeasured (see `pricingDrifted`).
+ * caller pinned one (see `pricingDrifted`).
  *
- * Exported for unit tests. The "guarded on the news side" entries exist because
- * the platform may answer an omitted optional message with a default —
- * enforcing them unconditionally would loop updates.
+ * Message- and list-valued fields are compared with `pinnedSpecDeepEqual` + `protoPinnedFields` rather
+ * than whole-message `specDeepEqual`, because the platform **materializes** fields the props never carried
+ * into the spec it echoes back (measured live 2026-09-24, `spikes/instance-drift-diagnose.ts`): a boot
+ * disk created from `sourceImageFamily` comes back with `spec.diskEncryption = {}` and `labels = {}`
+ * filled in, a data disk likewise, and an unpinned `reservationPolicy` comes back as `{}`. A whole-message
+ * comparison therefore fires on **every** reconcile, which is exactly the write-nothing update
+ * `resourceVersion` moves for (TASKS.md §"Found while verifying": `rv` 1 → 2 on an unchanged deploy). Only
+ * the fields the props actually pinned are compared — the mechanical form of the
+ * `news.<field> !== undefined &&` guard, which cannot be forgotten per field.
+ *
+ * The **scalar** optional props (`nvlInstanceGroupId`, `cloudInitUserData`, `hostname`, `recoveryPolicy`)
+ * need the same treatment in their own form: proto3 scalars have no presence, so an omitted prop *is* the
+ * field's zero value, and "absent ⇒ leave unchanged" means a comparison against the live echo writes an
+ * update that can never converge. Each is therefore compared only when `desired` pins a non-default value —
+ * which is `protoPinnedFields`'s rule, applied to a leaf. Removing such a prop pins nothing, so it writes
+ * nothing; the API cannot be asked to clear it either way (measured for `secondaryDisks` and `hostname`,
+ * `spikes/instance-drift-removal-probe.ts`).
+ *
+ * **Do not unify the two guard styles.** The *message*-valued optional props (`localDisks`,
+ * `reservationPolicy`) keep the house news-side guard because a message has real presence: their unpinned
+ * value is `undefined`, and `protoPinnedFields(undefined)` is `{}` — an empty message, which
+ * `pinnedSpecDeepEqual` deliberately reads as "this is a presence switch, so `undefined` live is drift".
+ * Only the scalars can be guarded by their proto default.
+ *
+ * Exported for unit tests and the live diagnosis. The "guarded on the news side" entries exist because the
+ * platform may answer an omitted optional message with a default — enforcing them unconditionally would
+ * loop updates.
  */
-export const instanceSpecDrifted = (
+export const instanceDriftBranches = (
   live: NebiusInstanceSchema.Instance['spec'],
   desired: NebiusInstanceSchema.InstanceSpec,
   news: InstanceSchema.InstanceProps,
-): boolean => {
-  if (!live) return false
-  return (
-    !ResourceUtils.specDeepEqual(live.resources, desired.resources) ||
-    !ResourceUtils.specDeepEqual(live.bootDisk, desired.bootDisk) ||
-    !ResourceUtils.specDeepEqual(live.networkInterfaces, desired.networkInterfaces) ||
-    !ResourceUtils.specDeepEqual(live.secondaryDisks, desired.secondaryDisks) ||
-    !ResourceUtils.specDeepEqual(live.filesystems, desired.filesystems) ||
-    live.nvlInstanceGroupId !== desired.nvlInstanceGroupId ||
-    (news.localDisks !== undefined && !ResourceUtils.specDeepEqual(live.localDisks, desired.localDisks)) ||
-    (news.reservationPolicy !== undefined &&
-      !ResourceUtils.specDeepEqual(live.reservationPolicy, desired.reservationPolicy)) ||
-    !ResourceUtils.specDeepEqual(live.serviceAccountId, desired.serviceAccountId) ||
-    live.cloudInitUserData !== desired.cloudInitUserData ||
+): Array<readonly [name: string, drifted: boolean]> => {
+  if (!live) return []
+  return [
+    [
+      'resources',
+      !ResourceUtils.pinnedSpecDeepEqual(live.resources, ResourceUtils.protoPinnedFields(desired.resources)),
+    ],
+    ['bootDisk', !ResourceUtils.pinnedSpecDeepEqual(live.bootDisk, ResourceUtils.protoPinnedFields(desired.bootDisk))],
+    ['secondaryDisks', pinnedListDrifted(live.secondaryDisks, desired.secondaryDisks)],
+    ['filesystems', pinnedListDrifted(live.filesystems, desired.filesystems)],
+    ['networkInterfaces', pinnedListDrifted(live.networkInterfaces, desired.networkInterfaces)],
+    ['nvlInstanceGroupId', desired.nvlInstanceGroupId !== '' && live.nvlInstanceGroupId !== desired.nvlInstanceGroupId],
+    [
+      'localDisks',
+      news.localDisks !== undefined &&
+        !ResourceUtils.pinnedSpecDeepEqual(live.localDisks, ResourceUtils.protoPinnedFields(desired.localDisks)),
+    ],
+    [
+      'reservationPolicy',
+      news.reservationPolicy !== undefined &&
+        !ResourceUtils.pinnedSpecDeepEqual(
+          live.reservationPolicy,
+          ResourceUtils.protoPinnedFields(desired.reservationPolicy),
+        ),
+    ],
+    ['serviceAccountId', live.serviceAccountId !== desired.serviceAccountId],
+    // Compared on the **pin side**, not the news side: a hosted instance's user-data carries the generated
+    // bootstrap (`hostedSpecInput(news, runtime.userData)`) while `news.cloudInitUserData` may be undefined,
+    // so a news-guard would silently stop converging a bundle change. `''` is the proto3 default and the
+    // only value that means "nothing to say about user-data".
+    ['cloudInitUserData', desired.cloudInitUserData !== '' && live.cloudInitUserData !== desired.cloudInitUserData],
     // Guarded on the news side **and one-directional**: only `stopped: true` is comparable, because `false`
     // cannot be transmitted (proto3 bool default → absent → "leave unchanged"). Comparing
     // `live.stopped !== desired.stopped` read `true !== false` for a user who removed the prop, which made
@@ -310,18 +367,25 @@ export const instanceSpecDrifted = (
     // The *other* direction — a stopped VM that should be running — is not a spec difference at all: the
     // provider calls the service's `Start` RPC for it (see `reconcile`), which is the only thing that can
     // express it.
-    (news.stopped === true && live.stopped !== true) ||
-    live.recoveryPolicy !== desired.recoveryPolicy ||
-    live.hostname !== desired.hostname ||
+    ['stopped', news.stopped === true && live.stopped !== true],
+    ['recoveryPolicy', desired.recoveryPolicy !== 0 && live.recoveryPolicy !== desired.recoveryPolicy],
+    ['hostname', desired.hostname !== '' && live.hostname !== desired.hostname],
     // Guarded on the news side, and the measurement is why (live 2026-09-24): an update that *omits* the
     // arm leaves it in place (absent means "leave unchanged", never "clear"), a create that pins nothing
     // materializes no arm at all, and repeating a pinned arm in an update is accepted while *changing* it
     // on a running instance is refused (`9 FAILED_PRECONDITION: spec fields [pricing_model] update could
     // be done with stopped instance`). Comparing only a pinned arm keeps all three a non-event here; the
     // API's refusal is an apply-time error the prop documents, not something this list can fix.
-    (news.pricing !== undefined && pricingDrifted(live, news.pricing))
-  )
+    ['pricing', news.pricing !== undefined && pricingDrifted(live, news.pricing)],
+  ]
 }
+
+/** Does anything in {@link instanceDriftBranches} fire? The provider's update trigger. */
+export const instanceSpecDrifted = (
+  live: NebiusInstanceSchema.Instance['spec'],
+  desired: NebiusInstanceSchema.InstanceSpec,
+  news: InstanceSchema.InstanceProps,
+): boolean => instanceDriftBranches(live, desired, news).some(([, drifted]) => drifted)
 
 /** Map the protobuf instance-state enum to its friendly name. */
 const friendlyState = (state: unknown): string => {

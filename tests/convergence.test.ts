@@ -1209,6 +1209,45 @@ const instanceProps = {
   networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
 }
 
+/**
+ * The **measured echo** of `instanceProps` — what the API answers, not a copy of what was sent.
+ *
+ * Every mocked `live` built *from the props* makes the baseline row vacuous, and that vacuity is exactly
+ * how the 2026-09-24 drift loop survived the sweep: the platform completes the boot disk with
+ * `diskEncryption: {}` + `labels: {}`, materializes an unpinned `reservationPolicy`/`gpuCluster` as `{}`,
+ * and holds a `hostname`/`cloudInitUserData` no prop carried. Measured on a real 4vcpu VM with
+ * `spikes/instance-drift-probe.ts` (transcript in the gitignored `spikes/logs/`), because the mock can only
+ * ever say "the API echoes what I sent".
+ *
+ * The `hostname`/`cloudInitUserData` entries describe the **removal** case — a config that once pinned them
+ * and no longer does. They are the anti-loop half: proto3 has no presence, so an omitted prop cannot ask the
+ * API to clear them, and comparing the echo against the omitted prop's zero value is the write-nothing
+ * update that never converges.
+ */
+const instanceEchoSpec = (): NebiusInstanceSchema.InstanceSpec =>
+  NebiusInstanceSchema.InstanceSpec.fromJSON({
+    ...(NebiusInstanceSchema.InstanceSpec.toJSON(
+      NebiusInstanceSchema.InstanceSpec.fromJSON(instanceProps),
+    ) as Record<string, unknown>),
+    bootDisk: {
+      attachMode: 'READ_WRITE',
+      managedDisk: {
+        name: 'boot-disk',
+        labels: {},
+        spec: {
+          type: 'NETWORK_SSD',
+          sizeGibibytes: '64',
+          sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
+          diskEncryption: {},
+        },
+      },
+    },
+    reservationPolicy: {},
+    gpuCluster: {},
+    hostname: 'platform-derived',
+    cloudInitUserData: '#cloud-config\n',
+  })
+
 describe('Nebius.compute.v1.Instance convergence', () => {
   convergenceSweep({
     resource: 'Nebius.compute.v1.Instance',
@@ -1289,20 +1328,20 @@ describe('Nebius.compute.v1.Instance convergence', () => {
       bucket: 'hosted S3 asset bucket, not an InstanceSpec field',
       hosted: 'hosted sub-resources (service account, key, bucket), not an InstanceSpec field',
     },
-    // The anti-loop row that matters most for `pricing`: whether the platform *materializes* a default
-    // pricing into `spec` is unmeasured, so the drift check is news-guarded — omitting the prop must write
-    // nothing even against a live spec that carries an arm (this row's mocked `live` does not, so the unit
-    // tests pin the materialized case directly).
-    omits: ['pricing'],
-    live: NebiusInstanceSchema.InstanceSpec.fromJSON(instanceProps),
+    // The anti-loop rows: omitting an optional prop must write nothing, and each of these is a case where
+    // the platform holds a value the props do not pin (see `instanceEchoSpec`). `secondaryDisks` /
+    // `filesystems` are covered in `tests/resources/compute/v1/instance.test.ts` instead, where the fixture
+    // can carry a live disk the props do not — this table's baseline has none, so a row here would be
+    // vacuous.
+    omits: ['pricing', 'hostname', 'recoveryPolicy', 'cloudInitUserData', 'localDisks', 'reservationPolicy'],
+    live: instanceEchoSpec(),
     liveId: INSTANCE_ID,
+    // `live` is the measured echo rather than `fromJSON(baseline)`: with a props-derived fixture the baseline
+    // row cannot fail for any reason (live == desired by construction), which is precisely the blindness that
+    // let the loop through.
     probe: async (svc, news, baseline) =>
       (await runDiff(svc, news, baseline)) !== undefined ||
-      InstanceModule.instanceSpecDrifted(
-        NebiusInstanceSchema.InstanceSpec.fromJSON(baseline),
-        NebiusInstanceSchema.InstanceSpec.fromJSON(news),
-        news as never,
-      ) ||
+      InstanceModule.instanceSpecDrifted(instanceEchoSpec(), NebiusInstanceSchema.InstanceSpec.fromJSON(news), news as never) ||
       // The labels trigger, and the reason it has to appear here rather than as a `layerFor` write: this
       // table predates the reconcile-based harness (its `live` is a bare spec, not a resource), so the
       // provider's own condition is the thing to probe. `reconcile` fires an update when

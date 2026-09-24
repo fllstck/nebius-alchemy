@@ -360,6 +360,145 @@ describe('Nebius.compute.v1.Instance', () => {
       const live = liveSpec({ localDisks: { passthroughGroup: { requested: false } } })
       expect(Module.instanceSpecDrifted(live, desiredFrom({}), {} as never)).toBe(false)
     })
+
+    test('an omitted scalar the caller stopped pinning is NOT a drift', () => {
+      // A *removal* cannot be expressed (proto3 scalars have no presence, and "absent ⇒ leave unchanged"
+      // — measured for the repeated case in `spikes/instance-drift-removal-probe.ts`). Comparing the live
+      // echo against the omitted prop's zero value read `'probe' !== ''` for every later reconcile: a write
+      // that can never converge. The comparison is therefore on the **pin side** (`desired.<field> !== ''`).
+      const live = liveSpec({ hostname: 'probe', recoveryPolicy: 'FAIL', nvlInstanceGroupId: 'nvlinstancegroup-1' })
+      expect(Module.instanceSpecDrifted(live, desiredFrom({}), {} as never)).toBe(false)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // The live echo — the platform fills in fields the props never carried
+  // -------------------------------------------------------------------------
+  //
+  // Found live 2026-09-24 (`spikes/instance-drift-probe.ts` + `spikes/instance-drift-diagnose.ts`): an
+  // unchanged `alchemy deploy` still wrote an update, because a whole-message `specDeepEqual` was comparing
+  // against a spec the platform had completed. Every mocked `live` in the suite is built *from the props the
+  // provider sends*, so no unit test could see it — these fixtures are the measured echo instead, and the
+  // branch names come from `instanceDriftBranches`, the same function the live diagnosis calls.
+  describe('the platform echo does not drift (2026-09-24)', () => {
+    /**
+     * What the API actually answered for a probe VM — re-runnable with `spikes/instance-drift-probe.ts`
+     * (its transcript lives in the gitignored `spikes/logs/`, like every other probe log in this repo).
+     */
+    const liveEcho = (overrides: Record<string, unknown> = {}) =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        serviceAccountId: 'serviceaccount-abc123',
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        bootDisk: {
+          attachMode: 'READ_WRITE',
+          managedDisk: {
+            name: 'boot-disk',
+            labels: {},
+            spec: {
+              type: 'NETWORK_SSD',
+              sizeGibibytes: '64',
+              sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
+              // ← materialized empty message; the props never carried it
+              diskEncryption: {},
+            },
+          },
+        },
+        secondaryDisks: [
+          {
+            attachMode: 'READ_WRITE',
+            managedDisk: {
+              name: 'data-disk',
+              labels: {},
+              spec: { type: 'NETWORK_SSD', sizeGibibytes: '128', diskEncryption: {} },
+            },
+          },
+        ],
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: {} }],
+        // ← the API materializes this one even when the props omitted it
+        reservationPolicy: {},
+        gpuCluster: {},
+        // ← facts about the VM that no prop asked for
+        hostname: 'platform-derived',
+        cloudInitUserData: '#cloud-config\n',
+        ...overrides,
+      })
+
+    /** The same props the provider would send: nothing but what the caller pinned. */
+    const pinnedDesired = () =>
+      NebiusInstanceSchema.InstanceSpec.fromJSON({
+        serviceAccountId: 'serviceaccount-abc123',
+        resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+        bootDisk: {
+          attachMode: 'READ_WRITE',
+          managedDisk: {
+            name: 'boot-disk',
+            spec: {
+              type: 'NETWORK_SSD',
+              sizeGibibytes: '64',
+              sourceImageFamily: { imageFamily: 'ubuntu24.04-driverless' },
+            },
+          },
+        },
+        networkInterfaces: [{ subnetId: 'subnet-abc123', name: 'eth0', ipAddress: { allocationId: '' } }],
+      })
+
+    /** `toJSON` is `unknown`; this is the API's own rendering, used to build a *diffed* pair of specs. */
+    const specJson = (spec: NebiusInstanceSchema.InstanceSpec): Record<string, unknown> =>
+      NebiusInstanceSchema.InstanceSpec.toJSON(spec) as Record<string, unknown>
+
+    /** Just the branch **names** that fire — the assertion shape a diagnosis reads. */    const firingBranches = (
+      live: NebiusInstanceSchema.Instance['spec'],
+      desired: NebiusInstanceSchema.InstanceSpec,
+    ): string[] =>
+      Module.instanceDriftBranches(live, desired, {} as never)
+        .filter(([, drifted]) => drifted)
+        .map(([name]) => name)
+
+    test('the measured echo fires no branch at all', () => {
+      expect(firingBranches(liveEcho(), pinnedDesired())).toEqual([])
+    })
+
+    test('a materialized empty message inside a repeated field is NOT a drift', () => {
+      // The data disk's `diskEncryption: {}` — the second branch the live diagnosis caught — and, with it,
+      // an interaction the old whole-array comparison could not express: `pinnedListDrifted` pins the
+      // element count, so a live list that is *longer* than the props' is still compared element-wise.
+      const withPinnedDisk = NebiusInstanceSchema.InstanceSpec.fromJSON({
+        ...specJson(pinnedDesired()),
+        secondaryDisks: [
+          { attachMode: 'READ_WRITE', managedDisk: { name: 'data-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: '128' } } },
+        ],
+      })
+      expect(Module.instanceSpecDrifted(liveEcho(), withPinnedDisk, {} as never)).toBe(false)
+    })
+
+    test('a live data disk the props omit is NOT a drift — nothing to write', () => {
+      // Measured: an update whose spec omits `secondaryDisks` leaves the disk attached
+      // (`spikes/instance-drift-removal-probe.ts`, `resourceVersion` 3 → 4 with both disks still there), so
+      // an empty desired list pins nothing. `protoPinnedFields([])` is `{}` — an *object*, not an array —
+      // which is why the empty case is handled before the pinned comparison rather than inside it.
+      expect(Module.instanceSpecDrifted(liveEcho(), pinnedDesired(), {} as never)).toBe(false)
+    })
+
+    test('the echo is still visible where it matters: a pinned value that differs DRIFTS', () => {
+      const withPinnedDisk = NebiusInstanceSchema.InstanceSpec.fromJSON({
+        ...specJson(pinnedDesired()),
+        secondaryDisks: [
+          { attachMode: 'READ_WRITE', managedDisk: { name: 'data-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: '256' } } },
+        ],
+      })
+      // The pinned 256 GiB against the live 128 — the int64 is visible through the pinning comparison
+      // (`specDeepEqual` at the leaves), which is the whole point of not using `deepEqual`.
+      expect(firingBranches(liveEcho(), withPinnedDisk)).toEqual(['secondaryDisks'])
+    })
+
+    test('a pinned hostname that changed still DRIFTS (the positive control)', () => {
+      // Without this the suite would pass for a provider that simply stopped comparing `hostname`.
+      const wanted = NebiusInstanceSchema.InstanceSpec.fromJSON({
+        ...specJson(pinnedDesired()),
+        hostname: 'wanted',
+      })
+      expect(firingBranches(liveEcho(), wanted)).toEqual(['hostname'])
+    })
   })
 
   // -------------------------------------------------------------------------

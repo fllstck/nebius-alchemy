@@ -173,9 +173,12 @@ at import (see _Install Dependencies_ above):
   (it only accepts a pricing change on a stopped instance). Change the arm while stopped, or recreate.
 * **[RESOURCES.md](RESOURCES.md)** — a generated per-resource API reference (props required/optional, types,
   documented defaults, plan-time validations, nested props, and returned values) — now ships in the package.
-* **Known issue:** an unchanged deploy of a `compute.Instance` still writes an update, because the drift check
-  whole-compares `bootDisk`/`networkInterfaces`/`resources` while the platform echoes fields your props never
-  carried (`diskEncryption: {}`, `blockSizeBytes: "0"`, …). Silent churn, not a failure; the fix is next.
+* **Known issue (fixed after 0.10.1 — see TASKS.md §"the `compute/v1 Instance` drift loop"):** an unchanged
+  deploy of a `compute.Instance` still wrote an update, because the drift check whole-compared
+  `bootDisk`/`networkInterfaces`/`resources` while the platform echoes fields your props never carried
+  (`diskEncryption: {}`, `blockSizeBytes: "0"`, …). Silent churn, not a failure. The provider now compares only
+  the fields you pinned, and an omitted optional prop is never read as "clear it". Install `0.10.2` (or later)
+  for the fix.
 
 ### Upgrading from 0.9.x
 

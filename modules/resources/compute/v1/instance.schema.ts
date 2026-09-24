@@ -341,21 +341,51 @@ export const InstancePropsSchema = Schema.Struct({
   resources: ResourcesSpecSchema,
   /** Boot disk specification. */
   bootDisk: AttachedDiskSpecSchema,
-  /** Additional data disks. */
+  /**
+   * Additional data disks.
+   *
+   * **Adding one converges in place; removing one does not.** The API takes the new disk on an update
+   * (`managedDisk` is "an intent to have that managed disk attached"), but it cannot be told to detach one:
+   * proto3 `repeated` has no presence, so an empty list is byte-identical to an omitted field, and absent
+   * means "leave unchanged" here (measured live 2026-09-24,
+   * `spikes/instance-drift-removal-probe.ts`: an update whose spec omitted the disk left it attached, with
+   * `resourceVersion` moving 4 → 5). Dropping the prop therefore writes nothing — the disk must be detached
+   * through the disk service, or the instance replaced.
+   */
   secondaryDisks: Schema.optional(Schema.Array(AttachedDiskSpecSchema)),
-  /** Shared filesystems to attach. */
+  /**
+   * Shared filesystems to attach. Same addition/removal asymmetry as {@link secondaryDisks} (the field is a
+   * proto3 `repeated`, so "detach them all" is not expressible).
+   */
   filesystems: Schema.optional(Schema.Array(AttachedFilesystemSpecSchema)),
   /** Host-passthrough local disks (platform/preset dependent). */
   localDisks: Schema.optional(LocalDisksSpecSchema),
-  /** Capacity reservation policy. */
+  /**
+   * Capacity reservation policy. Guarded on the pin side: the platform materializes an empty
+   * `reservationPolicy` into the spec it echoes back (measured live 2026-09-24), so comparing an omitted
+   * prop against that echo would loop.
+   */
   reservationPolicy: Schema.optional(ReservationPolicySchema),
-  /** NVLink Instance Group to join (GPU/NVLink platforms). */
+  /**
+   * NVLink Instance Group to join (GPU/NVLink platforms).
+   *
+   * Create-*oriented*, not create-only: an update takes the field and asks the compute service to resolve
+   * the group (measured 2026-09-23), so a change is a roll-out rather than a replace. Compared only when
+   * pinned — omitting it cannot clear it (an absent scalar means "leave unchanged"), so a removal writes
+   * nothing and does not loop.
+   */
   nvlInstanceGroupId: Schema.optional(Ids.NVLInstanceGroupId),
   /** Network interfaces. Must have at least one. */
   networkInterfaces: Schema.Array(NetworkInterfaceSpecSchema),
   /** GPU cluster ID for InfiniBand interconnect. Only settable at creation. */
   gpuCluster: Schema.optional(Schema.Struct({ id: Ids.GpuClusterId })),
-  /** Recovery policy on host failure. Default: RECOVER. */
+  /**
+   * Recovery policy on host failure. Default: RECOVER.
+   *
+   * Compared only when pinned: a removal is not expressible (an absent proto3 scalar means "leave
+   * unchanged" — measured live 2026-09-24), so the live value is not compared against the omitted prop's
+   * default. Recreate the instance to change your mind about a removal.
+   */
   recoveryPolicy: Schema.optional(RecoveryPolicySchema),
   /** Set to create a preemptible VM (cheaper, can be stopped by platform). */
   preemptible: Schema.optional(PreemptibleSchema),
@@ -423,9 +453,22 @@ export const InstancePropsSchema = Schema.Struct({
    * (recreating a VM to change a bid is a bigger hammer than stopping it).
    */
   pricing: Schema.optional(PricingModelSchema),
-  /** Hostname for the VM. Used for internal DNS: <hostname>.<network_id>.compute.internal. */
+  /**
+   * Hostname for the VM. Used for internal DNS: <hostname>.<network_id>.compute.internal.
+   *
+   * Compared only when pinned, for the same measured reason as {@link recoveryPolicy}: omitting it cannot
+   * ask the API to clear it (an absent proto3 string is the field's default, and absent means "leave
+   * unchanged" here — an update with `hostname` omitted left the live value in place, measured live
+   * 2026-09-24). A removal therefore writes nothing and, unlike before 0.10.2, does not loop.
+   */
   hostname: Schema.optional(Schema.String),
-  /** Cloud-init user data for instance initialization. */
+  /**
+   * Cloud-init user data for instance initialization.
+   *
+   * A hosted instance always carries the generated bootstrap here, so this is compared whenever *something*
+   * is pinned — including the bootstrap the provider writes for you. Omitting it on a low-level instance
+   * pins nothing: the API cannot be asked to clear user-data (absent means "leave unchanged").
+   */
   cloudInitUserData: Schema.optional(Schema.String),
   // -- Hosted runtime (platform-level, stripped before InstanceSpec.fromJSON) --
   /** Module entrypoint for the bundled instance program. When omitted, the instance behaves as a low-level Nebius compute resource. */
