@@ -85,6 +85,8 @@ Every resource is checkable against this list by name; the ones absent from the 
 | `Nebius.compute.DiskSnapshot` | **commented, not runnable.** The snapshot → restore snippet is at the end of [compute.ts](compute.ts); as a stack it would add a second disk for no new lesson |
 | `Nebius.iam.AuthPublicKey` / `FederatedCredentials` | **not yet written.** Niche credential flows (a pinned RSA-4096 public key; OIDC federation for CI) that need a PEM or an IdP's issuer/subject pair as input |
 
+| `Nebius.billing.PricingPolicy` + the `pricing` prop | **demonstrated and deployed live** — [spot-pricing.ts](spot-pricing.ts) creates a GPU auction bid and a VM that pins `{ onDemand: true }`, with the two spot arms commented (they need GPU capacity). Deploy/destroy verified 2026-09-24: policy `STATE_ACTIVE` / `SCHEDULING_STATE_ALLOWED` / `maxPrice: '3'` (the API normalizes it), instance `RUNNING`, destroy clean |
+
 ## Companion Files
 
 - [.env.example](.env.example) — optional default tenant/project IDs for the examples
