@@ -7,8 +7,10 @@ import * as AlchemyPhysicalName from 'alchemy/PhysicalName'
 import * as AlchemyDiff from 'alchemy/Diff'
 
 import * as NebiusZoneSchema from '../../../../schemas/nebius/dns/v1/zone.ts'
+import * as NebiusRecordSchema from '../../../../schemas/nebius/dns/v1/record.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
 import * as DnsGrpc from '../../../api-client/dns.ts'
+import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as ZoneSchema from './zone.schema.ts'
@@ -19,6 +21,15 @@ import * as Factory from '../../factory.ts'
 export type NebiusZone = Alchemy.Resource<'Nebius.dns.v1.Zone', ZoneSchema.ZoneProps, ZoneSchema.ZoneAttributes>
 
 export const NebiusZone = Alchemy.Resource<NebiusZone>('Nebius.dns.v1.Zone')
+
+/**
+ * The zone's own authority records: every VPC zone carries them, deleting either is refused, and neither
+ * blocks the zone's own delete (measured 2026-09-24 — see the `delete` lifecycle below).
+ */
+const AUTHORITY_RECORD_TYPES: ReadonlySet<number> = new Set([
+  NebiusRecordSchema.RecordSpec_RecordType.NS,
+  NebiusRecordSchema.RecordSpec_RecordType.SOA,
+])
 
 // ----- HELPERS
 
@@ -106,11 +117,64 @@ export const NebiusZoneProvider: Layer.Layer<
     return toFriendlyAttributes(zone)
   }),
 
-  delete: Factory.makeCrudDelete({
-    resourceName: 'Nebius.dns.v1.Zone',
-    resourceLabel: 'Zone',
-    service: DnsGrpc.DnsGrpcService,
-    deleteById: (svc, id) => svc.zone.delete(id),
+  /**
+   * Delete the zone — after making sure it is actually empty.
+   *
+   * Not `makeCrudDelete`: that helper treats `9 FAILED_PRECONDITION` as "a dependent is still tearing down"
+   * and re-issues the delete every 20 s for ~4 minutes, so a zone holding out-of-band records would fail late
+   * and without naming anything. The precondition is knowable through the API in one call, so it is checked
+   * here and reported as {@link ZoneSchema.ZoneNotEmpty} — see that error for the full reasoning.
+   *
+   * The zone's own **NS and SOA** records are skipped: every VPC zone carries them, they cannot be deleted
+   * (`9 FAILED_PRECONDITION: VPC Zones do not support delegation, so deleting NS Records is not allowed`),
+   * and they do **not** block the zone's delete (measured live 2026-09-24,
+   * `spikes/dns-ttl-bounds-probe.ts` — its cleanup hit all three of those facts in that order).
+   */
+  delete: Effect.fn('Nebius.dns.v1.Zone.delete')(function* ({ output, session }) {
+    if (!output?.id) return
+    const dnsGrpcService = yield* DnsGrpc.DnsGrpcService
+
+    // Idempotent: NOT_FOUND means it is already gone (a re-run destroy reaches here).
+    const current = yield* dnsGrpcService.zone
+      .get(output.id)
+      .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    if (!current) return
+
+    const records = (yield* dnsGrpcService.record.list(output.id)).filter(
+      (record) => !AUTHORITY_RECORD_TYPES.has(record.spec?.type ?? -1),
+    )
+    if (records.length > 0) {
+      const named = records.map((record) => {
+        const name = record.spec?.relativeName || record.metadata?.name || record.metadata?.id || '?'
+        const type = record.spec?.type === undefined ? '?' : NebiusRecordSchema.recordSpec_RecordTypeToJSON(record.spec.type)
+        return `${name} (${type})`
+      })
+      const zoneName = current.metadata?.name ?? output.id
+      return yield* new ZoneSchema.ZoneNotEmpty({
+        zoneId: output.id,
+        zoneName,
+        records: named,
+        message: [
+          `Zone ${zoneName} still holds ${records.length} record(s): ${named.join(', ')}.`,
+          'A zone cannot be deleted while it has user records — the API answers `Zone … is not empty`.',
+          'Records declared in this stack are deleted before their zone, so these are out-of-band (console, script, another stack) or their own delete failed.',
+          'Delete them (or remove them from the configuration that owns them) and re-run the destroy.',
+        ].join(' '),
+      })
+    }
+
+    yield* session.note(`Deleting Nebius.dns.v1.Zone (${current.metadata?.name ?? output.id})`)
+    yield* Factory.runDeleteWithProgress({
+      label: 'Zone',
+      id: output.id,
+      deleteOnce: dnsGrpcService.zone.delete(output.id).pipe(
+        Effect.catchIf(
+          (e: unknown): e is GrpcUtils.GrpcError => e instanceof GrpcUtils.GrpcError && e.code === 5,
+          () => Effect.void,
+        ),
+      ),
+      session,
+    })
   }),
 
   read: Factory.makeCrudRead({

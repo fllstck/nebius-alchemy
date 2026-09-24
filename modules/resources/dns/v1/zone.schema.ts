@@ -62,6 +62,33 @@ export type ZoneProps = typeof ZonePropsSchema.Type
 export const validateZoneProps = Validation.makeValidateProps(ZonePropsSchema)
 
 // ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+/**
+ * A zone that still holds **user** records cannot be deleted — the API refuses with
+ * `9 FAILED_PRECONDITION: Zone … is not empty`.
+ *
+ * The provider pre-checks it (list the zone's records, ignore the authority records) rather than letting the
+ * generic dependent-retry absorb the refusal, because of what the refusal *looks like* on the shared delete
+ * path: `9 FAILED_PRECONDITION` is treated there as "a dependent is still tearing down" and re-issued every
+ * 20 s for ~4 minutes (`Factory.dependentStillAlive`), so a zone blocked by out-of-band records fails **late,
+ * silently, and without naming a single record**. Same shape as `GpuClusterNotEmpty` /
+ * `NVLInstanceGroupNotEmpty` / `PricingPolicyHasRunningVms`.
+ *
+ * Members found here are legitimate blockers rather than a race: records declared in the same stack are
+ * dependents of the zone and are deleted **before** it, so a destroy of a well-formed stack sees none. What
+ * remains is an out-of-band record (console, script, another stack) or a record whose own delete failed —
+ * both need a human, and both are named in the message.
+ */
+export class ZoneNotEmpty extends Schema.TaggedError<ZoneNotEmpty>()('ZoneNotEmpty', {
+  zoneId: Schema.String,
+  zoneName: Schema.String,
+  records: Schema.Array(Schema.String),
+  message: Schema.String,
+}) {}
+
+// ---------------------------------------------------------------------------
 // Zone Attributes (output)
 // ---------------------------------------------------------------------------
 

@@ -4,8 +4,9 @@ import * as Layer from 'effect/Layer'
 import * as Module from '../../../../modules/resources/dns/v1/zone.ts'
 import * as SchemaModule from '../../../../modules/resources/dns/v1/zone.schema.ts'
 import * as NebiusZoneSchema from '../../../../schemas/nebius/dns/v1/zone.ts'
-import { instanceIdLayer, mockDnsLayer, protoMetadata, stackLayer, testConfigLayer } from '../../../helpers/mocks.ts'
-import { resolveProvider, runDiff, runEffect, runReconcile } from '../../../helpers/provider.ts'
+import * as NebiusRecordSchema from '../../../../schemas/nebius/dns/v1/record.ts'
+import { instanceIdLayer, mockDnsLayer, notFoundError, protoMetadata, stackLayer, testConfigLayer } from '../../../helpers/mocks.ts'
+import { resolveProvider, runDelete, runDeleteExpectingError, runDiff, runEffect, runReconcile } from '../../../helpers/provider.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -159,6 +160,103 @@ describe('Nebius.dns.v1.Zone', () => {
       await runReconcile(svc, validZoneProps, { id: 'zone-1' }, undefined, layerFor(liveZone(300), updated))
 
       expect(updated).toHaveLength(0)
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // delete — a zone with user records cannot be deleted
+  // -------------------------------------------------------------------------
+  describe('delete', () => {
+    const zoneProto = (): NebiusZoneSchema.Zone => ({
+      metadata: protoMetadata('zone-1', 'my-zone', 'project-test-1'),
+      spec: NebiusZoneSchema.ZoneSpec.fromJSON({
+        domainName: 'example.com.',
+        vpc: { primaryNetworkId: 'network-abc123' },
+      }),
+      status: undefined,
+    })
+
+    /** A record as the API lists it: the wire `type` is the numeric enum, not the prop's string. */
+    const recordProto = (relativeName: string, type: number, id = `dnsrecord-${relativeName}`) => ({
+      metadata: protoMetadata(id, `${relativeName}-record`, 'zone-1'),
+      spec: { relativeName, type, ttl: 600, data: '10.0.0.1' },
+      status: undefined,
+    })
+
+    const NS = NebiusRecordSchema.RecordSpec_RecordType.NS
+    const SOA = NebiusRecordSchema.RecordSpec_RecordType.SOA
+    const A = NebiusRecordSchema.RecordSpec_RecordType.A
+
+    const deleteLayer = (records: ReadonlyArray<unknown>, deletedIds: string[], get: () => Effect.Effect<unknown, unknown>) =>
+      Effect.provide(
+        Layer.mergeAll(
+          mockDnsLayer({
+            zone: {
+              get,
+              delete: (id: string) => {
+                deletedIds.push(id)
+                return Effect.void
+              },
+            },
+            record: { list: () => Effect.succeed(records) },
+          }),
+          stackLayer,
+          testConfigLayer,
+          instanceIdLayer,
+        ),
+      )
+
+    test('refuses while a USER record remains, naming it and never calling delete', async () => {
+      const svc = await resolveProvider(Module.NebiusZone.Provider, Module.NebiusZoneProvider)
+      const deletedIds: string[] = []
+      const error = await runDeleteExpectingError(
+        svc,
+        { id: 'zone-1' },
+        undefined,
+        deleteLayer(
+          [recordProto('www', A), recordProto('@', NS), recordProto('@', SOA)],
+          deletedIds,
+          () => Effect.succeed(zoneProto()),
+        ),
+      )
+
+      expect(error._tag).toBe('ZoneNotEmpty')
+      expect(error.records).toEqual(['www (A)'])
+      expect(error.message).toContain('www (A)')
+      expect(error.message).toContain('re-run the destroy')
+      // The refusal is a pre-check, not a retried API failure — so the delete was never issued, and the
+      // generic 9-FAILED_PRECONDITION retry (20 s × 12) never runs.
+      expect(deletedIds).toEqual([])
+    })
+
+    test('deletes when only the zone’s own NS and SOA records remain', async () => {
+      // Measured 2026-09-24: every VPC zone carries them, deleting either is refused, and they do NOT block
+      // the zone's own delete — so a pre-check that counted them would make every zone undeletable.
+      const svc = await resolveProvider(Module.NebiusZone.Provider, Module.NebiusZoneProvider)
+      const deletedIds: string[] = []
+      await runDelete(
+        svc,
+        { id: 'zone-1' },
+        undefined,
+        deleteLayer(
+          [recordProto('@', NS), recordProto('@', SOA)],
+          deletedIds,
+          () => Effect.succeed(zoneProto()),
+        ),
+      )
+      expect(deletedIds).toEqual(['zone-1'])
+    })
+
+    test('an already-deleted zone is a no-op (idempotent destroy)', async () => {
+      const svc = await resolveProvider(Module.NebiusZone.Provider, Module.NebiusZoneProvider)
+      const deletedIds: string[] = []
+      await runDelete(
+        svc,
+        { id: 'zone-1' },
+        undefined,
+        deleteLayer([recordProto('www', A)], deletedIds, () => Effect.fail(notFoundError())),
+      )
+      expect(deletedIds).toEqual([])
     })
   })
 })
