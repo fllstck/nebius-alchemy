@@ -604,6 +604,21 @@ nebius storage bucket list
   Ed25519/ECDSA — which *are* valid PEM. `Validation.isSupportedAuthPublicKey` pins that (and rejects a
   certificate by label before parsing, since Node extracts a public key from one). When such a
   constraint is discovered live, add a filter and put the measurement in its doc comment.
+- **A `labels` map is NOT the same field across services — there is no package-wide label schema, on
+  purpose.** Measured live 2026-09-24 (`spikes/labels-empty-key-probe.ts`):
+  `vpc/v1 Network.metadata.labels` **stores** an empty (`''`) and a blank (`'  '`) key and echoes them back;
+  `compute/v1 Disk.metadata.labels` **refuses** `''` (`3 INVALID_ARGUMENT: metadata.labels is invalid` —
+  naming neither the label nor the reason) while accepting `'  '`. So
+  `modules/resources/shared/label-map.ts` holds two schemas — `computeLabelMap` (empty only) for the compute
+  resources and `mk8s.template.instanceMetadata`, `kubernetesLabelMap` (blank too) for maps that become
+  **Kubernetes** labels — and every other service keeps a bare `Record`, listed as unmeasured in that file's
+  header. `tests/resources/vpc/v1/unit.test.ts` pins the *absence* of a filter for VPC, and
+  `spikes/labels-empty-key-probe.ts` is how to extend the table (one create + delete per service, plus a
+  valid-labels control so a refusal is provably about the key).
+- **A per-key schema check is the wrong shape for a map rule**: `Record(Schema.NonEmptyString, …)`
+  *silently drops* the offending entry (measured 2026-09-23: `{'': 'worker'}` decodes to `{}`), while a
+  map-level `Schema.makeFilter` rejects it loudly. Both shared label schemas are map-level filters for that
+  reason.
 - Ownership tagging uses `createInternalTags` / `hasAlchemyTags` / `Unowned` from `alchemy/Tags`
 - Label merge order: internal tags are base, user labels override
 
