@@ -94,6 +94,28 @@ describe('Nebius.compute.v1.Disk', () => {
       expect(result._tag).toBe('PropsValidationError')
     })
 
+    test('rejects an empty label key — the compute service refuses it with a message that names nothing', async () => {
+      // Measured live 2026-09-24 (`spikes/labels-empty-key-probe.ts`): a disk with `labels: {'': 'x'}` is
+      // answered `3 INVALID_ARGUMENT: metadata.labels is invalid` — no label, no reason. Same value with a
+      // *valid* label set was accepted in the same run, so the refusal is about the key.
+      const result = await runEffect(
+        DiskSchema.validateDiskProps({
+          type: 'NETWORK_SSD',
+          sizeGibibytes: 10,
+          labels: { '': 'x' },
+        }).pipe(Effect.flip),
+      )
+      expect(result._tag).toBe('PropsValidationError')
+      expect(String(result)).toContain('empty key')
+    })
+
+    test('accepts a BLANK label key — compute stores it, so trimming here would be over-strict', async () => {
+      const result = await runEffect(
+        DiskSchema.validateDiskProps({ type: 'NETWORK_SSD', sizeGibibytes: 10, labels: { '  ': 'x' } }),
+      )
+      expect(result.labels).toEqual({ '  ': 'x' })
+    })
+
     // ── create sources + encryption (Task 7b schema-audit gaps) ──────────
     // These fields existed in the generated `DiskSpec` but were absent from the
     // module props schema, so a disk could not be created from a snapshot or

@@ -200,7 +200,7 @@ Resource-level validations (they compare several props, so they are not attached
 | `diskEncryption` | no | `DiskEncryptionSchema` | — | — |
 | `diskEncryption.type` | **yes** | `Schema.Union([ Schema.Literal('DISK_ENCRYPTION_UNSPECIFIED'), Schema.Literal('DISK_ENCRYPTION_MANAGED'), ])` | — | — |
 | `forbidDeletion` | no | `Schema.Boolean` | — | — |
-| `labels` | no | `Schema.Record(Schema.String, Schema.String)` | — | — |
+| `labels` | no | `computeLabelMap` | — | — |
 | `name` | no | `Schema.String` | — | `isDnsCompliantResourceName` |
 | `parentId` | no | `IamV2Ids.ProjectId` | — | — |
 | `sizeGibibytes` | no | `Schema.Finite` | — | — |
@@ -237,7 +237,7 @@ Resource-level validations (they compare several props, so they are not attached
 | --- | --- | --- | --- | --- |
 | `sourceDiskId` | **yes** | `Ids.DiskId` | — | — |
 | `description` | no | `Schema.String` | — | — |
-| `labels` | no | `Schema.Record(Schema.String, Schema.String)` | — | — |
+| `labels` | no | `computeLabelMap` | — | — |
 | `name` | no | `Schema.String` | — | — |
 | `parentId` | no | `IamV2Ids.ProjectId` | — | — |
 
@@ -267,7 +267,7 @@ Resource-level validations (they compare several props, so they are not attached
 | `type` | **yes** | `FilesystemTypeSchema` | — | — |
 | `blockSizeBytes` | no | `Schema.Finite` | 4096 | `isValidBlockSize` |
 | `forbidDeletion` | no | `Schema.Boolean` | — | — |
-| `labels` | no | `Schema.Record(Schema.String, Schema.String)` | — | — |
+| `labels` | no | `computeLabelMap` | — | — |
 | `name` | no | `Schema.String` | — | `isDnsCompliantResourceName` |
 | `parentId` | no | `IamV2Ids.ProjectId` | — | — |
 
@@ -295,7 +295,7 @@ Resource-level validations (they compare several props, so they are not attached
 | prop | required | type | documented default | plan-time validation |
 | --- | --- | --- | --- | --- |
 | `infinibandFabric` | **yes** | `Schema.String` | — | `fabricValid` |
-| `labels` | no | `Schema.Record(Schema.String, Schema.String)` | — | — |
+| `labels` | no | `computeLabelMap` | — | — |
 | `name` | no | `Schema.String` | — | `isDnsCompliantResourceName` |
 | `parentId` | no | `IamV2Ids.ProjectId` | — | — |
 
@@ -324,7 +324,7 @@ Resource-level validations (they compare several props, so they are not attached
 | `description` | no | `Schema.String` | — | — |
 | `imageFamily` | no | `Schema.String` | — | — |
 | `imageFamilyHumanReadable` | no | `Schema.String` | — | — |
-| `labels` | no | `Schema.Record(Schema.String, Schema.String)` | — | — |
+| `labels` | no | `computeLabelMap` | — | — |
 | `name` | no | `Schema.String` | — | `isDnsCompliantResourceName` |
 | `parentId` | no | `IamV2Ids.ProjectId` | — | — |
 | `recommendedPlatforms` | no | `Schema.Array(Schema.String)` | — | — |
@@ -380,7 +380,7 @@ Resource-level validations (they compare several props, so they are not attached
 | `hosted` | no | `Schema.Unknown` | — | — |
 | `hostname` | no | `Schema.String` | — | — |
 | `isExternal` | no | `Schema.Boolean` | — | — |
-| `labels` | no | `Schema.Record(Schema.String, Schema.String)` | — | — |
+| `labels` | no | `computeLabelMap` | — | — |
 | `localDisks` | no | `LocalDisksSpecSchema` | — | — |
 | `localDisks.passthroughGroup` | **yes** | `{ … }` | — | — |
 | `name` | no | `Schema.String` | — | `isDnsCompliantResourceName` |
@@ -426,7 +426,7 @@ Resource-level validations (they compare several props, so they are not attached
 | --- | --- | --- | --- | --- |
 | `size` | **yes** | `Schema.Finite` | — | `sizeValid` |
 | `type` | **yes** | `NVLInstanceGroupTypeSchema` | — | — |
-| `labels` | no | `Schema.Record(Schema.String, Schema.String)` | — | — |
+| `labels` | no | `computeLabelMap` | — | — |
 | `name` | no | `Schema.String` | — | `isDnsCompliantResourceName` |
 | `parentId` | no | `IamV2Ids.ProjectId` | — | — |
 

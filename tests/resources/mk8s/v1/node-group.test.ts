@@ -125,6 +125,24 @@ describe('Nebius.mk8s.v1.NodeGroup', () => {
       await runEffect(SchemaModule.validateNodeGroupProps(validProps))
     })
 
+    test('the two template label maps have DIFFERENT rules — measured, not unified', async () => {
+      // `template.metadata.labels` becomes a **Kubernetes** label (no empty or blank name);
+      // `template.instanceMetadata.labels` is the **compute** instance's metadata, and compute accepts a
+      // blank key — measured live 2026-09-24 (`spikes/labels-empty-key-probe.ts`). The old shared filter
+      // applied the Kubernetes rule to both, so it rejected a configuration the platform serves.
+      expect(String(await invalidTemplate({ metadata: { labels: { '': 'worker' } } }))).toContain('must not be empty')
+      expect(String(await invalidTemplate({ metadata: { labels: { '  ': 'worker' } } }))).toContain('must not be empty')
+
+      expect(String(await invalidTemplate({ instanceMetadata: { labels: { '': 'x' } } }))).toContain('empty key')
+      const blankAccepted = await runEffect(
+        SchemaModule.validateNodeGroupProps({
+          ...validProps,
+          template: { ...validProps.template, instanceMetadata: { labels: { '  ': 'blank-ok' } } },
+        }),
+      )
+      expect(blankAccepted.template?.instanceMetadata?.labels).toEqual({ '  ': 'blank-ok' })
+    })
+
     test('the parent is the cluster, and it is required', async () => {
       // A node group is parented by a Cluster, not the project — so unlike every
       // project-parented resource there is no `NEBIUS_PROJECT_ID` fallback to fall back to.

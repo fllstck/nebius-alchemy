@@ -45,6 +45,17 @@ describe('Nebius.vpc.v1.Network', () => {
       const result = await runEffect(NetworkSchema.validateNetworkProps({ name: 'Bad Net' }).pipe(Effect.flip))
       expect(result._tag).toBe('PropsValidationError')
     })
+
+    test('accepts an EMPTY and a BLANK label key — deliberately no filter here', async () => {
+      // The inverse pin of `compute/v1 Disk`'s: VPC **stores** both, read back in the same probe run
+      // (`spikes/labels-empty-key-probe.ts`, `emptyKeyStored: true`), so a shared label filter would reject
+      // a configuration this service serves and echoes back. If someone "unifies" label maps later, this
+      // test is what should stop them.
+      const result = await runEffect(
+        NetworkSchema.validateNetworkProps({ name: 'my-network', labels: { '': 'x', '  ': 'blank' } }),
+      )
+      expect(result.labels).toEqual({ '': 'x', '  ': 'blank' })
+    })
   })
 })
 
