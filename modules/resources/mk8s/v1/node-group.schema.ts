@@ -145,6 +145,7 @@ const attachMode = Schema.Union([Schema.Literal('READ_ONLY'), Schema.Literal('RE
  * *accepts* a blank one, so the old shared rule was over-strict; `spikes/labels-empty-key-probe.ts`).
  */
 
+/**
  * Passthrough local disks (`GB200`/`GB300`-class platforms) and what mk8s does with them.
  *
  * Both booleans can only be `true`: the proto enables passthrough "only when this field is
