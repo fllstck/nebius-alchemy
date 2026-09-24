@@ -293,6 +293,11 @@ export const instanceSpecDrifted = (
       !ResourceUtils.specDeepEqual(live.reservationPolicy, desired.reservationPolicy)) ||
     !ResourceUtils.specDeepEqual(live.serviceAccountId, desired.serviceAccountId) ||
     live.cloudInitUserData !== desired.cloudInitUserData ||
+    // ⚠️ Not news-guarded, and that is a measured hazard (2026-09-24): a user who pinned `stopped: true`
+    // and later removes it leaves the instance stopped — `desired.stopped` is `false`, which proto3 encodes
+    // as **absent**, and absent means "leave unchanged" — while this comparison reads `live.stopped (true)
+    // !== false` and therefore reports drift on **every** reconcile, writing an update that can never
+    // converge. Needs `news.stopped !== undefined &&` (or a `Start` call — see the restart path below).
     live.stopped !== desired.stopped ||
     live.recoveryPolicy !== desired.recoveryPolicy ||
     live.hostname !== desired.hostname ||
@@ -549,6 +554,11 @@ export const NebiusInstanceProvider: Layer.Layer<
       })
       yield* waitForInstanceState({ instanceId, targetStates: ['STOPPED'], session })
       const stopped = yield* computeGrpcService.instance.get(instanceId)
+      // ⚠️ This update re-sends `desired`, whose `stopped` is `false` — and **`false` cannot be
+      // transmitted** (proto3 default = absent = "leave unchanged"), measured 2026-09-24: the call is
+      // accepted, `spec.stopped` still reads `true`, the VM stays STOPPED and the `RUNNING` wait below
+      // fails. The service has a `Start` RPC and `computeGrpcService.instance.start` is already exposed
+      // (and polled), so the fix is to call it. See TASKS.md §"Found in passing".
       instance = yield* computeGrpcService.instance.update({
         metadata: {
           id: instanceId,
