@@ -456,7 +456,7 @@ Resource-level validations (they compare several props, so they are not attached
 | `relativeName` | **yes** | `Schema.String` | — | — |
 | `type` | **yes** | `RecordTypeSchema` | — | — |
 | `deletionProtection` | no | `Schema.Boolean` | — | — |
-| `ttl` | no | `Schema.Finite` | 600 | — |
+| `ttl` | no | `Schema.Finite` | 600 | `ttlValid` |
 
 ### Returned values
 

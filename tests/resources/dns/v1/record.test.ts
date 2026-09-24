@@ -51,6 +51,43 @@ describe('Nebius.dns.v1.Record', () => {
       )
       expect(result._tag).toBe('PropsValidationError')
     })
+
+    describe('ttl bounds — measured live 2026-09-24 (spikes/dns-ttl-bounds-probe.ts)', () => {
+      const ttlError = async (ttl: number) =>
+        String(await runEffect(SchemaModule.validateRecordProps({ ...validRecordProps, ttl }).pipe(Effect.flip)))
+
+      test('accepts the boundaries: 1 and INT32_MAX', async () => {
+        // Both were accepted *and echoed back unchanged* in the probe, so they are inside the range.
+        expect((await runEffect(SchemaModule.validateRecordProps({ ...validRecordProps, ttl: 1 }))).ttl).toBe(1)
+        expect(
+          (await runEffect(SchemaModule.validateRecordProps({ ...validRecordProps, ttl: 2147483647 }))).ttl,
+        ).toBe(2147483647)
+      })
+
+      test('rejects a ttl above INT32_MAX — the API answers a bare "Invalid Record TTL"', async () => {
+        // `2147483648` and `4294967295` were both refused; the message names no bound, which is why the real
+        // range is worth stating at plan time.
+        expect(await ttlError(2147483648)).toContain('between 1 and 2147483647')
+        expect(await ttlError(4294967295)).toContain('between 1 and 2147483647')
+      })
+
+      test('rejects 0 and negatives — the API accepts them and silently stores 600', async () => {
+        // This is the loop, not a nicety: the provider compares the live echo against the pinned value
+        // (`news.ttl !== undefined &&`), and the echo is 600, so a pinned `0` writes an update on every
+        // reconcile that can never converge.
+        expect(await ttlError(0)).toContain('silently replaced with its default 600')
+        expect(await ttlError(-1)).toContain('silently replaced with its default 600')
+      })
+
+      test('rejects a fractional ttl — 0.5 also comes back as 600, never a truncation', async () => {
+        expect(await ttlError(0.5)).toContain('whole number of seconds')
+      })
+
+      test('omitting ttl is still fine (the API default is 600)', async () => {
+        const result = await runEffect(SchemaModule.validateRecordProps(validRecordProps))
+        expect(result.ttl).toBeUndefined()
+      })
+    })
   })
 
   describe('reconcile (spec drift)', () => {
