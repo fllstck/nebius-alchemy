@@ -47,6 +47,20 @@ Dynamically looks up the latest Ubuntu 22.04 LTS image by family, creates a NETW
 
 Creates a working control plane and a real worker node: network → subnet → cluster, plus a service account with an `editor` grant (group → permit → membership) whose id the node template needs for registry pulls and API access, then a `cpu-d3` node group with a 64 GiB boot disk and cloud-init user-data. It is the example that shows the non-obvious parts: the parent is the **cluster** (no project fallback), `fixedNodeCount` and `autoscaling` are mutually exclusive and one is required, `os`/`driversPreset` come from `Nebius.mk8s.action.GetNodeGroupCompatibilityMatrix` rather than a local list, and `etcdClusterSize: 1` keeps the demo cheap (non-HA). The commented block in the node template lists the optional surface — `strategy`, `autoRepair`, node/instance labels, taints, `maxPods`, `preemptible`, filesystems, capacity reservations, GPU and NVLink — with the caveats for each. **⚠️ Provisions a real billable VM** and is the slowest stack here (a node group takes minutes to `RUNNING` and its delete waits for the VM).
 
+### [spot-pricing.ts](spot-pricing.ts) — Spot pricing: a bid and the `pricing` prop
+
+Creates a `billing.PricingPolicy` — a project-scoped auction bid that caps what a preemptible GPU VM may
+pay per hour, and which provisions nothing — plus a `compute.Instance` that pins `pricing: { onDemand: true }`.
+The prop (also on `mk8s.NodeGroup.template`, `ai.Job` and `ai.Endpoint`) is a deliberate reshape of a flat
+proto oneof, so it reads as one choice: `{ onDemand: true }`, `{ followsSpotPrice: true }` or
+`{ spotPricingPolicy: { id: policy.id } }`. The API requires the arm to match `preemptible`, which is a
+**plan-time error** here. The two spot arms are commented because they need `preemptible`, and this tenant's
+CPU platforms reject it (`3 INVALID_ARGUMENT: Preemptible is invalid`) — they need GPU capacity. The comments
+carry the measured caveats: the API normalizes the price (`'3.000'` → `'3'`), a sub-market bid is accepted but
+blocks scheduling (`SCHEDULING_STATE_BLOCKED`), the service **discards** `metadata.labels`, its `Update` RPC
+rejects every documented shape (so a spec change is a replace), and on `compute.Instance` a pricing change is
+only accepted on a **stopped** VM. **⚠️ Deploys a real VM** (one `4vcpu-16gb`).
+
 ## Discovery Actions
 
 ### [actions.ts](actions.ts) — Read-only list/get actions
@@ -69,23 +83,55 @@ Same deploy-time wiring as `storage.bindings.ts`, but the Worker entry ([storage
 
 The Worker entry ([ai.bindings-worker.ts](ai.bindings-worker.ts)) declares an inference endpoint (network + subnet + the official vLLM Qwen3-0.6B config from the Nebius Serverless AI cookbook — L40S GPU) and consumes the typed `ChatCompletions` runtime client: deploy-time `NEBIUS_ENDPOINT_URL`/`NEBIUS_ENDPOINT_AUTH_TOKEN` injection (the token deploys as a Cloudflare secret), a fetch-based OpenAI-compatible client at runtime. Auth is a bearer token — unlike the S3 bindings there is no identity minting or IAM grant. The provider awaits the endpoint to RUNNING before wiring the URL (progress notes included); a broken endpoint fails with `EndpointNotReady`. See [AI_BINDINGS.md](../AI_BINDINGS.md) for the design.
 
-## Coverage — what is *not* demonstrated, and why
+## Hosted programs on a VM
 
-Every resource is checkable against this list by name; the ones absent from the files above are absent
-**on purpose** or **not yet written**, and the difference matters:
+### [ai-chat-instance.ts](ai-chat-instance.ts) — a bundled program served by systemd
 
-| resource | status |
-| `Nebius.iam.Invitation` | **deliberately not demonstrated.** Creating one sends real email to a real person (the same reason the live-echo audit excludes it) — an example is one `alchemy deploy` away from being run by accident |
-| `Nebius.quotas.QuotaAllowance` | **deliberately not demonstrated.** It mutates the tenant's real quotas, and its identity is the `(parent, name, region)` tuple because the service has no stable `id` |
-| `Nebius.iam.Federation` / `FederationCertificate` | **deliberately not demonstrated.** Tenant-scoped SSO configuration: it needs tenant-admin rights and points at a real identity provider's metadata/certificate, none of which a project-scoped example can supply |
-| `Nebius.iam.Project` | **deliberately not demonstrated.** The one resource here that is not project-scoped — a stack would create a whole new project (and its billing/entitlement context) rather than something inside the current one |
-| `Nebius.ai.Job` | **not demonstrated.** The low-level compute job behind `ai.Endpoint`; it needs GPU quota and runs for minutes, and [ai.bindings.ts](ai.bindings.ts) already covers the AI path end to end |
-| `Nebius.compute.GpuCluster` / `NVLInstanceGroup` | **commented, not runnable.** The snippet lives in [compute.ts](compute.ts) (fabric discovery → group → instance membership); deploying `NVLInstanceGroup` needs the `GB200`/`GB300` entitlement, so it stays a snippet rather than a stack that would fail on quota |
-| `Nebius.storage.Transfer` | **not yet written.** Genuine gap: two buckets, an access key and a stop condition — the only `storage` resource without a file |
-| `Nebius.compute.DiskSnapshot` | **commented, not runnable.** The snapshot → restore snippet is at the end of [compute.ts](compute.ts); as a stack it would add a second disk for no new lesson |
-| `Nebius.iam.AuthPublicKey` / `FederatedCredentials` | **not yet written.** Niche credential flows (a pinned RSA-4096 public key; OIDC federation for CI) that need a PEM or an IdP's issuer/subject pair as input |
+The instance-host counterpart of [ai.bindings.ts](ai.bindings.ts) (which targets a Cloudflare Worker). One
+stack deploys a **GPU vLLM endpoint** and a **hosted instance** whose program
+([ai-chat-instance-program.ts](ai-chat-instance-program.ts)) is bundled, shipped to an S3 assets bucket,
+fetched and served by systemd — answering `GET /?prompt=…` with a real chat completion. The difference from
+the Worker example is the reason the file exists: a bundle is never executed by the CLI, so the binding must
+be registered on the **deploy** side (the inline init Effect on the instance), and its env lands in the
+systemd EnvironmentFile the VM reads at runtime. **This file defaults to the cheap configuration** — a
+CPU-only endpoint serving `Qwen2.5-0.5B-Instruct` with llama.cpp — with the production-shaped GPU variant
+(L40S + vLLM) kept as a commented block; measured on real infra: deploy 341 s, a completion on the first
+`curl`, 36 SSE frames for `&stream=1`, destroy 192 s. **⚠️ Billable**, and the GPU variant much more so.
 
-| `Nebius.billing.PricingPolicy` + the `pricing` prop | **demonstrated and deployed live** — [spot-pricing.ts](spot-pricing.ts) creates a GPU auction bid and a VM that pins `{ onDemand: true }`, with the two spot arms commented (they need GPU capacity). Deploy/destroy verified 2026-09-24: policy `STATE_ACTIVE` / `SCHEDULING_STATE_ALLOWED` / `maxPrice: '3'` (the API normalizes it), instance `RUNNING`, destroy clean |
+## Coverage — every resource, audited
+
+**41 resources; 29 demonstrated, 3 commented-only, 9 absent.** The audit is mechanical, so it can be
+re-run rather than trusted: walk `modules/resources/**` for `Alchemy.Resource<'Nebius.…'>` type strings,
+then classify each mention in `examples/*.ts` by whether its line is commented out. (It was last run
+2026-09-24, which is how the gap in this section — a coverage table whose rows had drifted out of the
+table, and `ai-chat-instance.ts` having no section at all — came to light.)
+
+### Commented, not runnable (3) — a snippet shows the shape, deploying it would need entitlement or be pointlessly costly
+
+| resource | where, and why it stays a snippet |
+| --- | --- |
+| `Nebius.compute.GpuCluster` | [compute.ts](compute.ts) (fabric discovery → group → instance membership). Snippet only: the group needs a physical InfiniBand fabric id |
+| `Nebius.compute.NVLInstanceGroup` | [compute.ts](compute.ts). Snippet only: deploying it needs the `GB200`/`GB300` entitlement, so it would fail on quota rather than teach anything |
+| `Nebius.compute.DiskSnapshot` | [compute.ts](compute.ts) — the snapshot → restore pair. As a stack it would add a second disk for no new lesson |
+
+### Not yet written (4) — genuine gaps, none of them blocked by this tenant
+
+| resource | what a file would add |
+| --- | --- |
+| `Nebius.storage.Transfer` | the only `storage` resource without a file: two buckets, an access key and a stop condition (`afterOneIteration` / `afterNEmptyIterations` / `infinite`, which the props reshape from three flat oneof fields) |
+| `Nebius.iam.AuthPublicKey` | a pinned RSA-4096 public key — the API accepts **only** that shape, enforced by a plan-time filter |
+| `Nebius.iam.FederatedCredentials` | OIDC federation for CI: an issuer/subject pair from an identity provider |
+| `Nebius.ai.Job` | the low-level compute job behind `ai.Endpoint`. Needs GPU quota and runs for minutes; [ai.bindings.ts](ai.bindings.ts) already covers the AI path end to end |
+
+### Deliberately not demonstrated (5) — a stack would be an accident waiting to happen
+
+| resource | why |
+| --- | --- |
+| `Nebius.iam.Invitation` | creating one sends **real email to a real person** (the same reason the live-echo audit excludes it) — an example is one `alchemy deploy` away from being run by accident |
+| `Nebius.quotas.QuotaAllowance` | it mutates the tenant's **real quotas**, and its identity is the `(parent, name, region)` tuple because the service has no stable `id` |
+| `Nebius.iam.Federation` | tenant-scoped SSO: needs tenant-admin rights and a real identity provider's metadata, none of which a project-scoped example can supply |
+| `Nebius.iam.FederationCertificate` | the certificate half of that SSO configuration: a real IdP's signing certificate, and tenant-admin rights to install it |
+| `Nebius.iam.Project` | the one resource here that is **not** project-scoped — a stack would create a whole new project (with its own billing/entitlement context) rather than something inside the current one |
 
 ## Companion Files
 
