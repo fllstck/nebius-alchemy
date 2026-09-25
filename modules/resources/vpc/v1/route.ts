@@ -116,9 +116,10 @@ export const NebiusRouteProvider: Layer.Layer<
   }),
 
   // Routes are children of a RouteTable — enumerate every route table in the
-  // tenant and list each table's routes. Without this, nuke can't delete routes
-  // before their table (Nebius does not cascade-delete), so route-table deletes
-  // would fail or orphan routes.
+  // tenant and list each table's routes. Without this, nuke can't delete routes before their table:
+  // measured live 2026-09-25 (`spikes/parent-delete-cascade-probe.ts`), the API **refuses** the table
+  // delete while a route exists — `9 FAILED_PRECONDITION: RouteTable … cannot be deleted because it
+  // contains static routes: …` — so this enumeration is what makes a table delete possible at all.
   list: Effect.fn('Nebius.vpc.v1.Route.list')(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService

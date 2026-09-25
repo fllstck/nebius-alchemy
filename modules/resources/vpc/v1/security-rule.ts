@@ -144,9 +144,12 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
   }),
 
   // Security rules are children of a SecurityGroup — enumerate every security
-  // group in the tenant and list each group's rules. Without this, nuke can't
-  // delete rules before their group (Nebius does not cascade-delete), so group
-  // deletes would fail or orphan rules.
+  // group in the tenant and list each group's rules. Without this, nuke can't delete rules before
+  // their group: measured live 2026-09-25 (`spikes/parent-delete-cascade-probe.ts`), the API
+  // **refuses** the group delete while a rule exists — `9 FAILED_PRECONDITION: SecurityGroup …
+  // cannot be deleted because it contains rules: …` — so this enumeration is what makes a group
+  // delete possible at all. (The comment here used to claim a cascade-shaped rule instead; a refusal
+  // is neither a cascade nor an orphan, and it is the one that blocks a destroy.)
   list: Effect.fn('Nebius.vpc.v1.SecurityRule.list')(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
     const iam = yield* IamGrpc.IamGrpcService

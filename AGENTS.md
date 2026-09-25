@@ -463,6 +463,32 @@ provider ignores such a prop, a parent's replacement changes the id, the depende
 planned, and GC deletes the parent underneath it — silently. `gpuCluster` on the Instance
 was exactly this hole.
 
+### Delete cascades — measured, not assumed
+
+Eight providers used to justify their `nuke: { dependsOn: [...] }` ordering with one unmeasured
+sentence — *"Nebius does not cascade-delete associated resources"* — while `Factory.makeCrudDelete`
+asserted the opposite for the same family. Measured live 2026-09-25
+(`spikes/parent-delete-cascade-probe.ts`, one throwaway parent and child per relation, with
+StaticKey → ServiceAccount as a positive control because R-21 had already measured it):
+
+| relation | reading | what it means for the ordering |
+| `iam/v1 ServiceAccount` → `StaticKey` · `AuthPublicKey` · `iam/v2 AccessKey` · `GroupMembership` (by *member*, not by metadata parent) | **CASCADED** — the parent delete succeeded and the child was gone | ordering is defence-in-depth: the credential is deleted explicitly and visibly. `Factory.makeCrudDelete`'s `NOT_FOUND`-as-success comment is exactly right |
+| `iam/v1 Group` → `GroupMembership` · `AccessPermit` | **CASCADED** | same |
+| `vpc/v1 SecurityGroup` → `SecurityRule` · `vpc/v1 RouteTable` → `Route` · `dns/v1 Zone` → `Record` | **REFUSED** — `9 FAILED_PRECONDITION: … cannot be deleted because it contains rules/static routes: …`, `Zone … is not empty` | the parent delete **fails**, loudly, naming the child. Here the per-parent `list` is what makes the parent delete possible at all |
+
+No relation read `ORPHANED`, which is the reading that would have made a blind list a silent leak.
+That distinction is the reason this is recorded rather than asserted: `dependsOn` only helps for a
+child nuke can **enumerate**, so where a child's `list` is blind the cascade is the entire backstop —
+it is what saved the static keys in R-21 (whose `list` could not see a single key this code created)
+and what saves access keys and auth public keys, which have the same shape. A `REFUSED` parent is the
+better failure mode (visible, actionable) and the worse destroy (it blocks until the children are
+gone), so for those three the enumeration is load-bearing too.
+
+Two consequences to keep: **a new provider with a foreign-id or parent-id child MUST get its `nuke`
+ordering from a reading like this, not from the sentence**; and a provider whose child `list` is
+blind must not rely on `dependsOn` alone — that combination is only safe when the relation is
+measured `CASCADED`.
+
 ### Vendored repos
 
 - **Read-only**: Do NOT edit files under `repos/`

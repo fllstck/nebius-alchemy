@@ -46,8 +46,10 @@ export const NebiusAccessPermitProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusAccessPermit>, never, any>)
   : AlchemyProvider.succeed(NebiusAccessPermit, {
-  // AccessPermit is a sub-resource of a Group — nuke deletes permits before
-  // their group (Nebius does not cascade-delete associated resources).
+  // nuke deletes permits before their group. Measured live 2026-09-25
+  // (`spikes/parent-delete-cascade-probe.ts`): the group delete **cascades** the permits away, so the
+  // ordering is defence-in-depth — the permit is deleted explicitly and visibly — not a requirement.
+  // The claim that used to sit here ("does not cascade-delete") was the opposite, and wrong.
   nuke: { dependsOn: ['Nebius.iam.v1.Group'] },
 
   reconcile: Effect.fn('Nebius.iam.v1.AccessPermit.reconcile')(function* ({ id, news, output, session }) {

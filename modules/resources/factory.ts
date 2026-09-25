@@ -324,9 +324,12 @@ export const makeCrudDelete = <STag extends Context.Service<any, any>, E>(config
     const svc = yield* config.service
 
     const deleteOnce = config.deleteById(svc, output.id).pipe(
-      // Idempotent delete: NOT_FOUND means the resource is already gone (it may
-      // have been cascaded away by the server, e.g. deleting a service account
-      // removes its group memberships and access keys) — treat it as success.
+      // Idempotent delete: NOT_FOUND means the resource is already gone — it may have been
+      // cascaded away by the server, e.g. deleting a service account removes its group memberships
+      // and access keys. **Measured live 2026-09-25** (`spikes/parent-delete-cascade-probe.ts`): that
+      // example is literally true (SA → group memberships, and SA → AccessKey/AuthPublicKey/StaticKey
+      // all read `CASCADED`), which is why this is the correct treatment rather than a lenient one.
+      // The providers keep their `nuke.dependsOn` orderings anyway — see the cascade table in AGENTS.md.
       Effect.catchIf(
         // oxlint-disable-next-line no-explicit-any — error type is generic over E
         (e: any): e is GrpcError => e instanceof GrpcErrorCtor && e.code === 5,

@@ -50,8 +50,11 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusAuthPublicKey>, never, any>)
   : AlchemyProvider.succeed(NebiusAuthPublicKey, {
-  // The authorized key is a sub-resource of a ServiceAccount — nuke deletes
-  // keys before their SA (Nebius does not cascade-delete associated resources).
+  // nuke deletes keys before their SA. Measured live 2026-09-25
+  // (`spikes/parent-delete-cascade-probe.ts`): the SA delete **cascades** this key away, so the
+  // ordering is defence-in-depth — an explicitly deleted credential is visible in the destroy log
+  // instead of vanishing implicitly — not a requirement. The claim that used to sit here
+  // ("Nebius does not cascade-delete associated resources") was the opposite, and wrong.
   nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
 
   reconcile: Effect.fn('Nebius.iam.v1.AuthPublicKey.reconcile')(function* ({ id, news, output, session, olds }) {

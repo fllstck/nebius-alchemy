@@ -119,9 +119,10 @@ export const NebiusRecordProvider: Layer.Layer<
   }),
 
   // Records are children of a Zone (no project-scoped list) — enumerate every
-  // zone in the tenant and list each zone's records. Without this, nuke can't
-  // delete records before their zone (Nebius does not cascade-delete), so zone
-  // deletes would fail or orphan records.
+  // zone in the tenant and list each zone's records. Without this, nuke can't delete records before
+  // their zone: measured live 2026-09-25 (`spikes/parent-delete-cascade-probe.ts`), the API
+  // **refuses** the zone delete while a record exists — `9 FAILED_PRECONDITION: Zone … is not empty` —
+  // so this enumeration is what makes a zone delete possible at all.
   list: Effect.fn('Nebius.dns.v1.Record.list')(function* () {
     const dns = yield* DnsGrpc.DnsGrpcService
     const iam = yield* IamGrpc.IamGrpcService

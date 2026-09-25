@@ -55,8 +55,11 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusGroupMembership>, never, any>)
   : AlchemyProvider.succeed(NebiusGroupMembership, {
-  // GroupMembership is a sub-resource of a Group — nuke deletes memberships
-  // before their group (Nebius does not cascade-delete associated resources).
+  // nuke deletes memberships before their group. Measured live 2026-09-25
+  // (`spikes/parent-delete-cascade-probe.ts`): the group delete **cascades** the memberships away —
+  // and so does deleting the *member* service account, which is what `Factory.makeCrudDelete`'s
+  // `NOT_FOUND`-as-success comment relies on — so the ordering is defence-in-depth, not a requirement.
+  // The claim that used to sit here ("does not cascade-delete") was the opposite, and wrong.
   nuke: { dependsOn: ['Nebius.iam.v1.Group'] },
 
   reconcile: Effect.fn('Nebius.iam.v1.GroupMembership.reconcile')(function* ({ id, news, output, session }) {

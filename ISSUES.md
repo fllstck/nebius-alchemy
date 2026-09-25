@@ -39,7 +39,7 @@ infra / credentials)
 | R-19 | MEH | compute/hosted | `quoteEnvValue` turns a newline into literal `\n`; no round-trip test | S | MED |
 | R-20 | MEH | compute, ai | Create-failure recovery does not classify the failure first | S | LOW |
 | R-21 | EMBARRASSING | iam/v1 | Static keys are project-parented, but `list` queries per service account — nuke cannot see them | S | MED |
-| R-22 | EYE ROLL | modules/** | "Nebius does not cascade-delete associated resources" is asserted in 8 providers and measured **false** for the one relation that was tested | M | LOW |
+| R-22 | EYE ROLL | modules/** | "Nebius does not cascade-delete associated resources" was asserted in 8 providers and is false for the IAM family | M | LOW |
 | R-23 | MEH | spikes/** | R-18's leak sweep was scoped to `tests/`, so the maintainer's real project id sits in 23 tracked spike files (and once in this file) | S | LOW |
 
 ---
@@ -957,41 +957,72 @@ reach (see R-23).
 
 ---
 
-### R-22 — "Nebius does not cascade-delete associated resources" is asserted in 8 providers and measured false for the one relation that was tested · `OPEN`
+### R-22 — "Nebius does not cascade-delete associated resources" was asserted in 8 providers and is false for the IAM family · `DONE (2026-09-25)`
 
-**Files** (the duplicated claim): `modules/resources/iam/v1/static-key.ts` (**measured false, corrected
-in R-21**) · `iam/v1/auth-public-key.ts:54` · `iam/v2/access-key.ts:153` · `iam/v1/access-permit.ts:50` ·
-`iam/v1/group-membership.ts:59` · `vpc/v1/security-rule.ts:148` · `vpc/v1/route.ts:120` ·
-`dns/v1/record.ts:123`
+**Fixed**: every one of the 8 sites now states its own dated reading instead of the sentence, and the
+fleet-wide table lives in one place (AGENTS.md §"Delete cascades — measured, not assumed") so eight
+copies cannot drift apart again. **No provider behaviour changed** — no `dependsOn` was added or
+removed; what changed is that each ordering now has a measured reason, and two of them have a
+different reason than the comment gave.
 
-**Evidence**: `spikes/static-key-parent-probe.ts` (R-21) deleted a service account that still had a
-static key attached. The delete **succeeded**, a `list(PROJECT)` five seconds later answered `[]`, and
-the postflight confirmed the SA was gone (`5 NOT_FOUND: Cannot get entity with id serviceaccount-…`).
-A key whose `metadata.parentId` is the *project* was therefore removed by deleting the service account
-named in its `spec.account` — the cascade follows the account reference, not the metadata parent.
+**Files**: `iam/v1/{static-key,auth-public-key,access-permit,group-membership}.ts` ·
+`iam/v2/access-key.ts` · `vpc/v1/{security-rule,route}.ts` · `dns/v1/record.ts` · `factory.ts`
+(`makeCrudDelete`) · probe `spikes/parent-delete-cascade-probe.ts`
 
-**Why it bites**: each of these comments is the *reason* given for a `nuke: { dependsOn: […] }`
-ordering (or, in `auth-public-key.ts`, for a delete-before-parent claim). A delete-ordering justification
-that is not a measurement is how a credential leak gets designed in: someone reads "does not cascade",
-concludes the key must be deleted explicitly, and is right by accident — or concludes the opposite
-somewhere else and is wrong silently. It also decides R-21's severity: the cascade is why that bug
-leaks nothing in the common case and everything in the uncommon one. AGENTS.md's stance is that a
-documented default is a *risk the design removes*, not a claim about the field — and the fleet now
-carries eight untested claims of this shape.
+**The measurement** — one throwaway parent and child per relation, then the parent delete while the
+child existed, read twice (two full runs, identical):
 
-**Fix**: measure each relation with the probe that already exists (`spikes/static-key-parent-probe.ts`
-has the harness: create the child and the parent, delete the parent, re-list), then either correct the
-comment to state the reading and its date or keep it and cite the reading that supports it. The
-half that is cheap to settle is the SA-parented IAM family (`auth-public-key`, `access-key`), which
-shares StaticKey's exact proto shape; the group/route-table/zone ones are metadata-`parentId`
-relations and are a genuinely different mechanism, so they need their own arms — do not copy the
-SA conclusion across.
+| relation | reading | evidence |
+| `ServiceAccount` → `StaticKey` (**positive control**, R-21 had already measured it) | CASCADED | child gone from `get` |
+| `ServiceAccount` → `AuthPublicKey` | CASCADED | ditto |
+| `ServiceAccount` → `iam/v2 AccessKey` | CASCADED | ditto |
+| `ServiceAccount` → `GroupMembership` (by **member** reference, not the metadata parent) | CASCADED | ditto |
+| `Group` → `GroupMembership` | CASCADED | ditto |
+| `Group` → `AccessPermit` | CASCADED | ditto |
+| `SecurityGroup` → `SecurityRule` | **REFUSED** | `9 FAILED_PRECONDITION: SecurityGroup … cannot be deleted because it contains rules: vpcsecurityrule-…` |
+| `RouteTable` → `Route` | **REFUSED** | `9 FAILED_PRECONDITION: RouteTable … cannot be deleted because it contains static routes: vpcroute-…` |
+| `Zone` → `Record` | **REFUSED** | `9 FAILED_PRECONDITION: Zone … is not empty` |
 
-**Acceptance**: each of the 8 sites either carries a dated measurement ("cascaded, measured <date>,
-<probe>") or says explicitly that it is **unmeasured** and why the ordering is kept anyway;
-`grep -rn "does not cascade" modules/` has no bare assertion left. The keep-or-drop decision for a
-`dependsOn` is then separate from the claim: an explicit delete is defensible regardless of a cascade
-(it is visible in the destroy log), which is the position `static-key.ts` now takes.
+**Three classes, and the old sentence was wrong about two of them.** The IAM relations **cascade** — so
+the `dependsOn` orderings there are defence-in-depth (a credential deleted explicitly and visibly
+rather than vanishing implicitly), and the claim in those five files was simply false. The VPC/DNS
+relations are **refused**: the parent delete fails loudly, naming the child, which is a third shape the
+sentence did not describe — it is neither a cascade nor an orphan, and it is the one that *blocks* a
+destroy until the enumeration finds the children. And `Factory.makeCrudDelete`'s comment ("deleting a
+service account removes its group memberships and access keys") is **literally true** — the repo was
+citing the correct reading in one place while eight others asserted its opposite.
+
+**Why this is not a comment-accuracy nit.** No relation read `ORPHANED`, and that is the reading that
+would have turned a blind `list` into a silent leak. `dependsOn` only orders the deletion of children
+nuke can *enumerate*, so where a child's list is blind the cascade is the entire backstop: it is what
+saved R-21's static keys (whose list could not see a single key this provider created) and what covers
+access keys and auth public keys, which share that shape. Two consequences are now written into
+AGENTS.md: a new provider whose child holds a foreign id or a parent id must take its `nuke` ordering
+from a reading like this one rather than from the sentence; and a provider with a blind child `list`
+may not rely on `dependsOn` alone — that combination is safe only where the relation is measured
+`CASCADED`.
+
+**Operational flip side worth knowing** (not a defect): because the IAM relations cascade, deleting a
+service account by hand — in the console, or by `nuke` before it reaches the keys — silently destroys
+its static keys, access keys and auth public keys. The credential stops working with no event on the
+key itself.
+
+**Acceptance**: met — `grep -rn "does not cascade" modules/` finds no assertion, only the four
+historical quotations that now say the claim "used to sit here, and was wrong"; every relation has a
+`CASCADED`/`REFUSED` reading with a date in its own file; `bun run check` and `bun test` clean.
+
+**Cleanup**: `POSTFLIGHT nothing left` on both runs — 15 objects created and removed (the probe
+deletes children first, then parents, re-checking existence so a cascaded object is never re-deleted,
+and the shared VPC network last).
+
+**Fixture knowledge for the next probe**: a `defaultEgressGateway` route rejects any destination
+inside RFC1918 (`3 INVALID_ARGUMENT: Destination cidr … must not be within RFC1918 ranges`) — the
+first run of this probe reported that arm `INCONCLUSIVE` for exactly that reason, which is why the
+probe distinguishes INCONCLUSIVE from a reading rather than guessing.
+
+**Deliberately not measured**: `iam/v1 Federation` → `FederationCertificate` (the federation is
+**tenant**-scoped, so the probe would have created a tenant-level object; its `dependsOn` is left
+standing unmeasured and unclaimed rather than extrapolated from the relations above).
 
 ---
 
@@ -1044,12 +1075,16 @@ adding it, and to make the run fail loudly instead of reaching for a committed d
 done (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
 miss), R-18 + R-20 are done (2026-09-25), and R-21 was found by R-01's probe (2026-09-25) and is now
 done too (its measurement is `spikes/static-key-parent-probe.ts`). R-10 and R-12 remain open here.
-   That session also filed **R-22** (the eight-provider cascade claim — R-21 measured one of them
-   false) and **R-23** (R-18's leak sweep reached `tests/` only).
-7. **R-22, R-23** — both are "make the claim match the measurement" sweeps, offline apart from R-22's
-   IAM arms (no VM; the R-21 probe already has the harness). R-23 is the smaller one and needs no API
-   call at all.
-7. **R-08** — last, because it is a large refactor over the file most likely to change for other
+   That session also filed **R-22** (the eight-provider cascade claim) and **R-23** (R-18's leak sweep
+   reached `tests/` only).
+7. **R-22 — done 2026-09-25** — nine relations measured (`spikes/parent-delete-cascade-probe.ts`): the
+   IAM family **cascades** (so five comments were false), the VPC/DNS family is **refused by the API**
+   (`FAILED_PRECONDITION`, naming the child), and nothing was `ORPHANED` — the one reading that would
+   make a blind `list` a silent leak. No provider behaviour changed; the eight comments now carry their
+   own reading and the table lives in AGENTS.md.
+8. **R-23** — the last offline cleanup: 23 tracked `spikes/` files still carry the maintainer's real
+   project id. No API call needed; the shape is already in the two new probes.
+9. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 
 ## Do not "fix" these — they are approved exceptions
