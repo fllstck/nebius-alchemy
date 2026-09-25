@@ -138,7 +138,7 @@ export interface StaticKeyService {
   readonly get: (
     id: string,
   ) => Effect.Effect.Effect<StaticKey, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  /** List static keys under a service account (nuke enumerates keys per-SA). */
+  /** List static keys under a **project** (the only container `Issue` accepts; measured live 2026-09-25 — see `spikes/static-key-parent-probe.ts`). */
   readonly list: (
     parentId: string,
   ) => Effect.Effect.Effect<StaticKey[], GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
@@ -553,8 +553,10 @@ const makeStaticKeyService = Effect.Effect.gen(function* () {
       return { key, token }
     }) as any
 
-  // list — static keys are per-service-account (not per-project), so nuke
-  // fans out through SAs to enumerate them
+  // list — keys live in the **project** container (`Issue` refuses a service-account `parentId`
+  // with `3 INVALID_ARGUMENT: Expected type of nid should be one of project, aiproject,
+  // tractotenant, but found serviceaccount`; measured live 2026-09-25), so nuke enumerates one list
+  // call per project rather than fanning out through service accounts, which returned nothing.
   const list = (
     parentId: string,
   ): Effect.Effect.Effect<StaticKey[], GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError> =>

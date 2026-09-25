@@ -39,6 +39,8 @@ infra / credentials)
 | R-19 | MEH | compute/hosted | `quoteEnvValue` turns a newline into literal `\n`; no round-trip test | S | MED |
 | R-20 | MEH | compute, ai | Create-failure recovery does not classify the failure first | S | LOW |
 | R-21 | EMBARRASSING | iam/v1 | Static keys are project-parented, but `list` queries per service account — nuke cannot see them | S | MED |
+| R-22 | EYE ROLL | modules/** | "Nebius does not cascade-delete associated resources" is asserted in 8 providers and measured **false** for the one relation that was tested | M | LOW |
+| R-23 | MEH | spikes/** | R-18's leak sweep was scoped to `tests/`, so the maintainer's real project id sits in 23 tracked spike files (and once in this file) | S | LOW |
 
 ---
 
@@ -856,35 +858,169 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 
 ---
 
-### R-21 — Static keys are project-parented, but `list` queries per service account, so nuke cannot see them · `OPEN`
+### R-21 — Static keys are project-parented, but `list` queried per service account · `DONE (2026-09-25)`
 
-**Files**: `modules/resources/iam/v1/static-key.ts` (`create`, `list`)
+**Fixed, in two halves — the second one is what makes the first safe**:
 
-**Evidence**: found live 2026-09-25 by `spikes/idempotency-key-probe.ts`. An `Issue` carrying
-`metadata.parentId = <project>` creates a key whose `metadata.parentId` **is the project**:
+1. `Nebius.iam.v1.StaticKey.list` now enumerates **by project** — the container `create` issues into —
+   via `Factory.makeTenantScopedList`, the same helper the sibling with this exact proto shape
+   (`metadata.parentId` + `spec.account.serviceAccount`) already uses. The project → service account →
+   key fan-out is gone, which also removes one RPC per project from an enumeration that walks every
+   family in the tenant.
+2. `create` now sends the `alchemy::*` ownership labels. Fixing the parent **alone** would have been a
+   destructive regression: `list` is what `alchemy unsafe nuke` walks, and nuke deletes every target a
+   provider's `list` returns with no further ownership check (`Nuke.ts` → `provider.delete({ output:
+   attributes })`; `makeCrudDelete` has no ownership test). A project-scoped list is only safe because
+   `makeTenantScopedList` withholds anything without an `alchemy::` label — `isDefaultResource`:
+   "system resources untouched by Alchemy have no labels → default" — and these keys were issued with
+   **no labels at all**, so the corrected list would have returned every static key in every project
+   of the tenant, including ones no Alchemy stack ever created. With the tags, the same filter that
+   protects the other 28 resources protects this one.
 
-```
-keys live: {"byProjectParent":2,"bySaParent":0,"probeParents":["project-e00eq4g7pr00j746m1fttd", ...]}
-```
+**Files**: `modules/resources/iam/v1/static-key.ts` (`create`, `list`, `nuke`) ·
+`modules/api-client/iam.ts` (the `StaticKeyService.list` contract, which documented the wrong
+container) · probe `spikes/static-key-parent-probe.ts`
 
-An immediate `list(serviceAccountId)` — the form the provider uses — returned **0**, and the API's own
-`ALREADY_EXISTS` message names the project ("already exists in project-…: statickey-…").
+**The measurement decided the direction, and the API answered in one line.** Both branches of the
+question ("list by project" vs "issue with `parentId = serviceAccountId`") collapse, because the API
+refuses the second outright:
 
-**Why it bites**: `Nebius.iam.v1.StaticKey.list` fans out project → service accounts →
-`staticKey.list(sa.id)`, so it can never see a key the same code created. That list is what
-`alchemy unsafe nuke` enumerates, so a nuke would report a clean tenant while leaving every static key
-behind — and a static key is a long-lived credential (6 months by default, up to 3 years). The
-provider's comment ("Static keys are per-service-account, not per-project") is the belief the
-measurement contradicts.
+| arm | request | result |
+| A | `Issue(parentId = PROJECT)` | accepted → `statickey-e00ar9y0wacwbqbzb7`, `metadata.parentId` echoed back as the **project**, no labels |
+| B | `Issue(parentId = SA)` | `3 INVALID_ARGUMENT: Expected type of nid should be one of project, aiproject, tractotenant, but found serviceaccount` |
+| C | `Issue(parentId = PROJECT, labels = alchemy::*)` | accepted; `metadata.labels` comes back **verbatim** (`alchemy::id`/`stack`/`stage`) |
+| — | `list(PROJECT)` | returns A **and** C (2/2) |
+| — | `list(SA)` | **returns nothing** (`totalReturned: 0`), including after the SA-parented issue was refused |
+| — | `getByName(PROJECT, name)` | finds key A |
+| — | `getByName(SA, name)` | `5 NOT_FOUND` |
+| — | **`Factory.makeTenantScopedList` with this service** (i.e. the fixed `list`) | `{taggedVisible: true, untaggedWithheld: true}` — returns C, withholds A |
 
-**Fix (one measurement chooses the direction)**: either `list` the keys by **project**
-(`staticKey.list(project.id)`), or `Issue` with `metadata.parentId = serviceAccountId` so the key really
-is SA-parented — the probe only measured the project-parented create. Issue one key each way, list both
-ways, then align `create` and `list` on whichever parent the API honours. (Also watch the SA delete: run
-1's key disappeared with its deleted service account, so a cascade may already be covering part of this.)
+So the container is the project, unambiguously: `Issue` will not accept a service-account `nid`
+at all. The proto is what misled the original implementation — `GetStaticKeyByNameRequest.parent_id`
+is documented as "id of the parent container (**service account**)", and that comment is **wrong for
+this service** (`getByName` by project finds the key; by SA answers `NOT_FOUND`), while
+`ListStaticKeysRequest.parent_id` says only "Represents the container ID." The `spec.account.serviceAccount`
+reference — not the metadata parent — is what names the account.
 
-**Acceptance**: a `list` that returns a key the same code created — pinned by a live probe recording
-both the create and the list parent, not by a mapper unit test (the parent semantics are the API's).
+**Rider — the bite is narrower than this entry claimed, and the difference is measured, not argued.**
+The same run deleted the service account with key A still attached: the delete **succeeded**, and a
+`list(PROJECT)` five seconds later answered `[]`, with the postflight confirming the SA was gone
+(`Cannot get entity with id serviceaccount-…`). So the platform cascades a static key away with the
+account named in its `spec.account` — the key is not left orphaned by an SA delete. That downgrades
+this from "an orphaned long-lived credential with no trace" to "an enumeration that is structurally
+blind": `list` is still what `alchemy unsafe nuke` walks, so keys whose account is *not* deleted in
+the same run (an adopted or externally-managed SA, a key issued for a service account outside nuke's
+scope) are never reported, and a partial enumeration reading as a complete one is exactly what
+AGENTS.md §"no failure may read as nothing there" forbids. The provider comment that stated the old
+belief — "Static keys are per-service-account, not per-project" — is replaced by the readings above,
+and `nuke`'s `dependsOn` is kept with its reason corrected (the SA delete cascades, so the ordering
+is defence-in-depth rather than a requirement: an explicitly deleted credential is visible in the
+destroy log instead of vanishing implicitly).
+
+**Acceptance — met by the probe (R-21 named the API's semantics as the thing to pin, and a unit test
+cannot invent them):** `spikes/static-key-parent-probe.ts` records both parents, the label echo and
+the provider-shaped list in one run and prints a verdict per question;
+`bun spikes/static-key-parent-probe.ts` → `PROJECT IS THE CONTAINER …`,
+`alchemy::* labels are stored and echoed verbatim …`, and
+`NUKE-SAFETY READING {taggedVisible: true, untaggedWithheld: true}`. The last line is the one that
+matters most, and it is the reason the probe builds its list through `Factory.makeTenantScopedList`
+rather than re-implementing the two calls: the factory call **is** the provider's `list`, including the
+`isDefaultResource` filter that no hand-written replication would have included.
+
+**Met, the provider-side half** (offline): `tests/resources/iam/v1/static-key.test.ts` →
+`list enumerates keys by PROJECT, never by service account` asserts `staticKey.list` is called with
+the project id and that `serviceAccount.list` is called **zero** times; the create test asserts the
+issue request carries `alchemy::id` + `alchemy::stack` + `alchemy::stage` and a **project**
+`parentId`. **Negative control (run, not asserted)**: with the pre-fix provider restored, the list test
+fails at the first assertion (`listParents` = `[]`, since the fan-out only reaches `staticKey.list`
+*through* a service account) — the fan-out was reachable only by reading the source, which is how it
+survived until a live probe caught it. The tagging half has its own live negative control: the probe's
+arm A is issued **without** labels and is withheld by the fixed list, which is exactly what would have
+happened to every key had the parent been fixed without the tags — and, without the filter, exactly
+what would *not* have happened, i.e. nuke deleting credentials it never created.
+
+**Also corrected by the tags**: `read`'s `AlchemyTags.hasAlchemyTags` check could never succeed for a
+key this provider issued (there were no labels to match), so every `read` answered
+`AdoptPolicy.Unowned`. Keys issued before this change stay `Unowned` — unchanged behaviour, and the
+reason this is a create-side fix rather than something `read` could repair.
+
+**Live end-to-end, the whole provider path**: `SLOW_TESTS=1 bun test
+tests/resources/live-echo.integration.test.ts -t "iam family"` → pass, with the six-family deploy and
+destroy both clean (`Done: 6 succeeded`), i.e. a `StaticKey` created by the provider with the new
+metadata still writes exactly once and its forced reconcile still writes nothing.
+
+**Cleanup**: both probe keys and the throwaway service account are deleted and postflighted to zero
+(`POSTFLIGHT {probeKeysLeft: 0, probeServiceAccountsLeft: 0}`). The probe deliberately reads
+`NEBIUS_PROJECT_ID` from the environment with **no default** — every earlier probe in `spikes/`
+hardcoded the maintainer's real project id, which R-18's acceptance grep (`tests/` only) did not
+reach (see R-23).
+
+---
+
+### R-22 — "Nebius does not cascade-delete associated resources" is asserted in 8 providers and measured false for the one relation that was tested · `OPEN`
+
+**Files** (the duplicated claim): `modules/resources/iam/v1/static-key.ts` (**measured false, corrected
+in R-21**) · `iam/v1/auth-public-key.ts:54` · `iam/v2/access-key.ts:153` · `iam/v1/access-permit.ts:50` ·
+`iam/v1/group-membership.ts:59` · `vpc/v1/security-rule.ts:148` · `vpc/v1/route.ts:120` ·
+`dns/v1/record.ts:123`
+
+**Evidence**: `spikes/static-key-parent-probe.ts` (R-21) deleted a service account that still had a
+static key attached. The delete **succeeded**, a `list(PROJECT)` five seconds later answered `[]`, and
+the postflight confirmed the SA was gone (`5 NOT_FOUND: Cannot get entity with id serviceaccount-…`).
+A key whose `metadata.parentId` is the *project* was therefore removed by deleting the service account
+named in its `spec.account` — the cascade follows the account reference, not the metadata parent.
+
+**Why it bites**: each of these comments is the *reason* given for a `nuke: { dependsOn: […] }`
+ordering (or, in `auth-public-key.ts`, for a delete-before-parent claim). A delete-ordering justification
+that is not a measurement is how a credential leak gets designed in: someone reads "does not cascade",
+concludes the key must be deleted explicitly, and is right by accident — or concludes the opposite
+somewhere else and is wrong silently. It also decides R-21's severity: the cascade is why that bug
+leaks nothing in the common case and everything in the uncommon one. AGENTS.md's stance is that a
+documented default is a *risk the design removes*, not a claim about the field — and the fleet now
+carries eight untested claims of this shape.
+
+**Fix**: measure each relation with the probe that already exists (`spikes/static-key-parent-probe.ts`
+has the harness: create the child and the parent, delete the parent, re-list), then either correct the
+comment to state the reading and its date or keep it and cite the reading that supports it. The
+half that is cheap to settle is the SA-parented IAM family (`auth-public-key`, `access-key`), which
+shares StaticKey's exact proto shape; the group/route-table/zone ones are metadata-`parentId`
+relations and are a genuinely different mechanism, so they need their own arms — do not copy the
+SA conclusion across.
+
+**Acceptance**: each of the 8 sites either carries a dated measurement ("cascaded, measured <date>,
+<probe>") or says explicitly that it is **unmeasured** and why the ordering is kept anyway;
+`grep -rn "does not cascade" modules/` has no bare assertion left. The keep-or-drop decision for a
+`dependsOn` is then separate from the claim: an explicit delete is defensible regardless of a cascade
+(it is visible in the destroy log), which is the position `static-key.ts` now takes.
+
+---
+
+### R-23 — R-18's leak sweep was scoped to `tests/`, so the real project id sits in 23 tracked spike files · `OPEN`
+
+**Files**: 23 of the 35 tracked files under `spikes/` (one line each) + `ISSUES.md:797` (in R-18's own
+*Evidence* line, which quotes the literal while the entry's prose promises it does not)
+
+**Evidence**: R-18 fixed the nine `tests/**` occurrences and its acceptance was
+`grep -rn "project-e00eq" tests/ → 0` — a scope, not a rule. The literal that was the subject of the
+report therefore survives in 24 tracked places, all of it in the same public repository. Found while
+writing R-21's probe, which needed the same constant.
+
+**Why it bites**: the value is the local `.env` project id — not a credential, exactly as R-18 assessed
+it — but the fix that was accepted for it did not remove it, and an acceptance criterion expressed as
+a path prefix will keep not removing things. That is the recurring shape in this file: a fix verified
+only where it was looked for.
+
+**Fix**: the shape is already written down — `spikes/static-key-parent-probe.ts` reads
+`NEBIUS_PROJECT_ID` from the environment and **exits with an error when it is unset**, committing no
+default. Apply it to the other 23 (or hoist one shared `requireProjectId()` into a spike helper), and
+drop the literal from `ISSUES.md:797` in favour of `NEBIUS_PROJECT_ID` (the sentence does not need the
+value to make its point). **Widen R-18's acceptance to the repository** — `git grep -c <literal>` → 0 —
+since a path-scoped grep is what let this through.
+
+**Acceptance**: `git grep -rn "project-e00eq" | wc -l` → **0** across the whole tracked tree, and the
+spikes still run (each fails loudly with "NEBIUS_PROJECT_ID is required" when it is not set, rather
+than silently probing `project-1`). The literal stays in git history either way; the point is to stop
+adding it, and to make the run fail loudly instead of reaching for a committed default.
 
 ---
 
@@ -906,7 +1042,13 @@ both the create and the list parent, not by a mapper unit test (the parent seman
 5. **R-19** — needs a live instance; pair with any other live probe session.
 6. **R-10, R-12, R-15, R-16, R-18, R-20, R-21** — incremental cleanups, safe to interleave. R-15 + R-16 are
 done (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
-miss), R-18 + R-20 are done (2026-09-25), and R-21 was found by R-01's probe (2026-09-25).
+miss), R-18 + R-20 are done (2026-09-25), and R-21 was found by R-01's probe (2026-09-25) and is now
+done too (its measurement is `spikes/static-key-parent-probe.ts`). R-10 and R-12 remain open here.
+   That session also filed **R-22** (the eight-provider cascade claim — R-21 measured one of them
+   false) and **R-23** (R-18's leak sweep reached `tests/` only).
+7. **R-22, R-23** — both are "make the claim match the measurement" sweeps, offline apart from R-22's
+   IAM arms (no VM; the R-21 probe already has the harness). R-23 is the smaller one and needs no API
+   call at all.
 7. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 

@@ -13,8 +13,6 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as StaticKeySchema from './static-key.schema.ts'
 import * as Factory from '../../factory.ts'
-import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
 import * as Ids from './ids.ts'
 
 // ----- RESOURCE TYPES
@@ -81,6 +79,14 @@ const create = /* @__PURE__ */ Effect.fn('Nebius.iam.v1.StaticKey.create')(funct
   news = yield* StaticKeySchema.validateStaticKeyProps(news)
 
   const iamGrpcService = yield* IamGrpc.IamGrpcService
+
+  // The container is the **project**, not the service account — measured live 2026-09-25
+  // (`spikes/static-key-parent-probe.ts`): `Issue` with `parentId` = an SA is refused outright with
+  // `3 INVALID_ARGUMENT: Expected type of nid should be one of project, aiproject, tractotenant, but
+  // found serviceaccount`, and the key's `metadata.parentId` is echoed back as the project. The
+  // proto's "parent container (service account)" wording on `GetStaticKeyByNameRequest` is wrong for
+  // this service: `getByName(PROJECT, name)` finds the key and `getByName(SA, name)` answers
+  // `5 NOT_FOUND`. `spec.account.serviceAccount.id` is what names the account.
   const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
 
   // Auto-generate name: `sk-<logicalId>` — deterministic, so a replacement generation reuses it and
@@ -88,10 +94,23 @@ const create = /* @__PURE__ */ Effect.fn('Nebius.iam.v1.StaticKey.create')(funct
   const name = `sk-${id.replace(/_/g, '-').toLowerCase().slice(0, 55)}`
 
   yield* session.note(`Issuing static key for service account (${news.serviceAccountId})`)
+
+  // Ownership tags are **load-bearing here**, not decoration. `list` is project-scoped (a key's only
+  // container — see below), and `alchemy unsafe nuke` deletes every target a provider's `list`
+  // returns without any further ownership check, so a project-scoped list that returns foreign keys
+  // would delete credentials this code never created. `Factory.makeTenantScopedList` withholds
+  // anything without an `alchemy::` label for exactly that reason (
+  // `isDefaultResource`: "system resources untouched by Alchemy have no labels → default"), and
+  // measured live 2026-09-25 (`spikes/static-key-parent-probe.ts`) the API stores and echoes these
+  // labels verbatim while a tagged key is the *only* one the provider-shaped list returns. Before
+  // this, keys were issued with no labels at all — so `read`'s `hasAlchemyTags` check always
+  // answered `Unowned` too.
+  const labels = yield* AlchemyTags.createInternalTags(id)
   const result = yield* iamGrpcService.staticKey.issue({
     metadata: {
       parentId,
       name,
+      labels,
     },
     spec: NebiusStaticKeySchema.StaticKeySpec.fromJSON({
       account: NebiusAccessSchema.Account.fromPartial({
@@ -117,8 +136,14 @@ export const NebiusStaticKeyProvider: Layer.Layer<
   ? // oxlint-disable-next-line no-explicit-any — DCE guard: cast matches the annotated wildcard
     (undefined as unknown as Layer.Layer<AlchemyProvider.Provider<NebiusStaticKey>, never, any>)
   : AlchemyProvider.succeed(NebiusStaticKey, {
-  // Nebius does not cascade-delete associated resources on SA delete, so the
-  // SA must outlive every key: nuke deletes static keys before their SA.
+  // Keys are enumerated per project (see `list` below) and deleted before their SA. Ordering is
+  // defence-in-depth rather than a requirement: the API *does* cascade a key away with the service
+  // account it names in `spec.account` — measured live 2026-09-25
+  // (`spikes/static-key-parent-probe.ts`: `Delete(serviceAccount)` succeeded with an attached key
+  // and a `list(PROJECT)` afterwards answered `[]`), contradicting the "Nebius does not
+  // cascade-delete associated resources" note that used to sit here). Deleting the credential
+  // explicitly is still the better order: it is visible in the destroy log, and it does not depend
+  // on a cascade this family only measured for one shape.
   nuke: { dependsOn: ['Nebius.iam.v1.ServiceAccount'] },
 
   reconcile: Effect.fn('Nebius.iam.v1.StaticKey.reconcile')(function* ({ id, news, output, session }) {
@@ -180,31 +205,28 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     return Alchemy.AdoptPolicy.Unowned(attrs)
   }),
 
-  // Static keys are per-service-account, not per-project — enumerate every SA
-  // in the tenant and fan out to each SA's keys. Without this, nuke can't see
-  // static keys and would leak long-lived credentials (default 6 months, up to
-  // 3 years) when it deletes the SA.
-  list: Effect.fn('Nebius.iam.v1.StaticKey.list')(function* () {
-    const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
-    const projects = yield* iam.project.list(tenantId)
-    const rows = yield* Effect.forEach(projects, (project) =>
-      bestEffortList(
-        `service accounts in project ${project.metadata!.id}`,
-        iam.serviceAccount.list(project.metadata!.id).pipe(
-          Effect.flatMap((sas) =>
-            Effect.forEach(sas, (sa) =>
-              bestEffortList(
-                `static keys of service account ${sa.metadata!.id}`,
-                iam.staticKey.list(sa.metadata!.id).pipe(Effect.map((keys) => keys.map((k) => toFriendlyAttributes(k)))),
-              ),
-            ),
-          ),
-          Effect.map((nested) => nested.flat()),
-        ),
-      ),
-    )
-    return rows.flat()
+  // List **by project** — the same container `create` issues into.
+  //
+  // This used to fan out project → every service account → `staticKey.list(sa.id)`, on the belief
+  // that keys are per-SA. Measured live 2026-09-25 (`spikes/static-key-parent-probe.ts`): the API
+  // refuses an SA container on `Issue` (`3 INVALID_ARGUMENT: Expected type of nid should be one of
+  // project, aiproject, tractotenant, but found serviceaccount`), stores the key with
+  // `metadata.parentId = <project>`, returns it from `list(PROJECT)` and returns **nothing** for
+  // `list(SA)`. So the fan-out could never see a single key this provider created — and `list` is
+  // what `alchemy unsafe nuke` enumerates, i.e. a nuke reported a clean tenant while leaving
+  // long-lived credentials (6 months by default, up to 3 years) behind.
+  //
+  // Removing the fan-out also drops one RPC per project from an enumeration that walks every family
+  // in the tenant. The sibling with this exact proto shape (`metadata.parentId` + a
+  // `spec.account.serviceAccount` reference), `iam/v1 AuthPublicKey`, already lists per project.
+  list: Factory.makeTenantScopedList({
+    resourceName: 'Nebius.iam.v1.StaticKey',
+    service: IamGrpc.IamGrpcService,
+    iamService: IamGrpc.IamGrpcService,
+    projectList: (iam, tenantId) => iam.project.list(tenantId),
+    projectId: (project) => project.metadata!.id,
+    listByParent: (svc, parentId) => svc.staticKey.list(parentId),
+    toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
   diff: Effect.fn('Nebius.iam.v1.StaticKey.diff')(function* ({ news, olds }) {
@@ -221,10 +243,11 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     if (news.service !== olds?.service) return Factory.replaceSameGeneratedName()
 
     // Issue-only API: there is no update RPC (the one-time token is captured at
-    // issue time in `precreate`), so `description`/`expiresAt` can only change by
-    // REISSUING the key. Replacing makes that visible in the plan instead of
-    // silently ignoring the change; delete-first ordering (the physical name is
-    // `sk-<logicalId>`) is what keeps the swap legal.
+    // issue time in `reconcile` — never in a `precreate`, see `create` above), so
+    // `description`/`expiresAt` can only change by REISSUING the key. Replacing
+    // makes that visible in the plan instead of silently ignoring the change;
+    // delete-first ordering (the physical name is `sk-<logicalId>`) is what keeps
+    // the swap legal.
     if (news.description !== olds?.description || String(news.expiresAt) !== String(olds?.expiresAt)) {
       return Factory.replaceSameGeneratedName()
     }
