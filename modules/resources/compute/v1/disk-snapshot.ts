@@ -125,7 +125,6 @@ snap.spec && !ResourceUtils.specDeepEqual(snap.spec, desired)
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.compute.v1.DiskSnapshot.diff')(function* ({ news, olds }) {
     news = news || ({} as DiskSnapshotSchema.DiskSnapshotProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

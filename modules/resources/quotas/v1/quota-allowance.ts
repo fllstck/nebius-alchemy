@@ -122,7 +122,6 @@ export const NebiusQuotaAllowanceProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.quotas.v1.QuotaAllowance.diff')(function* ({ news, olds }) {
     if (!AlchemyDiff.isResolved(news)) return undefined
 

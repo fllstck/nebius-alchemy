@@ -136,7 +136,6 @@ federation.spec && !ResourceUtils.specDeepEqual(federation.spec, desired)
     return items.map(toFriendlyAttributes)
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.Federation.diff')(function* ({ news, olds }) {
     news = news || ({} as FederationSchema.FederationProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

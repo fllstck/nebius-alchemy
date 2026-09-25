@@ -153,7 +153,6 @@ export const NebiusSecretVersionProvider: Layer.Layer<
     return rows.flat()
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.mysterybox.v1.SecretVersion.diff')(function* ({ news, olds }) {
     news = news || ({} as SecretVersionSchema.SecretVersionProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

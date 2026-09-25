@@ -155,7 +155,6 @@ export const NebiusAccessPermitProvider: Layer.Layer<
     return rows.flat()
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.AccessPermit.diff')(function* ({ news, olds }) {
     news = news || ({} as AccessPermitSchema.AccessPermitProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

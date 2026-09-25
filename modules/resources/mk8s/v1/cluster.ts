@@ -222,7 +222,6 @@ clusterSpecDrifted(cluster.spec, desired, news)
         toAttrs: (raw) => toFriendlyAttributes(raw),
       }),
 
-      // eslint-disable-next-line require-yield
       diff: Effect.fn('Nebius.mk8s.v1.Cluster.diff')(function* ({ news, olds }) {
         news = news || ({} as ClusterSchema.ClusterProps)
         if (!AlchemyDiff.isResolved(news)) return undefined

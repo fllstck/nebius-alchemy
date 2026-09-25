@@ -374,7 +374,6 @@ nodeGroupSpecDrifted(nodeGroup.spec, desired)
         return rows.flat()
       }),
 
-      // eslint-disable-next-line require-yield
       diff: Effect.fn('Nebius.mk8s.v1.NodeGroup.diff')(function* ({ news, olds }) {
         news = news || ({} as NodeGroupSchema.NodeGroupProps)
         if (!AlchemyDiff.isResolved(news)) return undefined

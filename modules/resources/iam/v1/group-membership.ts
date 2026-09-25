@@ -177,7 +177,6 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     return rows.flat()
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.GroupMembership.diff')(function* ({ news, olds }) {
     news = news || ({} as GroupMembershipSchema.GroupMembershipProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

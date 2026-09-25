@@ -92,6 +92,25 @@
         "nebius/no-alchemy-deepequal": "off"
       }
     },
+    // `require-yield` (eslint, `error` by default) demands that a `function*` contains a `yield`,
+    // which an **Effect** generator legitimately does not: an `Effect.fn`/`Effect.gen` body is driven
+    // by Effect, not iterated by the language, so a `diff` that only compares props needs none.
+    // Every generator under `modules/` is Effect-driven, which makes the rule unfalsifiable there.
+    //
+    // This replaces 41 `// eslint-disable-next-line require-yield` comments (deleted 2026-09-25,
+    // R-17), every one of which was **stale**: they were written when provider `diff`s were pure
+    // comparisons, and the plan-time validation work (`yield* XSchema.validateXProps(news)`) later
+    // gave each of them a `yield*`. Measured, not assumed: with all 41 removed and *no* override,
+    // `bun run lint` reports **zero** `require-yield` diagnostics (exit 0). The override is here so
+    // that the next `diff` which loses its `yield*` produces no error and therefore no 42nd comment
+    // — not because the rule cannot see the form the repo writes. It can:
+    // `Effect.fn('x')(function* () { return 1 })` is reported, verified with a scratch file.
+    {
+      "files": ["modules/**"],
+      "rules": {
+        "require-yield": "off"
+      }
+    },
     // `modules/api-client/**` is hand-written logic (gRPC code mapping, retry, operation
     // polling, the service wrappers) that used to be ignored wholesale — un-ignored
     // 2026-09-21 so every other rule applies. This one rule is off here on purpose: the

@@ -137,7 +137,6 @@ export const NebiusImageProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.compute.v1.Image.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined

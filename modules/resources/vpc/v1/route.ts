@@ -143,7 +143,6 @@ export const NebiusRouteProvider: Layer.Layer<
     return rows.flat()
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.vpc.v1.Route.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined

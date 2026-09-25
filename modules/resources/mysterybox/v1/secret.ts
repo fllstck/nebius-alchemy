@@ -135,7 +135,6 @@ secret.spec && secret.spec.description !== (news.description || '')
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.mysterybox.v1.Secret.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined

@@ -230,7 +230,6 @@ export const NebiusAccessKeyProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v2.AccessKey.diff')(function* ({ news, olds }) {
     news = news || ({} as AccessKeySchema.AccessKeyProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

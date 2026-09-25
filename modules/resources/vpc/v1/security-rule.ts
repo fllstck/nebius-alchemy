@@ -173,7 +173,6 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     return rows.flat()
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.vpc.v1.SecurityRule.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined

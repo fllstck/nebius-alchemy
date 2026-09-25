@@ -318,7 +318,6 @@ export const NebiusEndpointProvider: Layer.Layer<
 
   // No update RPC → labels deliberately drift; any other spec change (or a
   // name change) requires replacing the resource.
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.ai.v1.Endpoint.diff')(function* ({ news, olds }) {
     news = news || {}
     if (!AlchemyDiff.isResolved(news)) return undefined

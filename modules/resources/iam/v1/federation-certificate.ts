@@ -146,7 +146,6 @@ cert.spec && (cert.spec.description ?? '') !== (news.description ?? '')
     return rows.flat()
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.FederationCertificate.diff')(function* ({ news, olds }) {
     news = news || ({} as FedCertSchema.FederationCertificateProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

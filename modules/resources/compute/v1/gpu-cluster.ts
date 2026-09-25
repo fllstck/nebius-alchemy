@@ -145,7 +145,6 @@ export const NebiusGpuClusterProvider: Layer.Layer<
         toAttrs: (raw) => toFriendlyAttributes(raw),
       }),
 
-      // eslint-disable-next-line require-yield
       diff: Effect.fn('Nebius.compute.v1.GpuCluster.diff')(function* ({ news, olds }) {
         news = news || ({} as GpuClusterSchema.GpuClusterProps)
         if (!AlchemyDiff.isResolved(news)) return undefined

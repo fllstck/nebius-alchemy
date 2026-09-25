@@ -174,7 +174,6 @@ group.spec && !ResourceUtils.specDeepEqual(group.spec, desired)
         toAttrs: (raw) => toFriendlyAttributes(raw),
       }),
 
-      // eslint-disable-next-line require-yield
       diff: Effect.fn('Nebius.compute.v1.NVLInstanceGroup.diff')(function* ({ news, olds }) {
         news = news || ({} as NVLInstanceGroupSchema.NVLInstanceGroupProps)
         if (!AlchemyDiff.isResolved(news)) return undefined

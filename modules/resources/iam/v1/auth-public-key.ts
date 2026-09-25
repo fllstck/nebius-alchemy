@@ -154,7 +154,6 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.AuthPublicKey.diff')(function* ({ news, olds }) {
     news = news || ({} as AuthPublicKeySchema.AuthPublicKeyProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

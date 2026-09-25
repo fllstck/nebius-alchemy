@@ -274,7 +274,6 @@ transfer.spec && transferSpecDrifted(transfer.spec, desired)
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.storage.v1.Transfer.diff')(function* ({ news, olds }) {
     news = news || ({} as TransferSchema.TransferProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

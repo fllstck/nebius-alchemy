@@ -207,7 +207,6 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     return rows.flat()
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.StaticKey.diff')(function* ({ news, olds }) {
     news = news || ({} as StaticKeySchema.StaticKeyProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

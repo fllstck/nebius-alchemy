@@ -733,7 +733,6 @@ export const NebiusInstanceProvider: Layer.Layer<
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.compute.v1.Instance.diff')(function* ({ id, news, olds, output }) {
     news = news || {}
     // `exports` is the runtime program and it is an Effect — a host runtime

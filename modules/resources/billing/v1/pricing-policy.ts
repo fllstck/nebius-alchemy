@@ -171,7 +171,6 @@ export const NebiusPricingPolicyProvider: Layer.Layer<
   // diff — the ONLY convergence path (no update RPC): an identity change replaces, any spec change
   // replaces, and `labels` is the one declared exception (no update path sends labels anywhere, the
   // fleet-wide decision in AGENTS.md §Convergence).
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.billing.v1.PricingPolicy.diff')(function* ({ news, olds }) {
     news = news || ({} as PricingPolicySchema.PricingPolicyProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

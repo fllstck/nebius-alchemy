@@ -140,7 +140,6 @@ fs.spec && !ResourceUtils.specDeepEqual(fs.spec, desired)
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.compute.v1.Filesystem.diff')(function* ({ news, olds }) {
     news = news || ({} as FilesystemSchema.FilesystemProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

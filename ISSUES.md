@@ -655,7 +655,7 @@ enforces it (the marker cannot approve a branded field into silence — it simpl
 
 ---
 
-### R-17 — 41 copies of `eslint-disable-next-line require-yield` · `OPEN`
+### R-17 — 41 copies of `eslint-disable-next-line require-yield` · `DONE (2026-09-25)`
 
 **Files**: every provider file with an `Effect.fn` generator whose `diff` contains no `yield`
 (e.g. `modules/resources/kms/v1/asymmetric-key.ts:133`).
@@ -666,6 +666,39 @@ enforces it (the marker cannot approve a branded field into silence — it simpl
 saying `Effect.fn` generators are not plain generators), then delete the 41 comments.
 
 **Acceptance**: `grep -rc require-yield modules/` → 0 and `bun run lint` unchanged.
+
+**Met** — all 41 comments deleted (41 files, one line each, no formatting artefacts) and replaced by one
+override in `.oxlintrc.json` (`"files": ["modules/**"], "rules": { "require-yield": "off" }`).
+`grep -rn require-yield modules/` → **0**; `bun run lint` is identical to the pre-change baseline
+(re-verified by diffing the diagnostic sets, not by reading the exit code).
+
+**But the issue's premise is wrong in a way worth recording.** The 41 were not suppressing a *false
+positive*; they were suppressing **nothing**. With all 41 removed and *no* override in place,
+`bun run lint` reported **zero** `require-yield` diagnostics. Every one had gone stale: they were written
+when provider `diff` bodies were pure `return AlchemyDiff.deepEqual(...)`, and the plan-time validation
+sweep later gave every `diff` a `yield* XSchema.validateXProps(news)`.
+
+Two measurements, because “the rule cannot see this form” and “the comments do nothing” are different
+claims, and the repo has been bitten by the first one already (R-05):
+
+- **The rule does see the idiom.** `Effect.fn('x')(function* () { return 1 })`, the bare-expression form
+  and a function declaration are all reported in a scratch file — so this is *not* another matcher that
+  cannot see what the repo writes.
+- **No comment was load-bearing.** Precisely *because* the rule fires on that form, deleting all 41 while
+  leaving the rule enabled is a complete test: any `diff` still lacking a `yield` would have failed that
+  lint run. None did.
+
+The override is still the right landing place — it stops the next `diff` that loses its `yield*` from
+producing the 42nd comment — but its reason is not “the rule is blind”: it is that an `Effect.fn` body is
+driven by Effect rather than iterated by the language, so a `yield`-less one is legitimate here. Both
+facts are in the config comment, and the scope is verified in both directions (`modules/scratch-ry.ts` →
+exit 0; the same file at the repo root → still reported).
+
+**Follow-up recorded, not built**: oxlint 1.83 has no `reportUnusedDisableDirectives` (absent from both
+`--help` and `configuration_schema.json`), so an `eslint-disable` that suppresses nothing is invisible to
+the tooling — which is how 41 of them survived. A `nebius/` rule could flag a disable for a rule that is
+not enabled or does not exist; it would have caught this in one run, and it needs the plugin's own
+fixtures (R-04) to be worth trusting. Worth doing the next time the plugin is touched.
 
 ---
 
@@ -726,8 +759,9 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 1. **R-04 + R-05 + R-06 — all done 2026-09-25** — fix the guardrails, with the self-test that proves the
    fix. This step is complete: the harness proves the rules, `Effect.ignore` and the constant-handler class
    are both enforced at `error`, and all 32 swallows are classified. Next is step 2 below.
-2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit. **R-03 + R-13 +
-   R-11 are done** (2026-09-25, one `grpc-utils.ts` pass; R-17 is all that remains of this step).
+2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit. **All done**
+   (2026-09-25: R-03 + R-13 + R-11 in one `grpc-utils.ts` pass; R-17 the config entry that replaced 41
+   stale disable comments).
 3. **R-02 (done 2026-09-25), R-07, R-09, R-14** — error-shape corrections, each independently testable.
    R-02 is the reference implementation for R-06's 31-site classification.
 4. **R-01** — the only HIGH-risk item. Needs the duplicate-`Issue` probe before choosing a branch.

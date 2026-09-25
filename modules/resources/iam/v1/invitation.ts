@@ -144,7 +144,6 @@ invitation.spec && !ResourceUtils.specDeepEqual(invitation.spec, desired)
     return items.map(toFriendlyAttributes)
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.Invitation.diff')(function* ({ news, olds }) {
     news = news || ({} as InvitationSchema.InvitationProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

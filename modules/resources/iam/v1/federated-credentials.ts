@@ -137,7 +137,6 @@ creds.spec && !ResourceUtils.specDeepEqual(creds.spec, desired)
     toAttrs: (raw) => toFriendlyAttributes(raw),
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v1.FederatedCredentials.diff')(function* ({ news, olds }) {
     news = news || ({} as FedCredsSchema.FederatedCredentialsProps)
     if (!AlchemyDiff.isResolved(news)) return undefined

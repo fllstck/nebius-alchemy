@@ -134,7 +134,6 @@ project.spec && project.spec.region !== desired.region
       .map(toFriendlyAttributes)
   }),
 
-  // eslint-disable-next-line require-yield
   diff: Effect.fn('Nebius.iam.v2.Project.diff')(function* ({ news, olds }) {
     news = news || ({} as ProjectSchema.ProjectProps)
     if (!AlchemyDiff.isResolved(news)) return undefined
