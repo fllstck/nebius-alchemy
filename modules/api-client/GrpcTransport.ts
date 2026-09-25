@@ -81,9 +81,12 @@ const makeTransport = Effect.fn('NebiusGrpcTransport.make')(function* () {
       }
       if (!channel) {
         // Build channel credentials: TLS + API key auth via metadata.
-        // X-Idempotency-Key matches the official Nebius SDK (gosdk), which
-        // attaches a fresh key to every request — idempotent creates let the
-        // server dedupe retried calls.
+        // X-Idempotency-Key matches the official Nebius SDK (gosdk), which attaches a fresh key to
+        // every request. It is an audit/convention header, NOT a dedupe guarantee: the API does not
+        // collapse a retry that carries the same key — measured 2026-09-25
+        // (`spikes/idempotency-key-probe.ts`): a duplicate `StaticKey.Issue` with the same UUID key
+        // answered `6 ALREADY_EXISTS`, not the first response. That is why mutations are not retried
+        // at all (`isRetryableReadMethod` in `grpc-utils.ts`).
         const sslCreds = grpc.credentials.createSsl()
         const authCreds = grpc.credentials.createFromMetadataGenerator((_params, callback) => {
           const metadata = new grpc.Metadata()

@@ -88,6 +88,10 @@ const makeChannel = (endpoint: string, token: Redacted.Redacted<string>): grpc.C
   const auth = grpc.credentials.createFromMetadataGenerator((_params, callback) => {
     const metadata = new grpc.Metadata()
     metadata.add('authorization', `Bearer ${Redacted.value(token)}`)
+    // One key per call is correct HERE, unlike on the shared service channel: every channel this
+    // builds is used for exactly one logical operation and this path has no retry at all
+    // (`callUnary` is a single attempt), so there is no retry to keep a key stable across. The shared
+    // transport's channel must NOT do this — see `GrpcTransport.ts` (R-01).
     metadata.add('x-idempotency-key', randomUUID())
     callback(null, metadata)
   })

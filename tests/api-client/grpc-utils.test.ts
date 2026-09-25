@@ -21,6 +21,7 @@ import * as grpc from '@grpc/grpc-js'
 
 import {
   GrpcDeadlineExceededError,
+  isRetryableReadMethod,
   MAX_PAGES,
   OperationFailedError,
   paginateAll,
@@ -386,32 +387,124 @@ describe('withGrpcRetry', () => {
 // wrapGrpcClient
 // ---------------------------------------------------------------------------
 
+describe('isRetryableReadMethod', () => {
+  test('classifies the whole generated method inventory: reads retry, mutations do not', () => {
+    // Every read verb in `schemas/nebius` (extracted from the descriptors' `path` values).
+    const reads = [
+      'get',
+      'getByName',
+      'getById',
+      'getByAwsId',
+      'getSecret',
+      'getWithAttributes',
+      'getLatestByFamily',
+      'getByParentAndCapacityBlockGroup',
+      'getCompatibilityMatrix',
+      'list',
+      'listMembers',
+      'listByNetwork',
+      'listOperationsByParent',
+      'find',
+      'batchGet',
+      'estimate',
+      'estimateBatch',
+      'preflightCheck',
+    ]
+    for (const method of reads) expect([method, isRetryableReadMethod(method)]).toEqual([method, true])
+
+    // Every mutation verb — a retried one of these is a second write, which the API would not dedupe
+    // (plus every verb the allowlist does not recognise, which defaults here on purpose).
+    const mutations = [
+      'create',
+      'update',
+      'delete',
+      'issue',
+      'revoke',
+      'rotate',
+      'stop',
+      'start',
+      'deactivate',
+      'activate',
+      'restart',
+      'upgrade',
+      'undelete',
+      'resume',
+      'resend',
+      'purge',
+      'block',
+      'unblock',
+      'cancel',
+      'updateDeletionDelay',
+      'setUnhealthy',
+      'generateDataKey',
+      'encrypt',
+      'decrypt',
+      'signHash',
+      'exchange',
+      'exportLogs',
+    ]
+    for (const method of mutations) expect([method, isRetryableReadMethod(method)]).toEqual([method, false])
+  })
+
+  test('an unknown verb defaults to NOT retryable (a duplicate write is worse than a lost retry)', () => {
+    expect(isRetryableReadMethod('someFutureVerb')).toBe(false)
+  })
+
+  test('getSecretOnce is a read by name only — consuming it has a side effect, so it is not retried', () => {
+    expect(isRetryableReadMethod('get')).toBe(true)
+    expect(isRetryableReadMethod('getSecretOnce')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// wrapGrpcClient
+// ---------------------------------------------------------------------------
+
 describe('wrapGrpcClient', () => {
+  const unary = (name: string) => ({
+    path: `/nebius.test.v1.TestService/${name}`,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (v: unknown) => v,
+    requestDeserialize: (v: unknown) => v,
+    responseSerialize: (v: unknown) => v,
+    responseDeserialize: (v: unknown) => v,
+  })
+
   const descriptor = {
-    get: {
-      path: '/nebius.test.v1.TestService/Get',
-      requestStream: false as const,
-      responseStream: false as const,
-      requestSerialize: (v: unknown) => v,
-      requestDeserialize: (v: unknown) => v,
-      responseSerialize: (v: unknown) => v,
-      responseDeserialize: (v: unknown) => v,
-    },
-    listStream: {
-      path: '/nebius.test.v1.TestService/ListStream',
-      requestStream: false as const,
-      responseStream: true as const,
-      requestSerialize: (v: unknown) => v,
-      requestDeserialize: (v: unknown) => v,
-      responseSerialize: (v: unknown) => v,
-      responseDeserialize: (v: unknown) => v,
-    },
+    get: unary('Get'),
+    create: unary('Create'),
+    getSecretOnce: unary('GetSecretOnce'),
+    rotate: unary('Rotate'),
+    listStream: { ...unary('ListStream'), responseStream: true as const },
   }
+
+  /** A client method that fails the first `failures` attempts, then succeeds. */
+  const flaky = (failures: number, error: Partial<grpc.ServiceError>) => {
+    let calls = 0
+    return {
+      calls: () => calls,
+      method: (
+        _request: unknown,
+        _options: grpc.CallOptions,
+        cb: (e: grpc.ServiceError | null, r: unknown) => void,
+      ): grpc.ClientUnaryCall => {
+        calls += 1
+        queueMicrotask(() => {
+          if (calls <= failures) cb(error as grpc.ServiceError, undefined)
+          else cb(null, { id: 'ok' })
+        })
+        return { on: () => undefined, cancel: () => undefined } as never
+      },
+    }
+  }
+
+  const retry = { maxRetries: 3, initialBackoff: 0 }
 
   test('wraps unary methods and skips streaming ones', () => {
     const wrapped = wrapGrpcClient(descriptor, {} as never)
 
-    expect(Object.keys(wrapped)).toEqual(['get'])
+    expect(Object.keys(wrapped)).toEqual(['get', 'create', 'getSecretOnce', 'rotate'])
   })
 
   test('passes the request and the call options through, and resolves the response', async () => {
@@ -436,6 +529,54 @@ describe('wrapGrpcClient', () => {
     expect(seen[0]!.req).toEqual({ id: 'req-1' })
     expect(seen[0]!.options.deadline).toBeInstanceOf(Date)
     expect(response).toEqual({ id: 'res-1' })
+  })
+
+  test('retries a READ on a transient failure', async () => {
+    const { calls, method } = flaky(2, grpcFailure(14, 'unavailable'))
+    const wrapped = wrapGrpcClient(descriptor, { get: method } as never, { retry })
+
+    expect(await Effect.runPromise(wrapped.get({}))).toEqual({ id: 'ok' })
+    expect(calls()).toBe(3)
+  })
+
+  test('a MUTATION is attempted exactly once, even on a retryable code 13 (R-01)', async () => {
+    // The server does not dedupe on `x-idempotency-key` (measured — see `isRetryableReadMethod`), so a
+    // retried create is a second create: `ALREADY_EXISTS` at best, a double-apply at worst.
+    const { calls, method } = flaky(Number.POSITIVE_INFINITY, grpcFailure(13, 'internal'))
+    const wrapped = wrapGrpcClient(descriptor, { create: method } as never, { retry })
+
+    const error = (await Effect.runPromise(Effect.flip(wrapped.create({})))) as GrpcError
+
+    expect(error.code).toBe(13)
+    expect(calls()).toBe(1)
+  })
+
+  test('a MUTATION is not attempted twice after a client-side timeout (code 4)', async () => {
+    const { calls, method } = flaky(Number.POSITIVE_INFINITY, grpcFailure(4, 'deadline exceeded'))
+    const wrapped = wrapGrpcClient(descriptor, { create: method } as never, { retry })
+
+    const error = await Effect.runPromise(Effect.flip(wrapped.create({})))
+
+    expect(error._tag).toBe('GrpcDeadlineExceededError')
+    expect(calls()).toBe(1)
+  })
+
+  test('an unrecognised verb is treated as a mutation, not retried', async () => {
+    const { calls, method } = flaky(Number.POSITIVE_INFINITY, grpcFailure(14, 'unavailable'))
+    const wrapped = wrapGrpcClient(descriptor, { rotate: method } as never, { retry })
+
+    await Effect.runPromise(Effect.flip(wrapped.rotate({})))
+
+    expect(calls()).toBe(1)
+  })
+
+  test('getSecretOnce is not retried, although it is a read', async () => {
+    const { calls, method } = flaky(Number.POSITIVE_INFINITY, grpcFailure(14, 'unavailable'))
+    const wrapped = wrapGrpcClient(descriptor, { getSecretOnce: method } as never, { retry })
+
+    await Effect.runPromise(Effect.flip(wrapped.getSecretOnce({})))
+
+    expect(calls()).toBe(1)
   })
 })
 

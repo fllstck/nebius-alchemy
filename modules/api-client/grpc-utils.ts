@@ -262,9 +262,53 @@ export type EffectService<S extends ServiceDescriptor> = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Method-name prefixes whose methods only READ, and are therefore safe to retry.
+ *
+ * The retry policy used to apply to **every** unary method, on the theory that the
+ * `x-idempotency-key` header (minted by the channel's metadata generator) made retried mutations safe.
+ * It does not — the Nebius API does not dedupe on that header at all. Measured 2026-09-25
+ * (`spikes/idempotency-key-probe.ts`, `iam/v1 StaticKey.Issue`, UUID keys): a second `Issue` carrying
+ * the **same** key and the **same** request answered `6 ALREADY_EXISTS` rather than the first response
+ * — after the first operation had completed *and* while it was still in flight. The key is
+ * audit/convention only (the gosdk also mints a fresh one per request).
+ *
+ * So a retried mutation is simply a second request, and what happens next is whatever uniqueness the
+ * resource happens to have: a `Create`/`Issue` answers `ALREADY_EXISTS` (the resource exists, but the
+ * client never saw it — an orphan), and a resource without name uniqueness would double-apply. No
+ * mutation is therefore retried; a bounded retry only ever runs for a read.
+ *
+ * Unknown verbs are treated as mutations (not retried) on purpose: a read that loses its retry is a
+ * small resilience loss, while a mutation that gains one is a duplicate write.
+ */
+const RETRYABLE_READ_PREFIXES = ['get', 'list', 'find', 'search', 'batchGet', 'estimate', 'preflight', 'describe'] as const
+
+/**
+ * Reads that must NOT be retried, because calling them twice is not idempotent.
+ *
+ * `getSecretOnce` is the one in this API family: the secret is handed out **once**, so a retry after a
+ * lost response comes back empty and that credential can never be recovered. It is a read by name only.
+ */
+const NON_IDEMPOTENT_READS: ReadonlySet<string> = new Set(['getSecretOnce'])
+
+/**
+ * Whether a descriptor method name is a read that may be retried.
+ *
+ * Exported so the classification (and its two traps — unknown verbs and `getSecretOnce`) is
+ * unit-testable without a network, rather than only observable through a retrying call.
+ */
+export const isRetryableReadMethod = (method: string): boolean => {
+  if (NON_IDEMPOTENT_READS.has(method)) return false
+  const lower = method.toLowerCase()
+  return RETRYABLE_READ_PREFIXES.some((prefix) => lower.startsWith(prefix.toLowerCase()))
+}
+
+/**
  * Wraps every unary method of a gRPC client in an Effect, using the
  * ts-proto service descriptor to determine method names and whether
  * each method is unary.
+ *
+ * Retries are applied to reads only ({@link isRetryableReadMethod}); mutations are attempted exactly
+ * once. See {@link RETRYABLE_READ_PREFIXES} for the measurement behind that.
  *
  * Lower-level building block. Prefer {@link makeGrpcService} for the
  * full pipeline (channel resolution + client construction + wrapping).
@@ -280,6 +324,9 @@ export const wrapGrpcClient = <S extends ServiceDescriptor>(
   const wrapped: Record<string, (req: any) => Effect.Effect<any, GrpcError | GrpcDeadlineExceededError>> = {}
   for (const [method, def] of Object.entries(descriptor)) {
     if (!def.requestStream && !def.responseStream) {
+      // Reads retry as configured; EVERYTHING else is capped at 0 retries so the call is attempted
+      // exactly once (a mutation re-sent is a mutation applied twice — see RETRYABLE_READ_PREFIXES).
+      const retry = isRetryableReadMethod(method) ? options?.retry : { ...options?.retry, maxRetries: 0 }
       // Cast: ts-proto generated types only expose the 2-arg (req, cb)
       // overload, but @grpc/grpc-js supports (req, options, cb) at runtime.
       // We use the 3-arg overload to pass deadline via CallOptions.
@@ -287,7 +334,7 @@ export const wrapGrpcClient = <S extends ServiceDescriptor>(
       // are structurally incompatible (index signature variance), even though
       // each method supports the wider overload at runtime.
       wrapped[method] = (req: unknown) =>
-        wrapUnaryCall((cb, callOpts) => (client as any)[method]!(req, callOpts ?? {}, cb), options)
+        wrapUnaryCall((cb, callOpts) => (client as any)[method]!(req, callOpts ?? {}, cb), { ...options, retry })
     }
   }
   return wrapped as EffectService<S>
@@ -576,8 +623,9 @@ export const wrapWithOperationPolling = <
  * generated gRPC client, and wraps every unary method in an Effect.
  *
  * All unary calls get a default 30-second per-call deadline to prevent
- * infinite hangs, and automatically retry transient failures
- * (DEADLINE_EXCEEDED, UNAVAILABLE, …).
+ * infinite hangs. Transient failures (DEADLINE_EXCEEDED, UNAVAILABLE, …) are retried on **reads
+ * only** — a mutation is attempted exactly once, because the API does not dedupe a retried request
+ * (see `isRetryableReadMethod`).
  *
  * @example
  * ```ts

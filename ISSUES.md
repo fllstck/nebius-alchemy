@@ -38,51 +38,71 @@ infra / credentials)
 | R-18 | MEH | tests | The maintainer's real project id is committed in 9 places | S | LOW |
 | R-19 | MEH | compute/hosted | `quoteEnvValue` turns a newline into literal `\n`; no round-trip test | S | MED |
 | R-20 | MEH | compute, ai | Create-failure recovery does not classify the failure first | S | LOW |
+| R-21 | EMBARRASSING | iam/v1 | Static keys are project-parented, but `list` queries per service account — nuke cannot see them | S | MED |
 
 ---
 
 ## CAREER ENDERS
 
-### R-01 — Retry idempotency key is per-attempt, so retried mutations can double-apply · `OPEN`
+### R-01 — Retry idempotency key is per-attempt, so retried mutations can double-apply · `DONE (2026-09-25)`
 
-**Files**: `modules/api-client/grpc-utils.ts:54,79-100,200,602-603` ·
-`modules/api-client/GrpcTransport.ts:85-92` · `modules/auth/sa-bootstrap.ts:91`
+**Files**: `modules/api-client/grpc-utils.ts` (`isRetryableReadMethod`, `wrapGrpcClient`) ·
+`modules/api-client/GrpcTransport.ts:86-92` · `modules/auth/sa-bootstrap.ts:91` · probe
+`spikes/idempotency-key-probe.ts`
 
-**Evidence**: every service built by `makeGrpcService` gets `withGrpcRetry(…, { maxRetries: 3 })`
-applied to **all** unary methods (`:602` → `:200`), and the retry set is
-`[4, 8, 10, 13, 14, 15]` — `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `ABORTED`, `INTERNAL`,
-`UNAVAILABLE`, `DATA_LOSS` (`:54`). The `x-idempotency-key` that was meant to make that safe is
-minted **inside the metadata generator** (`GrpcTransport.ts:91`), and grpc-js calls that generator
-once per RPC attempt (`node_modules/@grpc/grpc-js/build/src/load-balancing-call.js:143`), while
-`withGrpcRetry` re-invokes the whole wrapped call. The comment at `GrpcTransport.ts:86-89` claims
-the opposite ("idempotent creates let the server dedupe retried calls").
+**Evidence (the original)**: every service built by `makeGrpcService` got `withGrpcRetry(…,
+{ maxRetries: 3 })` applied to **all** unary methods (`:602` → `:200`), and the retry set was
+`[4, 8, 10, 13, 14, 15]` (`:54`). The `x-idempotency-key` that was meant to make that safe was
+minted **inside the metadata generator** (`GrpcTransport.ts:91`), and grpc-js runs that generator
+once per RPC attempt while `withGrpcRetry` re-invokes the whole wrapped call — so a retry carried a
+different key. The comment at `GrpcTransport.ts:86-89` claimed the opposite.
 
-**Why it bites**: a `Create` that times out client-side but succeeds server-side is re-sent with a
-different key. The second attempt answers `ALREADY_EXISTS`, reconcile fails, no state row is
-written, and the resource is **orphaned** — or, for `StaticKey.Issue` (no name uniqueness), **two
-live credentials**, one of which nothing tracks. Only 2 of 40 providers have the get-by-name
-recovery that survives this (`modules/resources/compute/v1/instance.ts:556-575`,
-`modules/resources/ai/v1/endpoint.ts:227-245`).
+**Decision — branch 2, and the probe is what forced it.** Branch 1 (mint per logical operation) only
+buys anything if the server dedupes on the key. The probe measured that on `iam/v1 StaticKey.Issue`,
+with `randomUUID()`-shaped keys (the format the gosdk mints, in case the server validates the shape):
 
-**Fix** (choose one, and make the comment match):
-1. **Preferred** — mint the key per *logical operation* and thread it through the retry
-   (a closure/`Ref`-scoped key passed into `wrapUnaryCall`, reused by every attempt), so the
-   server can actually dedupe; or
-2. **Safer for now** — retry only read methods. Add a per-service retry allowlist in
-   `makeGrpcService` and default mutations to `{ maxRetries: 0 }`; drop `13`/`15` from
-   `RETRYABLE_CODES` for mutations regardless.
+| arm | request | result |
+| A | `issue(key=K, name=N)` | accepted → `statickey-e00rgp93kahkm10hs2` |
+| B | `issue(key=K, name=N)` — same key, same request, **after A completed** | `6 ALREADY_EXISTS` |
+| C | `issue(key=K2, name=N)` — different key, same name | `6 ALREADY_EXISTS` |
+| D | `issue(key=K3, name=M)` — reference, left unpolled | accepted |
+| E | `issue(key=K3, name=M)` — same key, sent immediately (in flight) | `6 ALREADY_EXISTS` |
 
-Do **not** leave both comment and code as they are.
+So the API does **not** dedupe on `x-idempotency-key` — not for a completed operation (B) and not for
+an in-flight one (E). The key is audit/convention only (the gosdk also mints a fresh one per request).
+Branch 1 therefore buys nothing, and a retried mutation is simply a **second request**. Two of this
+entry's own claims were wrong too, and the measurement corrects them:
 
-**Acceptance**:
-- Test: two attempts of one logical call emit the *same* `x-idempotency-key` (or: a mutation is
-  attempted exactly once on code 13).
-- Test: a mutation retried after a client-side timeout is not attempted twice by default.
-- A live probe under `spikes/` confirming what the API does with a duplicate `Issue` for
-  `iam/v1 StaticKey` — the duplicate-semantics claim drives the choice between (1) and (2).
-  Follow the probe discipline in `TASKS.md` (one create + delete, real project id from env).
+- **`StaticKey` names ARE unique per project.** The entry said "no name uniqueness ⟹ two live
+  credentials"; B *and* C answered `ALREADY_EXISTS`. The damage is subtler and worse for a credential:
+  the key **exists** with a token the client never received and can never recover — a live credential
+  nothing tracks.
+- **The `list` parent is the project, not the service account** (`byProjectParent: 2`, `bySaParent: 0`)
+  — filed separately as **R-21**.
 
-**Risk**: HIGH — if the probe is skipped, the wrong branch is chosen silently.
+**Fix (branch 2)**: retries now apply to **reads only**. `isRetryableReadMethod` classifies each
+descriptor method against a read-verb allowlist (`get`/`list`/`find`/`search`/`batchGet`/`estimate`/
+`preflight`/`describe`); every mutation verb **and every unknown verb** is capped at `maxRetries: 0`.
+The default is deliberately unsafe-to-retry rather than unsafe-to-lose: a read that loses a retry is a
+small resilience loss, a mutation that gains one is a duplicate write. One read is denied as well —
+`getSecretOnce`, whose secret is handed out once, so a retry after a lost response could never be
+recovered. The false `GrpcTransport.ts` comment is replaced with the measurement; `sa-bootstrap.ts`
+keeps its per-call key with a comment saying why that is correct there (no retry on that path).
+
+**Acceptance — met**:
+- `tests/api-client/grpc-utils.test.ts` → `isRetryableReadMethod` classifies the **whole generated
+  method inventory**: every read verb in `schemas/nebius` as retryable, every mutation verb plus an
+  unknown verb and `getSecretOnce` as not.
+- `tests/api-client/grpc-utils.test.ts` → a mutation is attempted exactly once on code 13, and exactly
+  once after a client-side timeout (code 4); a read still retries (3 attempts for a `get` that fails
+twice on code 14).
+- Live probe above; `spikes/idempotency-key-probe.ts` is the re-runnable evidence.
+
+**Residual (explicitly out of scope)**: branch 2 does not remove the *orphan* — a create that times out
+client-side but succeeded server-side still leaves a resource with no state row, and now fails with
+`DEADLINE_EXCEEDED` rather than `ALREADY_EXISTS`. Adopting it needs get-by-name recovery in `reconcile`,
+which only 2 of 40 providers have (`compute/v1 instance`, `ai/v1 endpoint`); R-20 is the adjacent item
+(classify the failure before attempting that recovery).
 
 ---
 
@@ -812,6 +832,38 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 
 ---
 
+### R-21 — Static keys are project-parented, but `list` queries per service account, so nuke cannot see them · `OPEN`
+
+**Files**: `modules/resources/iam/v1/static-key.ts` (`create`, `list`)
+
+**Evidence**: found live 2026-09-25 by `spikes/idempotency-key-probe.ts`. An `Issue` carrying
+`metadata.parentId = <project>` creates a key whose `metadata.parentId` **is the project**:
+
+```
+keys live: {"byProjectParent":2,"bySaParent":0,"probeParents":["project-e00eq4g7pr00j746m1fttd", ...]}
+```
+
+An immediate `list(serviceAccountId)` — the form the provider uses — returned **0**, and the API's own
+`ALREADY_EXISTS` message names the project ("already exists in project-…: statickey-…").
+
+**Why it bites**: `Nebius.iam.v1.StaticKey.list` fans out project → service accounts →
+`staticKey.list(sa.id)`, so it can never see a key the same code created. That list is what
+`alchemy unsafe nuke` enumerates, so a nuke would report a clean tenant while leaving every static key
+behind — and a static key is a long-lived credential (6 months by default, up to 3 years). The
+provider's comment ("Static keys are per-service-account, not per-project") is the belief the
+measurement contradicts.
+
+**Fix (one measurement chooses the direction)**: either `list` the keys by **project**
+(`staticKey.list(project.id)`), or `Issue` with `metadata.parentId = serviceAccountId` so the key really
+is SA-parented — the probe only measured the project-parented create. Issue one key each way, list both
+ways, then align `create` and `list` on whichever parent the API honours. (Also watch the SA delete: run
+1's key disappeared with its deleted service account, so a cascade may already be covering part of this.)
+
+**Acceptance**: a `list` that returns a key the same code created — pinned by a live probe recording
+both the create and the list parent, not by a mapper unit test (the parent semantics are the API's).
+
+---
+
 ## Suggested sequencing
 
 1. **R-04 + R-05 + R-06 — all done 2026-09-25** — fix the guardrails, with the self-test that proves the
@@ -823,11 +875,14 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 3. **R-02, R-07, R-09, R-14** — error-shape corrections, each independently testable. **R-02, R-07, R-09
    and R-14 are all done** (2026-09-25). R-02 is the reference implementation for R-06's 31-site
    classification.
-4. **R-01** — the only HIGH-risk item. Needs the duplicate-`Issue` probe before choosing a branch.
+4. **R-01 — done 2026-09-25** — the only HIGH-risk item, and the probe is what settled it: the API does
+   **not** dedupe on `x-idempotency-key` (duplicate `Issue` → `ALREADY_EXISTS`, both completed and in
+   flight), so branch 1 is a dead end and mutations are no longer retried at all. See the DONE section.
+   The probe also exposed **R-21** (static keys are project-parented; `list` queries per service account).
 5. **R-19** — needs a live instance; pair with any other live probe session.
-6. **R-10, R-12, R-15, R-16, R-18, R-20** — incremental cleanups, safe to interleave. **R-15 + R-16 are
-done** (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
-miss).
+6. **R-10, R-12, R-15, R-16, R-18, R-20, R-21** — incremental cleanups, safe to interleave. R-15 + R-16 are
+done (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
+miss), and R-21 was found by R-01's probe (2026-09-25).
 7. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 
