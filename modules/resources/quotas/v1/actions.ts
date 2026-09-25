@@ -6,6 +6,7 @@ import * as QuotasGrpc from '../../../api-client/quotas.ts'
 import * as Validation from '../../validation.ts'
 import * as QuotaAllowanceModule from './quota-allowance.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 // ── Quota ─────────────────────────────────────────────────────────────────
@@ -46,9 +47,11 @@ export const ListQuotas = Alchemy.Action(
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
         const results = yield* Effect.forEach(parentIds, (pid) =>
-          quotas.quotaAllowance.list(pid).pipe(
-            Effect.map((items) => items.map((raw) => QuotaAllowanceModule.toFriendlyAttributes(raw))),
-            Effect.catch(() => Effect.succeed([] as readonly ReturnType<typeof QuotaAllowanceModule.toFriendlyAttributes>[])),
+          bestEffortList(
+            `quota allowances in project ${pid}`,
+            quotas.quotaAllowance
+              .list(pid)
+              .pipe(Effect.map((items) => items.map((raw) => QuotaAllowanceModule.toFriendlyAttributes(raw)))),
           ),
         )
         return results.flat()

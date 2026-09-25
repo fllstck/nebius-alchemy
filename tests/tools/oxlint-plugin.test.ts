@@ -270,11 +270,52 @@ const CASES: Readonly<Record<string, RuleCoverage>> = {
         title: 'Effect.void handler',
         source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catchTag('GrpcError', () => Effect.void)`,
       },
+      {
+        // The shape the repo actually wrote, 32 times, while the rule could only see
+        // `Effect.void` (0 occurrences): a failed `list` reported as "this resource does not exist".
+        title: 'empty-array handler',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catch(() => Effect.succeed([]))`,
+      },
+      {
+        // `undefined` on a *get* is the swallow too: "not found" and "could not look" collapse.
+        title: 'undefined handler',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catch(() => Effect.succeed(undefined))`,
+      },
+      {
+        title: 'null handler',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catch(() => Effect.succeed(null))`,
+      },
+      {
+        // The assertion is what the repo writes (`[] as readonly Attributes[]`); the value is the
+        // same empty array, so unwrapping type-only wrappers is load-bearing.
+        title: 'asserted empty array',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catch(() => Effect.succeed([] as readonly string[]))`,
+      },
+      {
+        title: 'block-bodied handler',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catch(program, () => {\n  return Effect.succeed([])\n})`,
+      },
     ],
     mustPass: [
       {
         title: 'handler that logs',
         source: `import * as Effect from 'effect/Effect'\nexport const logged = Effect.catchTag('GrpcError', (error) => Effect.logWarning(String(error)))`,
+      },
+      {
+        // The sanctioned narrowing: only NOT_FOUND is benign, everything else is re-raised. This is
+        // the shape every `modules/**` site had to reach (R-06), so it must never be flagged.
+        title: 'narrowed to NOT_FOUND',
+        source: `import * as Effect from 'effect/Effect'\nexport const narrowed = Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed([]) : Effect.fail(e)))`,
+      },
+      {
+        // Log, then answer empty: audible, so it is a deliberate decision rather than a swallow.
+        title: 'log then empty',
+        source: `import * as Effect from 'effect/Effect'\nexport const loud = Effect.catch((error) =>\n  Effect.logWarning(String(error)).pipe(Effect.andThen(Effect.succeed([]))),\n)`,
+      },
+      {
+        // A non-empty constant is information, not a swallow (`succeed(0)`, `succeed('')`).
+        title: 'non-empty constant',
+        source: `import * as Effect from 'effect/Effect'\nexport const counted = Effect.catch(() => Effect.succeed(0))`,
       },
     ],
   },

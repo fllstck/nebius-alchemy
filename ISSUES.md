@@ -262,7 +262,7 @@ downgrades it): `tests/api-client/storage/BucketGrpcService.test.ts:284` and
 
 ---
 
-### R-06 — `no-silent-error-swallow` bans a pattern nobody writes · `OPEN`
+### R-06 — `no-silent-error-swallow` bans a pattern nobody writes · `DONE (2026-09-25)`
 
 **File**: `tools/oxlint-nebius-plugin/index.js:94-190` (`isEffectVoidBody` at `:120`)
 
@@ -289,6 +289,63 @@ which at least makes the swallow visible.
 - R-04 fixture: `() => Effect.succeed([])` fails, `() => Effect.succeed(undefined)` fails,
   `(e) => Effect.logWarning(…)` passes.
 - Every remaining site in `modules/**` carries an inline disable with a reason, or is gone.
+
+**Met** — `CASES['no-silent-error-swallow']` has six must-trip cases (`Effect.void`, `succeed([])`,
+`succeed(undefined)`, `succeed(null)`, `succeed([] as readonly string[])` — assertions are unwrapped —
+and a block-bodied `{ return Effect.succeed([]) }`) and four must-pass cases (logging handler, narrowed
+to `code === 5`, log-then-empty, and `succeed(0)` as a non-empty constant). `bun run lint` reports **0**
+sites. The rule also went from `warn` to `error`, and `.oxlintrc.json`'s exemption for
+`modules/state/ensure-bucket.ts` was deleted — **that file does not exist** (there is no `modules/state/`
+at all), so the config's only documented escape hatch was a phantom.
+
+**The rule**: handlers are now matched structurally for a *constant* body — `Effect.void` or
+`Effect.succeed([] | undefined | null)` — with type-only wrappers (`as`, `satisfies`, `!`, parens) stripped,
+since `Effect.succeed([] as readonly X[])` is the spelling the repo actually uses. Same defect from both
+sides: `Effect.void` discards the failure, `Effect.succeed([])` tells the caller the resource does not
+exist.
+
+**The sweep — 32 sites, not 31.** The roast's grep counted `catch(() => Effect.succeed(…))`; the rule
+also caught `storage/v1/transfer.ts:235` (`catchTag(…)`), which is the same defect through a different
+combinator. Four treatments, because the sites are not one situation:
+
+1. **Tenant fan-out (24 sites)** — `factory.ts`'s `makeTenantScopedList` (every provider's `list`) plus 9
+   hand-written nested fan-outs (`dns Record`, `iam AccessPermit`/`GroupMembership`/`StaticKey`/
+   `FederationCertificate`, `vpc Route`/`SecurityRule`, `mysterybox SecretVersion`, `mk8s NodeGroup`), 5
+   `vpc` actions, and one each in `iam`/`quotas`. All now go through the new
+   `modules/resources/shared/fan-out.ts`: `NOT_FOUND` is quiet (the parent was deleted between the project
+   list and this call), anything else answers `[]` **plus a warning naming the parent and the error and
+   saying the result is PARTIAL**, and a *defect* propagates (a bug in an enumeration is not a missing
+   parent). Not a hard failure: this fan-out is `alchemy unsafe nuke`'s enumeration — its only caller — and
+   aborting over one inaccessible project leaves strictly more behind. But a partial list must never read as
+   a complete one, which is what `Effect.catch(() => Effect.succeed([]))` did. 6 unit tests in
+   `tests/resources/shared/fan-out.test.ts`, including that a defect is not swallowed.
+2. **Adopt-by-identity lookups (2 sites)** — `iam/v1 AccessPermit:67`, `GroupMembership:77`. Narrowed to
+   `code === 5`. These are *create-path* decisions: an unverified lookup answering `[]` is indistinguishable
+   from "no such permit exists", and the branch below would create a **duplicate**. There is no partial
+   result to preserve here, which is why this class does not use the fan-out's treatment.
+3. **Create-failure recovery lookups (3 sites)** — `ai/v1 {Endpoint,Job}`, `compute/v1 Instance`. Warn, then
+   fall through to the *original* create error. `NOT_FOUND` is the case the recovery exists for; any other
+   failure means the lookup could not answer, and re-raising it would replace the informative create failure
+   with a misleading lookup failure. (Which codes should reach that recovery at all is R-20.)
+4. **Destroy pre-step (1 site)** — `storage/v1/transfer.ts:235` (`stop` before `delete`). Now
+   `Effect.ignore({ log: 'Warn', message })`: the delete below is authoritative, and a destroy must not be
+   blocked by a pre-step (a failed delete makes the planner skip every dependent and leaks the parents).
+
+**Gates**: `bun run check` exit 0 · `bun test` **1707 tests / 1632 pass / 75 skip / 0 fail** ·
+`bun run typecheck` clean. No existing test pinned the old swallow behaviour — verified by running the whole
+suite before and after the sweep, not assumed.
+
+**Findings recorded while sweeping** (not fixed here, none of them blocking):
+
+- **`modules/resources/actions/shared.ts`'s `listProjectIds` is dead** — zero references in `modules/`,
+  `tests/` or `examples/`; the three action files inline the same `parentId ? [parentId] : (yield*
+  iam.project.list(tenantId)).map(…)` expression instead. Either use it in those three places or delete it.
+- **The rule does not cover `catchIf` / `orElseSucceed` / `catchCause` handlers** — only `catch`/`catchTag`.
+  There are zero such sites today (`grep` over `modules/`), so this is a coverage gap rather than a live hole;
+  it belongs with the next rule change, with fixtures.
+- **`Nebius.iam.actions.ListProjects` and its siblings now propagate a non-NOT_FOUND tenant-level failure**
+  rather than reporting "this tenant has no projects" (`iam/actions.ts:45`) — the one site in the sweep that
+  is neither a fan-out nor a lookup, because swallowing there hides *everything* rather than one parent.
 
 ---
 
@@ -580,10 +637,9 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 
 ## Suggested sequencing
 
-1. **R-04 + R-05 (both done 2026-09-25) + R-06** together — fix the guardrails, with the self-test that
-   proves the fix. Also cheap and it makes the rest of the list harder to regress. **R-06 is what is left
-   of this step**: the harness and the `Effect.ignore` rule are done, and `CASES` is where R-06 adds its
-   `() => Effect.succeed([])` rows.
+1. **R-04 + R-05 + R-06 — all done 2026-09-25** — fix the guardrails, with the self-test that proves the
+   fix. This step is complete: the harness proves the rules, `Effect.ignore` and the constant-handler class
+   are both enforced at `error`, and all 32 swallows are classified. Next is step 2 below.
 2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit.
 3. **R-02 (done 2026-09-25), R-07, R-09, R-14** — error-shape corrections, each independently testable.
    R-02 is the reference implementation for R-06's 31-site classification.

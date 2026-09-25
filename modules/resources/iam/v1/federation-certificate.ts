@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as FedCertSchema from './federation-certificate.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 
 // ----- RESOURCE TYPES
 
@@ -135,9 +136,11 @@ cert.spec && (cert.spec.description ?? '') !== (news.description ?? '')
     const tenantId = yield* resolveTenantId()
     const federations = yield* iam.federation.list(tenantId)
     const rows = yield* Effect.forEach(federations, (federation) =>
-      iam.federationCertificate.listByFederation(federation.metadata!.id).pipe(
-        Effect.map((certs) => certs.map((c) => toFriendlyAttributes(c))),
-        Effect.catch(() => Effect.succeed([] as FedCertSchema.FederationCertificateAttributes[])),
+      bestEffortList(
+        `certificates of federation ${federation.metadata!.id}`,
+        iam.federationCertificate
+          .listByFederation(federation.metadata!.id)
+          .pipe(Effect.map((certs) => certs.map((c) => toFriendlyAttributes(c)))),
       ),
     )
     return rows.flat()

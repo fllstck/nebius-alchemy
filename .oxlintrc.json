@@ -58,7 +58,11 @@
 
     "nebius/no-effect-catchallcause": "error",
     "nebius/no-effect-ignore": "error",
-    "nebius/no-silent-error-swallow": "warn",
+    // `error`, not `warn`: this rule's whole history is "configured too quietly to matter". It banned
+    // `Effect.void`, which appears nowhere, while `Effect.succeed([])` turned a failed `list` into
+    // "this resource does not exist" in 32 places (R-06). A swallow that is genuinely intended gets an
+    // inline `oxlint-disable` naming the reason, which makes it a decision instead of an accident.
+    "nebius/no-silent-error-swallow": "error",
     "nebius/no-disable-validation": "error",
     "nebius/no-alchemy-deepequal": "error"
   },
@@ -99,12 +103,6 @@
       "files": ["modules/api-client/**"],
       "rules": {
         "typescript/no-unnecessary-type-assertion": "off"
-      }
-    },
-    {
-      "files": ["modules/state/ensure-bucket.ts"],
-      "rules": {
-        "nebius/no-silent-error-swallow": "off"
       }
     }
   ]

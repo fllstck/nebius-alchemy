@@ -15,6 +15,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as SecretVersionSchema from './secret-version.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 
 // ----- RESOURCE TYPES
 
@@ -132,17 +133,21 @@ export const NebiusSecretVersionProvider: Layer.Layer<
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
-      mysterybox.secret.list(project.metadata!.id).pipe(
-        Effect.flatMap((secrets) =>
-          Effect.forEach(secrets, (secret) =>
-            mysterybox.secretVersion.list(secret.metadata!.id).pipe(
-              Effect.map((versions) => versions.map((v) => toFriendlyAttributes(v))),
-              Effect.catch(() => Effect.succeed([] as SecretVersionSchema.SecretVersionAttributes[])),
+      bestEffortList(
+        `secrets in project ${project.metadata!.id}`,
+        mysterybox.secret.list(project.metadata!.id).pipe(
+          Effect.flatMap((secrets) =>
+            Effect.forEach(secrets, (secret) =>
+              bestEffortList(
+                `versions of secret ${secret.metadata!.id}`,
+                mysterybox.secretVersion
+                  .list(secret.metadata!.id)
+                  .pipe(Effect.map((versions) => versions.map((v) => toFriendlyAttributes(v)))),
+              ),
             ),
           ),
+          Effect.map((nested) => nested.flat()),
         ),
-        Effect.map((nested) => nested.flat()),
-        Effect.catch(() => Effect.succeed([] as SecretVersionSchema.SecretVersionAttributes[])),
       ),
     )
     return rows.flat()

@@ -11,6 +11,7 @@ import type { GrpcError, GrpcDeadlineExceededError } from '../api-client/grpc-ut
 import { GrpcError as GrpcErrorCtor } from '../api-client/grpc-utils.ts'
 import type { PropsValidationError } from './validation.ts'
 import { resolveTenantId } from './shared/tenant.ts'
+import { bestEffortList } from './shared/fan-out.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -352,7 +353,10 @@ export const makeCrudDelete = <STag extends Context.Service<any, any>, E>(config
  *
  * Enumerates every project under the tenant via IAM and fans out to
  * each, so nuke catches resources in custom projects. Per-project
- * errors are silently swallowed (best-effort enumeration).
+ * errors are swallowed — loudly or quietly, never silently: see
+ * `bestEffortList`, which answers `[]` for a project it cannot enumerate
+ * and warns naming that project, because a partial enumeration must not
+ * read as a complete one.
  */
 // oxlint-disable typescript/no-explicit-any — approved: Context.Service wildcard generics
 export const makeTenantScopedList = <
@@ -391,8 +395,9 @@ export const makeTenantScopedList = <
     const tenant = yield* resolveTenantId(config.tenantEnvVar)
     const projects = yield* config.projectList(iam, tenant)
     const allResults = yield* Effect.forEach(projects, (project) =>
-      config.listByParent(svc, config.projectId(project)).pipe(
-        Effect.catch(() => Effect.succeed([] as ReadonlyArray<Raw>)),
+      bestEffortList(
+        `${config.resourceName} in project ${config.projectId(project)}`,
+        config.listByParent(svc, config.projectId(project)),
       ),
     )
     const results = allResults

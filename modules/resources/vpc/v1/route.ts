@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as RouteSchema from './route.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 
 // ----- RESOURCE TYPES
 
@@ -124,17 +125,19 @@ export const NebiusRouteProvider: Layer.Layer<
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
-      vpc.routeTable.list(project.metadata!.id).pipe(
-        Effect.flatMap((tables) =>
-          Effect.forEach(tables, (table) =>
-            vpc.route.list(table.metadata!.id).pipe(
-              Effect.map((routes) => routes.map((r) => toFriendlyAttributes(r))),
-              Effect.catch(() => Effect.succeed([] as RouteSchema.RouteAttributes[])),
+      bestEffortList(
+        `route tables in project ${project.metadata!.id}`,
+        vpc.routeTable.list(project.metadata!.id).pipe(
+          Effect.flatMap((tables) =>
+            Effect.forEach(tables, (table) =>
+              bestEffortList(
+                `routes in route table ${table.metadata!.id}`,
+                vpc.route.list(table.metadata!.id).pipe(Effect.map((routes) => routes.map((r) => toFriendlyAttributes(r)))),
+              ),
             ),
           ),
+          Effect.map((nested) => nested.flat()),
         ),
-        Effect.map((nested) => nested.flat()),
-        Effect.catch(() => Effect.succeed([] as RouteSchema.RouteAttributes[])),
       ),
     )
     return rows.flat()

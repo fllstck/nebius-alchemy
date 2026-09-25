@@ -14,6 +14,7 @@ import * as GroupMembershipSchema from './group-membership.schema.ts'
 import * as Factory from '../../factory.ts'
 import { GrpcError } from '../../../api-client/grpc-utils.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 
 // ----- RESOURCE TYPES
 
@@ -74,7 +75,14 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     if (!membership) {
       // Check for existing membership with same memberId in this group to avoid duplicates
       const existingMembers = yield* iam.groupMembership.listMembers(news.parentId).pipe(
-        Effect.catch(() => Effect.succeed([] as ReadonlyArray<NebiusGroupMembershipSchema.GroupMembership>)),
+        // A failed list must NOT answer `[]`: that is indistinguishable from "this member is not in
+        // the group yet", and the branch below would then create a *duplicate* membership.
+        // `NOT_FOUND` (the group is gone) is the one benign code.
+        Effect.catchTag('GrpcError', (e) =>
+          e.code === 5
+            ? Effect.succeed([] as ReadonlyArray<NebiusGroupMembershipSchema.GroupMembership>)
+            : Effect.fail(e),
+        ),
       )
       const existing = existingMembers.find(
         (m) => m.spec?.memberId === news.memberId,
@@ -149,17 +157,21 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
-      iam.group.list(project.metadata!.id).pipe(
-        Effect.flatMap((groups) =>
-          Effect.forEach(groups, (group) =>
-            iam.groupMembership.listMembers(group.metadata!.id).pipe(
-              Effect.map((members) => members.map((m) => toFriendlyAttributes(m))),
-              Effect.catch(() => Effect.succeed([] as GroupMembershipSchema.GroupMembershipAttributes[])),
+      bestEffortList(
+        `groups in project ${project.metadata!.id}`,
+        iam.group.list(project.metadata!.id).pipe(
+          Effect.flatMap((groups) =>
+            Effect.forEach(groups, (group) =>
+              bestEffortList(
+                `members of group ${group.metadata!.id}`,
+                iam.groupMembership
+                  .listMembers(group.metadata!.id)
+                  .pipe(Effect.map((members) => members.map((m) => toFriendlyAttributes(m)))),
+              ),
             ),
           ),
+          Effect.map((nested) => nested.flat()),
         ),
-        Effect.map((nested) => nested.flat()),
-        Effect.catch(() => Effect.succeed([] as GroupMembershipSchema.GroupMembershipAttributes[])),
       ),
     )
     return rows.flat()

@@ -14,6 +14,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as StaticKeySchema from './static-key.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 import * as Ids from './ids.ts'
 
 // ----- RESOURCE TYPES
@@ -188,17 +189,19 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
-      iam.serviceAccount.list(project.metadata!.id).pipe(
-        Effect.flatMap((sas) =>
-          Effect.forEach(sas, (sa) =>
-            iam.staticKey.list(sa.metadata!.id).pipe(
-              Effect.map((keys) => keys.map((k) => toFriendlyAttributes(k))),
-              Effect.catch(() => Effect.succeed([] as StaticKeySchema.StaticKeyAttributes[])),
+      bestEffortList(
+        `service accounts in project ${project.metadata!.id}`,
+        iam.serviceAccount.list(project.metadata!.id).pipe(
+          Effect.flatMap((sas) =>
+            Effect.forEach(sas, (sa) =>
+              bestEffortList(
+                `static keys of service account ${sa.metadata!.id}`,
+                iam.staticKey.list(sa.metadata!.id).pipe(Effect.map((keys) => keys.map((k) => toFriendlyAttributes(k)))),
+              ),
             ),
           ),
+          Effect.map((nested) => nested.flat()),
         ),
-        Effect.map((nested) => nested.flat()),
-        Effect.catch(() => Effect.succeed([] as StaticKeySchema.StaticKeyAttributes[])),
       ),
     )
     return rows.flat()

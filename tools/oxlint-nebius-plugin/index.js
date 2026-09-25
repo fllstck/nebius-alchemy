@@ -7,7 +7,8 @@
  *   - nebius/no-effect-catchallcause: bans Effect.catchAllCause (use catchTag/catch instead)
  *   - nebius/no-effect-ignore: bans *silent* Effect.ignore — a bare reference or a call without
  *     `log`; `Effect.ignore({ log, message })` is audible and allowed (use catch + log otherwise)
- *   - nebius/no-silent-error-swallow: bans () => Effect.void as an error handler
+ *   - nebius/no-silent-error-swallow: bans an error handler whose body is `Effect.void` or
+ *     `Effect.succeed([] | undefined | null)` — a failure must not read as "nothing there"
  *   - nebius/no-disable-validation: bans disableValidation: true
  *   - nebius/no-alchemy-deepequal: bans alchemy/Diff's deepEqual in provider code
  *     (it is blind to int64s — use ResourceUtils.specDeepEqual)
@@ -108,77 +109,33 @@ const plugin = {
     },
 
     // ── no-silent-error-swallow ──────────────────────────────────────────
-    // Bans patterns like `Effect.catchTag("Foo", () => Effect.void)`
-    // that silently swallow errors. The error handler should at least log.
+    // Bans an error handler that answers a failure with a *constant* — `Effect.void`, or
+    // `Effect.succeed([] | undefined | null)`. The handler should log, narrow to the code it is
+    // willing to treat as benign (`NOT_FOUND`), or raise a tagged error.
     //
-    // Note: In arrow function single-expression bodies, `Effect.void` is
-    // a MemberExpression (property access), NOT a CallExpression.
+    // The two shapes are the same defect seen from different sides, which is why they share a rule.
+    // `Effect.void` discards the failure outright. `Effect.succeed([])` is worse: on a `read`/`list`
+    // path it tells drift detection and `alchemy unsafe nuke` that the resource does not exist, so a
+    // `PERMISSION_DENIED` (rotated key, narrowed IAM role) silently shrinks the set of things the
+    // tool believes it owns. Found 2026-09-25: the rule matched only `Effect.void` — 0 occurrences in
+    // the repo — while `Effect.succeed([])` sat in **32** places.
+    //
+    // Note: in arrow-function single-expression bodies both are *reference* expressions —
+    // `Effect.void` is a `MemberExpression` and `Effect.succeed(…)` a `CallExpression` — so the body
+    // is matched structurally rather than by looking for a call.
     'no-silent-error-swallow': {
       meta: {
         type: 'suggestion',
         docs: {
-          description: 'Disallow () => Effect.void as error handler (error handlers should log, not silently swallow)',
+          description:
+            'Disallow constant error handlers (Effect.void, Effect.succeed([]|undefined|null)) — log, narrow to NOT_FOUND, or raise a tagged error',
           recommended: true,
         },
         schema: [],
       },
       create(context) {
-        /**
-         * Check if an expression node references Effect.void.
-         * Effect.void in single-expression arrow bodies is a MemberExpression.
-         */
-        function isEffectVoidRef(expr) {
-          if (!expr || expr.type !== 'MemberExpression') return false
-          return (
-            expr.property.type === 'Identifier' &&
-            expr.property.name === 'void' &&
-            extractObjectName(expr.object) === 'Effect'
-          )
-        }
-
-        /**
-         * Check if a function body is just `Effect.void` (however wrapped).
-         */
-        function isSilentEffectVoidBody(body) {
-          if (!body) return false
-
-          // Single expression: `() => Effect.void`
-          if (isEffectVoidRef(body)) return true
-
-          // Block with straight expression: `() => { Effect.void }`
-          if (
-            body.type === 'BlockStatement' &&
-            body.body.length === 1 &&
-            body.body[0].type === 'ExpressionStatement' &&
-            isEffectVoidRef(body.body[0].expression)
-          ) {
-            return true
-          }
-
-          // Block with return: `() => { return Effect.void }`
-          if (
-            body.type === 'BlockStatement' &&
-            body.body.length === 1 &&
-            body.body[0].type === 'ReturnStatement' &&
-            body.body[0].argument &&
-            isEffectVoidRef(body.body[0].argument)
-          ) {
-            return true
-          }
-
-          return false
-        }
-
-        /**
-         * Check if the node is a function expression whose body is Effect.void.
-         */
-        function isSilentHandler(fn) {
-          if (!fn) return false
-          if (fn.type !== 'ArrowFunctionExpression' && fn.type !== 'FunctionExpression') {
-            return false
-          }
-          return isSilentEffectVoidBody(fn.body)
-        }
+        const MESSAGE =
+          'Error handler answers a constant (`Effect.void` / `Effect.succeed([] | undefined | null)`), so a failure reads as "nothing there". Log it, narrow to the code that is genuinely benign (`Effect.catchTag("GrpcError", (e) => e.code === 5 ? … : Effect.fail(e))`), or raise a tagged error — and if the swallow is deliberate, say why with an oxlint-disable.'
 
         return {
           CallExpression(node) {
@@ -195,8 +152,7 @@ const plugin = {
               if (isSilentHandler(handler)) {
                 context.report({
                   node: handler,
-                  message:
-                    'Error handler should not silently swallow with Effect.void. Log the error or handle it explicitly.',
+                  message: MESSAGE,
                 })
                 return
               }
@@ -215,8 +171,7 @@ const plugin = {
               if (isSilentHandler(handler)) {
                 context.report({
                   node: handler,
-                  message:
-                    'Error handler should not silently swallow with Effect.void. Log the error or handle it explicitly.',
+                  message: MESSAGE,
                 })
                 return
               }
@@ -240,8 +195,7 @@ const plugin = {
                 if (parentIsPipe) {
                   context.report({
                     node: handler,
-                    message:
-                      'Error handler should not silently swallow with Effect.void. Log the error or handle it explicitly.',
+                    message: MESSAGE,
                   })
                 }
               }
@@ -371,6 +325,112 @@ function ignoreLogsTheCause(call) {
           property.type === 'Property' && property.key.type === 'Identifier' && property.key.name === 'log',
       ),
   )
+}
+
+/**
+ * Does the expression reference `Effect.void`?
+ *
+ * In a single-expression arrow body it is a `MemberExpression` (property access), not a call — which
+ * is why `() => Effect.void` needs no `CallExpression` to find.
+ */
+function isEffectVoidRef(expr) {
+  if (!expr || expr.type !== 'MemberExpression') return false
+  return (
+    expr.property.type === 'Identifier' &&
+    expr.property.name === 'void' &&
+    extractObjectName(expr.object) === 'Effect'
+  )
+}
+
+/** Strip the wrappers that do not change what an expression evaluates to. */
+function unwrap(expr) {
+  let node = expr
+  while (
+    node &&
+    (node.type === 'TSAsExpression' ||
+      node.type === 'TSSatisfiesExpression' ||
+      node.type === 'TSNonNullExpression' ||
+      node.type === 'ParenthesizedExpression')
+  ) {
+    node = node.expression
+  }
+  return node
+}
+
+/**
+ * `Effect.succeed(<empty>)` — a handler that answers "nothing there".
+ *
+ * `[]`, `undefined` and `null` are the three written shapes; anything else carries information
+ * (`succeed(0)`, `succeed('')`). Type assertions are unwrapped, because
+ * `Effect.succeed([] as readonly X[])` is the same statement with a type on it — and that spelling is
+ * what the call sites actually use.
+ */
+function isEffectSucceedEmptyRef(expr) {
+  const node = unwrap(expr)
+  if (!node || node.type !== 'CallExpression') return false
+
+  const callee = node.callee
+  if (
+    callee.type !== 'MemberExpression' ||
+    callee.computed === true ||
+    callee.property.type !== 'Identifier' ||
+    callee.property.name !== 'succeed' ||
+    extractObjectName(callee.object) !== 'Effect'
+  ) {
+    return false
+  }
+
+  const argument = unwrap(node.arguments[0])
+  if (!argument) return false
+  if (argument.type === 'ArrayExpression') return argument.elements.length === 0
+  if (argument.type === 'Literal') return argument.value === null
+  if (argument.type === 'Identifier') return argument.name === 'undefined'
+  return false
+}
+
+/** Either constant-handler shape. */
+function isSilentRef(expr) {
+  return isEffectVoidRef(expr) || isEffectSucceedEmptyRef(expr)
+}
+
+/** Is this function body just a constant (`Effect.void`, `Effect.succeed([])`), however wrapped? */
+function isSilentBody(body) {
+  if (!body) return false
+
+  // Single expression: `() => Effect.void`
+  if (isSilentRef(body)) return true
+
+  // Block with straight expression: `() => { Effect.void }`
+  if (
+    body.type === 'BlockStatement' &&
+    body.body.length === 1 &&
+    body.body[0].type === 'ExpressionStatement' &&
+    isSilentRef(body.body[0].expression)
+  ) {
+    return true
+  }
+
+  // Block with return: `() => { return Effect.void }`
+  if (
+    body.type === 'BlockStatement' &&
+    body.body.length === 1 &&
+    body.body[0].type === 'ReturnStatement' &&
+    body.body[0].argument &&
+    isSilentRef(body.body[0].argument)
+  ) {
+    return true
+  }
+
+  return false
+}
+
+/** Is this a function expression whose body is a constant? */
+function isSilentHandler(fn) {
+  if (!fn) return false
+  if (fn.type !== 'ArrowFunctionExpression' && fn.type !== 'FunctionExpression') {
+    return false
+  }
+  return isSilentBody(fn.body)
 }
 
 /**

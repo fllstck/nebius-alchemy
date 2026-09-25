@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as RecordSchema from './record.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 
 // ----- RESOURCE TYPES
 
@@ -127,17 +128,21 @@ export const NebiusRecordProvider: Layer.Layer<
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
-      dns.zone.list(project.metadata!.id).pipe(
-        Effect.flatMap((zones) =>
-          Effect.forEach(zones, (zone) =>
-            dns.record.list(zone.metadata!.id).pipe(
-              Effect.map((records) => records.map((r) => toFriendlyAttributes(r))),
-              Effect.catch(() => Effect.succeed([] as RecordSchema.RecordAttributes[])),
+      bestEffortList(
+        `zones in project ${project.metadata!.id}`,
+        dns.zone.list(project.metadata!.id).pipe(
+          Effect.flatMap((zones) =>
+            Effect.forEach(zones, (zone) =>
+              bestEffortList(
+                `records in zone ${zone.metadata!.id}`,
+                dns.record
+                  .list(zone.metadata!.id)
+                  .pipe(Effect.map((records) => records.map((r) => toFriendlyAttributes(r)))),
+              ),
             ),
           ),
+          Effect.map((nested) => nested.flat()),
         ),
-        Effect.map((nested) => nested.flat()),
-        Effect.catch(() => Effect.succeed([] as RecordSchema.RecordAttributes[])),
       ),
     )
     return rows.flat()

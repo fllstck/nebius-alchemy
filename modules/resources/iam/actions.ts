@@ -7,6 +7,7 @@ import * as ProjectModule from './v2/project.ts'
 import * as GroupModule from './v1/group.ts'
 import type * as Index from './index.ts'
 import { resolveTenantId } from '../shared/tenant.ts'
+import { bestEffortList } from '../shared/fan-out.ts'
 
 // ── Project ───────────────────────────────────────────────────────────────
 
@@ -44,7 +45,14 @@ export const ListProjects = Alchemy.Action(
       Effect.gen(function* () {
         const list = yield* iam.project.list(tenantId).pipe(
           Effect.map((items) => items.map((raw) => ProjectModule.toFriendlyAttributes(raw))),
-          Effect.catch(() => Effect.succeed([] as readonly ReturnType<typeof ProjectModule.toFriendlyAttributes>[])),
+          // The tenant's own project list is not a partial enumeration — nothing was fanned out yet,
+          // so a failure here would be reported as "this tenant has no projects". `NOT_FOUND` (the
+          // tenant is gone) is the one benign code; everything else must be seen.
+          Effect.catchTag('GrpcError', (e) =>
+            e.code === 5
+              ? Effect.succeed([] as readonly ReturnType<typeof ProjectModule.toFriendlyAttributes>[])
+              : Effect.fail(e),
+          ),
         )
         return [...list]
       })
@@ -88,9 +96,9 @@ export const ListGroups = Alchemy.Action(
       Effect.gen(function* () {
         const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
         const results = yield* Effect.forEach(parentIds, (pid) =>
-          iam.group.list(pid).pipe(
-            Effect.map((items) => items.map((raw) => GroupModule.toFriendlyAttributes(raw))),
-            Effect.catch(() => Effect.succeed([] as readonly ReturnType<typeof GroupModule.toFriendlyAttributes>[])),
+          bestEffortList(
+            `groups in project ${pid}`,
+            iam.group.list(pid).pipe(Effect.map((items) => items.map((raw) => GroupModule.toFriendlyAttributes(raw)))),
           ),
         )
         return results.flat()

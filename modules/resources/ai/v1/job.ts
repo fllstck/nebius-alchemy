@@ -99,7 +99,19 @@ export const NebiusJobProvider: Layer.Layer<
             Effect.gen(function* () {
               const recovered = yield* aiGrpcService.job
                 .getByName({ parentId, name })
-                .pipe(Effect.catch(() => Effect.succeed(undefined)))
+                .pipe(
+                  // Best effort, and loud — the same policy as the recovery block in `ai/v1
+                  // Endpoint`: a lookup that could not answer must not read as "the job was not
+                  // created", and the original create failure (re-raised below) is the more useful
+                  // error to report.
+                  Effect.catchTag('GrpcError', (e) =>
+                    e.code === 5
+                      ? Effect.succeed(undefined)
+                      : Effect.logWarning(
+                          `Recovery lookup for Nebius.ai.v1.Job '${name}' failed (${e.code} ${e.message}) — reporting the original create failure`,
+                        ).pipe(Effect.andThen(Effect.succeed(undefined))),
+                  ),
+                )
               if (recovered) {
                 yield* session.note(`Recovered Nebius.ai.v1.Job (${recovered.metadata!.id}) after create failure`)
                 return recovered

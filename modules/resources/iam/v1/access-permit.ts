@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as AccessPermitSchema from './access-permit.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 
 // ----- RESOURCE TYPES
 
@@ -64,8 +65,11 @@ export const NebiusAccessPermitProvider: Layer.Layer<
     if (!permit) {
       // Check for existing permit with same (parentId, resourceId, role) to avoid duplicates
       const existingPermits = yield* iam.accessPermit.list(news.parentId).pipe(
-        Effect.catch(() =>
-          Effect.succeed([] as ReadonlyArray<NebiusAccessPermitSchema.AccessPermit>),
+        // A failed list must NOT answer `[]`: that is indistinguishable from "no such permit exists",
+        // and the branch below would then create a *duplicate* permit. `NOT_FOUND` (the group is
+        // gone) is the one benign code — the create that follows fails on its own account.
+        Effect.catchTag('GrpcError', (e) =>
+          e.code === 5 ? Effect.succeed([] as ReadonlyArray<NebiusAccessPermitSchema.AccessPermit>) : Effect.fail(e),
         ),
       )
       const existing = existingPermits.find(
@@ -131,17 +135,21 @@ export const NebiusAccessPermitProvider: Layer.Layer<
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
-      iam.group.list(project.metadata!.id).pipe(
-        Effect.flatMap((groups) =>
-          Effect.forEach(groups, (group) =>
-            iam.accessPermit.list(group.metadata!.id).pipe(
-              Effect.map((permits) => permits.map((p) => toFriendlyAttributes(p))),
-              Effect.catch(() => Effect.succeed([] as AccessPermitSchema.AccessPermitAttributes[])),
+      bestEffortList(
+        `groups in project ${project.metadata!.id}`,
+        iam.group.list(project.metadata!.id).pipe(
+          Effect.flatMap((groups) =>
+            Effect.forEach(groups, (group) =>
+              bestEffortList(
+                `access permits in group ${group.metadata!.id}`,
+                iam.accessPermit
+                  .list(group.metadata!.id)
+                  .pipe(Effect.map((permits) => permits.map((p) => toFriendlyAttributes(p)))),
+              ),
             ),
           ),
+          Effect.map((nested) => nested.flat()),
         ),
-        Effect.map((nested) => nested.flat()),
-        Effect.catch(() => Effect.succeed([] as AccessPermitSchema.AccessPermitAttributes[])),
       ),
     )
     return rows.flat()

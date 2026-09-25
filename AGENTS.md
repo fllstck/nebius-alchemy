@@ -286,6 +286,27 @@ the *delete* labelled every failure "already gone", so a `PERMISSION_DENIED` rea
 cleanup. Warn rather than fail — a failing delete leaks the parents (above) while the cause is
 persistent, so a re-run fails identically — and name the resource and the error in the warning.
 
+**Generalised (R-06, 2026-09-25): no failure may read as "nothing there".** 32 sites did
+`Effect.catch(() => Effect.succeed([] | undefined))`, so "this parent holds nothing" and "this parent
+could not be enumerated" were the same answer. The rule (`nebius/no-silent-error-swallow`, `error`) now
+bans a *constant* handler — `Effect.void` or `Effect.succeed([] | undefined | null)` — and exactly three
+shapes are allowed, chosen by what the caller can do with the answer:
+
+- **A create-path lookup narrows to `NOT_FOUND`**: `Effect.catchTag('GrpcError', (e) => e.code === 5 ? … :
+  Effect.fail(e))`. An unverified lookup that decides whether to *create* something can otherwise produce a
+  duplicate (`iam/v1 AccessPermit`'s adopt-by-identity path). No partial result is worth preserving here.
+- **A tenant fan-out logs and continues** (`modules/resources/shared/fan-out.ts`, `bestEffortList`):
+  `NOT_FOUND` quiet, anything else `[]` **plus a warning naming the parent and saying the result is
+  PARTIAL**, defects propagating. This fan-out is `alchemy unsafe nuke`'s enumeration — its only caller —
+  and aborting over one inaccessible project leaves more behind; but a partial list must never read as a
+  complete one.
+- **A best-effort pre-step in a destroy logs and continues** (`Effect.ignore({ log: 'Warn', message })`),
+  because a blocked delete cascades into leaked parents while the cause is usually persistent.
+
+`bun run lint` at `error` plus the rule's must-fail fixtures
+(`tests/tools/oxlint-plugin.test.ts`, run by `bun run check`) are what keep a new swallow from arriving;
+the one legitimate `Effect.ignore` form is the logging one.
+
 **A resource with no `Update` RPC MUST be tabulated prop by prop in the convergence sweep.**
 That is the only shape in which the silent-no-op class can survive. With an update RPC,
 `reconcile` sends the full `desired` spec, so any prop change is written and the API adjudicates

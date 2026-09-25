@@ -234,7 +234,20 @@ export const NebiusEndpointProvider: Layer.Layer<
               )
               const recovered = yield* aiGrpcService.endpoint
                 .getByName({ parentId, name })
-                .pipe(Effect.catch(() => Effect.succeed(undefined)))
+                .pipe(
+                  // Best effort, and loud: `NOT_FOUND` means the create genuinely did not land (the
+                  // case this recovery exists for), but any *other* failure means the lookup itself
+                  // could not answer — and reporting that as "not created" would replace the create
+                  // error below with a wrong diagnosis. So warn, then fall through to the original
+                  // failure. (Which codes are worth reaching here at all is R-20.)
+                  Effect.catchTag('GrpcError', (e) =>
+                    e.code === 5
+                      ? Effect.succeed(undefined)
+                      : Effect.logWarning(
+                          `Recovery lookup for Nebius.ai.v1.Endpoint '${name}' failed (${e.code} ${e.message}) — reporting the original create failure`,
+                        ).pipe(Effect.andThen(Effect.succeed(undefined))),
+                  ),
+                )
               if (recovered) {
                 yield* session.note(
                   `Recovered Nebius.ai.v1.Endpoint (${recovered.metadata!.id}) after create failure`,

@@ -232,7 +232,14 @@ transfer.spec && transferSpecDrifted(transfer.spec, desired)
     // If active, stop before deleting
     if (transfer && transfer.status?.state === 1 /* ACTIVE */) {
       yield* svc.transfer.stop(output.id).pipe(
-        Effect.catchTag('GrpcError', () => Effect.succeed(undefined)),
+        // Best effort, and loud: the delete below handles a still-active transfer, and a destroy must
+        // not be blocked by this pre-step — a failed delete makes the planner skip every dependent
+        // and leaks the parents (AGENTS.md). Logged rather than silent, so a stop that did not take
+        // effect is visible instead of implied.
+        Effect.ignore({
+          log: 'Warn',
+          message: `Stopping Nebius.storage.v1.Transfer ${output.id} before delete failed`,
+        }),
       )
     }
     // Delete — the API handles stopping if still active.

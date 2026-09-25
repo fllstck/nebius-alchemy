@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as SecurityRuleSchema from './security-rule.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { bestEffortList } from '../../shared/fan-out.ts'
 
 // ----- RESOURCE TYPES
 
@@ -152,17 +153,21 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
     const rows = yield* Effect.forEach(projects, (project) =>
-      vpc.securityGroup.list(project.metadata!.id).pipe(
-        Effect.flatMap((groups) =>
-          Effect.forEach(groups, (group) =>
-            vpc.securityRule.list(group.metadata!.id).pipe(
-              Effect.map((rules) => rules.map((r) => toFriendlyAttributes(r))),
-              Effect.catch(() => Effect.succeed([] as SecurityRuleSchema.SecurityRuleAttributes[])),
+      bestEffortList(
+        `security groups in project ${project.metadata!.id}`,
+        vpc.securityGroup.list(project.metadata!.id).pipe(
+          Effect.flatMap((groups) =>
+            Effect.forEach(groups, (group) =>
+              bestEffortList(
+                `security rules in group ${group.metadata!.id}`,
+                vpc.securityRule
+                  .list(group.metadata!.id)
+                  .pipe(Effect.map((rules) => rules.map((r) => toFriendlyAttributes(r)))),
+              ),
             ),
           ),
+          Effect.map((nested) => nested.flat()),
         ),
-        Effect.map((nested) => nested.flat()),
-        Effect.catch(() => Effect.succeed([] as SecurityRuleSchema.SecurityRuleAttributes[])),
       ),
     )
     return rows.flat()
