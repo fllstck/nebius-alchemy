@@ -582,7 +582,7 @@ from the raw query and cannot influence any redirect target.
 
 ## MEH — annoying but survivable
 
-### R-15 — Branded-ID audit is informational, and its count drifts · `OPEN`
+### R-15 — Branded-ID audit is informational, and its count drifts · `DONE (2026-09-25)`
 
 **Files**: `tools/schema-conformance.ts:163` · `AGENTS.md` §"Branded IDs — everywhere, inputs and
 outputs" · `modules/resources/dns/v1/zone.schema.ts:85`
@@ -605,9 +605,32 @@ excluded or require an allowlist entry with a reason.
 **Acceptance**: introducing a new `id: Schema.String` in a props/attributes/error schema fails
 `bun tools/schema-conformance.ts`; the printed total matches `AGENTS.md`.
 
+**Met, with a deliberate deviation from the fix as written**: no separate allowlist file. The audit now
+exits 1 on any bare-string ID field whose **own leading doc comment** lacks the literal marker
+`NOT branded: <why>`, and the check runs in `bun run check` (`bun run conformance`). An allowlist file
+was rejected because 14 of the 16 candidates already carried an in-place explanation —
+“NOT a Nebius resource ID”, “deliberately unbranded”, “unbranded: `''` = auto-allocate” — so a second
+file would have duplicated every reason verbatim *and* needed a staleness check (a renamed field would
+silently approve nothing). The in-code marker travels with the field, cannot go stale, and makes
+`grep -rn "NOT branded" modules/resources/` the complete exception inventory; the tool prints the same
+list as its report. Seven comments were reworded to the marker (no behaviour change), and the marker is
+the *literal* string, not a family of “unbranded”-ish wordings — the loose-pattern failure mode this
+repo has been bitten by twice (R-05, R-06).
+
+**`AGENTS.md` no longer states a count** (it said 13 while the tool printed 16): it points at the tool,
+which prints the live total, and at the grep. The paragraph also gained the one shape the old exception
+list did not name — see R-16.
+
+**Met** — running the tool with a `sneakyNewId: Schema.String` added to a schema schema exits **1** and
+names the field and its line, with the instruction to brand it or say why not; removing it exits 0.
+The classifier is pinned by 9 tests in `tests/tools/schema-conformance.test.ts`, four of which are
+negative controls: a marker on the *neighbouring* field, a marker separated by a blank line, a marker
+elsewhere in the file, and the three near-miss wordings the repo used to write. All four would look
+identical from the outside if the marker search were file-wide.
+
 ---
 
-### R-16 — `ZoneNotEmpty.zoneId` is an unbranded id while `ZoneId` exists · `OPEN`
+### R-16 — `ZoneNotEmpty.zoneId` is an unbranded id while `ZoneId` exists · `DONE (2026-09-25)`
 
 **File**: `modules/resources/dns/v1/zone.schema.ts:85` (brand in `modules/resources/dns/v1/ids.ts:6`)
 
@@ -616,6 +639,19 @@ excluded or require an allowlist entry with a reason.
 
 **Fix**: `zoneId: ZoneId`. **Acceptance**: `R-15`'s audit no longer lists it; the `ZoneNotEmpty`
 construction site type-checks without a cast.
+
+**Fixed — and it was two sites, not one.** `dns/v1 ZoneNotEmpty.zoneId: Ids.ZoneId`, and the identical
+miss one service over: `billing/v1 PricingPolicyHasRunningVms.id: Ids.PricingPolicyId`. Both are error
+schemas carrying the resource's own id, both populated from a branded `output.id`, and both sat 11–22
+lines below an *attributes* schema that already used the brand for the same value (`ZoneAttributes.id`,
+`PricingPolicyAttributes.id`) — so the brand was being thrown away precisely where an operator reads
+it, in the error that says why their destroy was blocked. Neither needed a cast at the construction
+site: `output.id` was already branded, which is why the unbranded field compiled.
+
+Recorded as a finding rather than a one-line fix because the issue called this “one candidate”: the
+roast's candidate list was read by eye against a count that had already drifted, which is the failure
+R-15 exists to remove. `AGENTS.md` §"Branded IDs" now names error schemas explicitly, and the tool
+enforces it (the marker cannot approve a branded field into silence — it simply stops being reported).
 
 ---
 
@@ -696,7 +732,9 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
    R-02 is the reference implementation for R-06's 31-site classification.
 4. **R-01** — the only HIGH-risk item. Needs the duplicate-`Issue` probe before choosing a branch.
 5. **R-19** — needs a live instance; pair with any other live probe session.
-6. **R-10, R-12, R-15, R-16, R-18, R-20** — incremental cleanups, safe to interleave.
+6. **R-10, R-12, R-15, R-16, R-18, R-20** — incremental cleanups, safe to interleave. **R-15 + R-16 are
+done** (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
+miss).
 7. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 

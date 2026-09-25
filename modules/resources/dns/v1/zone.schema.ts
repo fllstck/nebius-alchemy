@@ -82,7 +82,14 @@ export const validateZoneProps = Validation.makeValidateProps(ZonePropsSchema)
  * both need a human, and both are named in the message.
  */
 export class ZoneNotEmpty extends Schema.TaggedError<ZoneNotEmpty>()('ZoneNotEmpty', {
-  zoneId: Schema.String,
+  /**
+   * The zone's own brand — the same value as `ZoneAttributes.id` (`output.id`), not a name.
+   *
+   * Unbranded until 2026-09-25: an id-named field in an *error* schema is exactly as much a
+   * Nebius identifier as one in an attributes schema, and this one is populated from a branded
+   * `output.id`, so `Schema.String` only made the brand un-recoverable at the throw site (R-16).
+   */
+  zoneId: Ids.ZoneId,
   zoneName: Schema.String,
   records: Schema.Array(Schema.String),
   message: Schema.String,

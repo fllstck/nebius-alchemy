@@ -41,7 +41,7 @@ export const FederatedCredentialsAttributesSchema = Schema.Struct({
   parentId: IamV2Ids.ProjectId,
   name: Schema.String,
   oidcProvider: Schema.optional(OidcProviderSchema),
-  /** See the props schema: an external IdP subject, deliberately unbranded. */
+  /** See the props schema — NOT branded: an external IdP subject, not a Nebius resource. */
   federatedSubjectId: Schema.String,
   subjectId: Ids.ServiceAccountId,
 })

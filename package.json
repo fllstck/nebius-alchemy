@@ -38,7 +38,8 @@
   ],
   "scripts": {
     "audit": "bun audit",
-    "check": "bun run typecheck && bun run lint && bun run test:rules",
+    "check": "bun run typecheck && bun run lint && bun run test:rules && bun run conformance",
+    "conformance": "bun tools/schema-conformance.ts",
     "test": "bun test tests/",
     "test:rules": "bun test tests/tools/",
     "test:integration": "SLOW_TESTS=1 bun test tests/",

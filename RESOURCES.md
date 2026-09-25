@@ -606,7 +606,7 @@ Resource-level validations (they compare several props, so they are not attached
 
 | attribute | always present | type | documented as |
 | --- | --- | --- | --- |
-| `federatedSubjectId` | **yes** | `Schema.String` | See the props schema: an external IdP subject, deliberately unbranded. |
+| `federatedSubjectId` | **yes** | `Schema.String` | See the props schema — NOT branded: an external IdP subject, not a Nebius resource. |
 | `id` | **yes** | `Ids.FederatedCredentialsId` | — |
 | `name` | **yes** | `Schema.String` | — |
 | `parentId` | **yes** | `IamV2Ids.ProjectId` | — |

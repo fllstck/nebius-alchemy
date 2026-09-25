@@ -10,8 +10,9 @@ import * as IamV2Ids from '../../iam/v2/ids.ts'
 
 const AccessKeyCredentialsSchema = Schema.Struct({
   /**
-   * The AWS-compatible access key ID (SID *value*, e.g. `AKIA…`) of the source
-   * or destination bucket's credentials — NOT a Nebius resource ID.
+   * The AWS-compatible access key ID (SID *value*, e.g. `AKIA…`) of the source or destination
+   * bucket's credentials. NOT branded: it is the SID the S3 API signs with, not a Nebius resource
+   * ID — the `AccessKey` *resource* id is a different value entirely.
    */
   accessKeyId: Schema.String,
   secretAccessKey: Schema.String,

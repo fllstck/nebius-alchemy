@@ -408,12 +408,23 @@ An identifier that names a schema entity **MUST** be the entity's brand, never a
   possibly-empty one. The package re-exports the brands as **values**, so
   `Nebius.iam.ServiceAccountId.make(…)` works for consumers.
 
-Audit status: casing and branding conformance are both re-checkable with
-`bun tools/schema-conformance.ts` (exit 1 on a casing deviation; it also prints the
-bare-string ID candidates). **13** remain (14 before `capacity/v1` landed its
-`CapacityBlockGroupId` — the `reservationPolicy.reservationIds` exception is closed), and
-every one of them is an approved exception from the list above — the full classification
-lives in TASKS.md §"ID1 — Branded IDs".
+Audit status: both rules are enforced by `bun tools/schema-conformance.ts`, which `bun run check`
+runs and which **exits 1** on a casing deviation *or* on a bare-string ID field with no in-place
+reason. An approved exception declares itself where the field is:
+
+```ts
+/** Optional rule identifier. NOT branded: opaque per-rule label, not a resource ID. */
+id: Schema.optional(Schema.String),
+```
+
+The marker is the literal `NOT branded`, in the doc comment **immediately above the field** (a marker
+elsewhere in the file does not count — pinned in `tests/tools/schema-conformance.test.ts`, because a
+file-wide search would approve everything and look identical from outside). The tool prints the
+current count, and `grep -rn "NOT branded" modules/resources/` is the complete exception inventory.
+One shape the list above does not name, and which the 2026-09-25 sweep found: **an id-named field in
+an error schema is an identifier like any other** — `dns/v1 ZoneNotEmpty.zoneId` and
+`billing/v1 PricingPolicyHasRunningVms.id` were both populated from a branded `output.id` while
+declared `Schema.String`, so the brand was lost exactly where an operator reads it (R-16).
 
 **Reachable as values, enforced.** Declaring a brand is not enough: it must also be re-exported by its
 service `index.ts`, or a consumer cannot brand an id it did not read off a resource output — and since a

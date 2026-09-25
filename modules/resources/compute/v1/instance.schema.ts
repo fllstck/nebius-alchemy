@@ -187,7 +187,7 @@ const IPAddressSchema = Schema.Struct({
 })
 
 const PublicIPAddressSchema = Schema.Struct({
-  /** Allocation identifier if it was created before (see `IPAddressSchema` — unbranded: `''` = auto-allocate). */
+  /** Allocation identifier if it was created before. NOT branded: `''` is the auto-allocate sentinel (see `IPAddressSchema`). */
   allocationId: Schema.optional(Schema.String),
   /**
    * If false - Allocation will be created/deleted during NetworkInterface.Allocate/Deallocate.

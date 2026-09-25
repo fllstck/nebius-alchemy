@@ -46,8 +46,8 @@ export const PortSchema = Schema.Struct({
 
 export const S3CredentialsSchema = Schema.Struct({
   /**
-   * The AWS-compatible access key ID (SID *value*, e.g. `AKIA…`) used to mount
-   * the S3 volume — NOT a Nebius resource ID, so deliberately unbranded.
+   * The AWS-compatible access key ID (SID *value*, e.g. `AKIA…`) used to mount the S3 volume.
+   * NOT branded: a credential value, not a Nebius resource ID.
    */
   accessKeyId: Schema.String,
   secretAccessKey: Schema.String,

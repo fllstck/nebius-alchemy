@@ -82,7 +82,12 @@ export const PricingPolicyPropsSchema = Schema.Struct({
 export class PricingPolicyHasRunningVms extends Schema.TaggedError<PricingPolicyHasRunningVms>()(
   'PricingPolicyHasRunningVms',
   {
-    id: Schema.String,
+    /**
+     * The policy's own brand — the same value as `PricingPolicyAttributes.id` (`output.id`).
+     * Unbranded until 2026-09-25; see `dns/v1 ZoneNotEmpty.zoneId`, the same miss found in the
+     * same audit sweep (R-16).
+     */
+    id: Ids.PricingPolicyId,
     runningVmCount: Schema.String,
   },
 ) {
@@ -113,7 +118,7 @@ export const PricingPolicyAttributesSchema = Schema.Struct({
   state: Schema.optional(Schema.String),
   /** Whether new VMs may currently start under this policy. */
   schedulingState: Schema.optional(Schema.String),
-  /** The SKU the platform resolved from `platform`. */
+  /** The SKU the platform resolved from `platform`. NOT branded: a catalog SKU, not a Nebius resource. */
   skuId: Schema.optional(Schema.String),
   /** ISO 4217 code as the API spells it — measured live 2026-09-24 as lowercase `"usd"`. */
   currency: Schema.optional(Schema.String),
