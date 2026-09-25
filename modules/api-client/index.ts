@@ -1,5 +1,17 @@
 export type { CreateInput, UpdateInput } from './types.ts'
-export { GrpcError, GrpcDeadlineExceededError, OperationFailedError, withGrpcRetry, pollOperation, wrapWithOperationPolling, wrapUnaryCall, wrapGrpcClient, makeGrpcService, paginateAll } from './grpc-utils.ts'
+export {
+  GrpcError,
+  GrpcDeadlineExceededError,
+  OperationFailedError,
+  PaginationLoopError,
+  withGrpcRetry,
+  pollOperation,
+  wrapWithOperationPolling,
+  wrapUnaryCall,
+  wrapGrpcClient,
+  makeGrpcService,
+  paginateAll,
+} from './grpc-utils.ts'
 export type { EffectService, WithOperationPolling, GrpcRetryOptions } from './grpc-utils.ts'
 export { NebiusGrpcTransport, NebiusGrpcTransportLive } from './GrpcTransport.ts'
 export * as Storage from './storage.ts'

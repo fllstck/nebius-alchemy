@@ -59,7 +59,15 @@ export interface GrpcRetryOptions {
   readonly maxRetries?: number
   /** Initial backoff in milliseconds (default: 1000). */
   readonly initialBackoff?: number
-  /** Maximum backoff in milliseconds (default: 30000). */
+  /**
+   * Cap on the backoff in milliseconds (default: 30_000).
+   *
+   * Applied to the delay **before** jitter, so it bounds the wait rather than the observed sleep
+   * exactly (jitter scales the capped value down to 50–100 %). Until 2026-09-25 this option was
+   * documented, exported and *never read* — the loop computed `initialBackoff * 2 ** attempt`
+   * uncapped, so setting it bounded nothing, and no test could see it because every retry test
+   * passed `initialBackoff: 0` (R-03).
+   */
   readonly maxBackoff?: number
 }
 
@@ -78,6 +86,7 @@ export const withGrpcRetry = <A, E, R>(
 ): Effect.Effect<A, E, R> => {
   const maxRetries = options?.maxRetries ?? 3
   const initial = options?.initialBackoff ?? 1000
+  const maxBackoff = options?.maxBackoff ?? 30_000
 
   const loop = (attempt: number): Effect.Effect<A, E, R> =>
     effect.pipe(
@@ -90,7 +99,10 @@ export const withGrpcRetry = <A, E, R>(
           attempt < maxRetries &&
           (e instanceof GrpcDeadlineExceededError || (e instanceof GrpcError && RETRYABLE_CODES.has(e.code))),
         (_e) => {
-          const delay = initial * Math.pow(2, attempt)
+          // Exponential, capped, then jittered. The cap is what makes `maxBackoff` real; the
+          // `min` is the whole fix for R-03 and is pinned by two TestClock tests in
+          // `tests/api-client/grpc-utils.test.ts` (one for an explicit cap, one for the default).
+          const delay = Math.min(initial * Math.pow(2, attempt), maxBackoff)
           // Jitter: randomize between 50% and 100% of the computed delay
           const jittered = delay * (0.5 + Math.random() * 0.5)
           return Effect.sleep(jittered).pipe(Effect.andThen(loop(attempt + 1)))
@@ -608,12 +620,44 @@ export const makeGrpcService = <S extends ServiceDescriptor>(
 // ---------------------------------------------------------------------------
 
 /**
+ * Page bound for {@link paginateAll}: 1000 pages at the usual `pageSize` of 100 is 100k items, so a
+ * caller that reaches this is not paginating — it is looping.
+ */
+export const MAX_PAGES = 1000
+
+/**
+ * The endpoint kept offering a page token instead of finishing.
+ *
+ * Raised as a **defect** by {@link paginateAll} (hence not part of any service's error channel); see
+ * that function for why a broken-server condition is not a typed failure here.
+ */
+export class PaginationLoopError extends Schema.TaggedError<PaginationLoopError>()('PaginationLoopError', {
+  /** The token the endpoint returned twice, or the last token when the page bound was hit. */
+  pageToken: Schema.String,
+  /** Pages fetched before the loop was stopped. */
+  pages: Schema.Finite,
+  message: Schema.String,
+}) {}
+
+/**
  * Paginate through a list endpoint, collecting all items.
  *
  * Every Nebius list API follows the same pattern: a request with
  * `parentId`, `pageSize`, and `pageToken`, returning `items` and
  * `nextPageToken`. This helper eliminates the ~19 copies of that loop
  * across service files.
+ *
+ * **Termination is guarded.** A list endpoint that answers with the same `nextPageToken` it was given
+ * — or that simply never stops — used to loop forever: `do { … } while (pageToken)` had neither a
+ * repeat check nor a bound, so one misbehaving endpoint was an unbounded allocator, and its only
+ * caller is every provider's `list` (i.e. `alchemy unsafe nuke`). A repeated token, and a page count
+ * above {@link MAX_PAGES}, therefore stop the loop immediately.
+ *
+ * They stop it as a **defect** carrying a {@link PaginationLoopError}, not as a typed failure. The
+ * request was well-formed and the server broke its own contract, so no caller has a recovery to
+ * offer — while typing it would widen the error channel of all 49 `paginateAll` call sites (every
+ * `list` in every service, and everything that composes them) for a condition none of them can act
+ * on. A defect still fails loudly, naming the token and the page count.
  *
  * @example
  * ```ts
@@ -632,10 +676,31 @@ export const paginateAll = <T>(
   Effect.gen(function* () {
     const items: T[] = []
     let pageToken = ''
-    do {
+    for (let page = 0; ; page++) {
+      if (page >= MAX_PAGES) {
+        return yield* Effect.die(
+          new PaginationLoopError({
+            pageToken,
+            pages: page,
+            message: `paginateAll asked for page ${page + 1} of parent ${parentId} — a list endpoint that has not terminated after ${MAX_PAGES} pages is not going to.`,
+          }),
+        )
+      }
+
       const response = yield* listMethod(makeRequest(parentId, pageToken))
       items.push(...response.items)
-      pageToken = response.nextPageToken
-    } while (pageToken)
-    return items
+
+      const nextPageToken = response.nextPageToken
+      if (!nextPageToken) return items
+      if (nextPageToken === pageToken) {
+        return yield* Effect.die(
+          new PaginationLoopError({
+            pageToken: nextPageToken,
+            pages: page + 1,
+            message: `paginateAll was offered the same page token twice ('${nextPageToken}') for parent ${parentId} — the endpoint is looping.`,
+          }),
+        )
+      }
+      pageToken = nextPageToken
+    }
   })

@@ -10,12 +10,18 @@
  * deadlines) with nothing leaving the machine.
  */
 import * as BunTest from 'bun:test'
+import * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
+import * as Result from 'effect/Result'
+import { TestClock } from 'effect/testing'
 import * as grpc from '@grpc/grpc-js'
 
 import {
   GrpcDeadlineExceededError,
+  MAX_PAGES,
   OperationFailedError,
   paginateAll,
   pollOperation,
@@ -491,6 +497,50 @@ describe('paginateAll', () => {
 
     expect((error as GrpcError).code).toBe(13)
   })
+
+  test('a repeated nextPageToken stops the loop instead of allocating forever (R-11)', async () => {
+    let calls = 0
+    const exit = await Effect.runPromiseExit(
+      paginateAll(
+        () => {
+          calls += 1
+          // The endpoint answers the same token it was given, which is what `do { … } while
+          // (pageToken)` could not notice: it asked for `same-token` twice and looped.
+          return Effect.succeed({ items: [{ id: `item-${calls}` }], nextPageToken: 'same-token' })
+        },
+        () => ({}),
+        'parent-1',
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(defectOf(exit.cause)).toMatchObject({ _tag: 'PaginationLoopError', pageToken: 'same-token', pages: 2 })
+    }
+    // Page one (empty token), then the repeat — and not a third call.
+    expect(calls).toBe(2)
+  })
+
+  test('the page bound stops an endpoint that never terminates', async () => {
+    let calls = 0
+    const exit = await Effect.runPromiseExit(
+      paginateAll(
+        () => {
+          calls += 1
+          // Every token is fresh, so only the bound can stop this.
+          return Effect.succeed({ items: [], nextPageToken: `page-${calls}` })
+        },
+        () => ({}),
+        'parent-1',
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(calls).toBe(MAX_PAGES)
+    if (Exit.isFailure(exit)) {
+      expect(defectOf(exit.cause)).toMatchObject({ _tag: 'PaginationLoopError', pages: MAX_PAGES })
+    }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -673,6 +723,53 @@ describe('pollOperation — error and request details', () => {
   })
 })
 
+/**
+ * Run a retrying effect on a **virtual** clock, advancing an hour so every bounded backoff elapses.
+ *
+ * This is R-13's fix. The default-backoff test used to take the real clock's default path and sleep
+ * 0.5–1 s of wall time, which is why the backoff schedule was never actually observed — and why
+ * `maxBackoff` could be exported, documented and never read with every test still green (R-03).
+ */
+const onVirtualClock = async (effect: Effect.Effect<unknown, unknown>): Promise<void> => {
+  const program = Effect.gen(function* () {
+    const fiber = yield* Effect.forkChild(effect)
+    yield* TestClock.adjust('1 hour')
+    // v4: a `Fiber` is not itself an `Effect` (and `Effect.fork` is gone for `forkChild`), so the
+    // fiber has to be joined before the outcome can be captured — passing it straight to
+    // `Effect.exit` fails at run time with "Not a valid effect".
+    yield* Effect.exit(Fiber.join(fiber))
+  })
+  await Effect.runPromise(program.pipe(Effect.provide(TestClock.layer())))
+}
+
+/**
+ * The virtual timestamp of each attempt, recorded *inside* the retried effect (so every attempt
+ * contributes one entry — a `tap` on the outer effect would only ever see the last one).
+ */
+const attempts = (times: Array<number>, onAttempt: () => void) =>
+  Effect.gen(function* () {
+    times.push(yield* Clock.currentTimeMillis)
+    onAttempt()
+  })
+
+/** Gaps between attempts, in virtual milliseconds. */
+const gaps = (times: ReadonlyArray<number>): ReadonlyArray<number> =>
+  times.slice(1).map((time, index) => time - (times[index] ?? 0))
+
+const unavailable = () => new GrpcError({ code: 14, message: 'unavailable', details: '' })
+
+/**
+ * The defect behind a stopped loop, read structurally.
+ *
+ * `paginateAll` stops a looping endpoint with `Effect.die` rather than a typed failure (see its doc
+ * comment): the request was well-formed and the server broke its contract, so no caller has a
+ * recovery — and typing it would widen the error channel of all 49 call sites for nothing.
+ */
+const defectOf = (cause: Cause.Cause<unknown>): unknown => {
+  const found = Cause.findDie(cause)
+  return Result.isSuccess(found) ? found.success.defect : undefined
+}
+
 describe('withGrpcRetry — defaults', () => {
   test('works with no options at all', async () => {
     // `options?.maxRetries ?? 3` / `options?.initialBackoff ?? 1000` — with no options the
@@ -680,24 +777,73 @@ describe('withGrpcRetry — defaults', () => {
     expect(await Effect.runPromise(withGrpcRetry(Effect.succeed('ok')))).toBe('ok')
   })
 
-  test('retries with the default backoff when no options are given', async () => {
-    // The first test never sleeps, so it cannot see a broken default: `initialBackoff ?? 1000`
-    // mutated to `&& 1000` yields `undefined`, and `undefined * 2 ** 0` is NaN — the sleep (or
-    // the retry) then misbehaves. This one actually takes the retry path with defaults.
+  test('retries with the default backoff (1s doubling) — asserted, not slept through', async () => {
+    // `initialBackoff ?? 1000` mutated to `&& 1000` yields `undefined`, and `undefined * 2 ** 0` is
+    // NaN — the retry then misbehaves. Checking the *values* is affordable now that the sleeps are
+    // virtual: this file used to spend ~1 s of wall clock on exactly this case (R-13).
+    const times: Array<number> = []
     let calls = 0
-    const result = await Effect.runPromise(
-      withGrpcRetry(
-        Effect.suspend(() => {
-          calls += 1
-          return calls === 1
-            ? Effect.fail(new GrpcError({ code: 14, message: 'unavailable', details: '' }))
-            : Effect.succeed('recovered')
-        }),
-      ),
+    const retried = attempts(times, () => {
+      calls += 1
+    }).pipe(
+      Effect.andThen(() => (calls < 4 ? Effect.fail(unavailable()) : Effect.succeed('recovered'))),
     )
 
-    expect(result).toBe('recovered')
-    expect(calls).toBe(2)
+    await onVirtualClock(withGrpcRetry(retried))
+
+    expect(calls).toBe(4)
+    // jitter is 50–100 % of `1000 * 2 ** attempt`, so each gap has a window — and the windows below
+    // (500–1000, 1000–2000, 2000–4000) admit no other schedule.
+    const observed = gaps(times)
+    expect(observed).toHaveLength(3)
+    expect(observed[0]).toBeGreaterThanOrEqual(500)
+    expect(observed[0]).toBeLessThan(1000)
+    expect(observed[1]).toBeGreaterThanOrEqual(1000)
+    expect(observed[1]).toBeLessThan(2000)
+    expect(observed[2]).toBeGreaterThanOrEqual(2000)
+    expect(observed[2]).toBeLessThan(4000)
+  })
+
+  test('maxBackoff caps the delay — the option is read, not a hardcoded 30s', async () => {
+    // Uncapped, `120_000 * 2 ** 1` is 240 s (jittered 120–240 s). A cap of *5 s* is the only reason
+    // any gap can be under 5 s, so this fails if `maxBackoff` is ignored (R-03).
+    const times: Array<number> = []
+
+    await onVirtualClock(
+      withGrpcRetry(attempts(times, () => {}).pipe(Effect.andThen(() => Effect.fail(unavailable()))), {
+        initialBackoff: 120_000,
+        maxBackoff: 5_000,
+        maxRetries: 2,
+      }),
+    )
+
+    const observed = gaps(times)
+    expect(observed).toHaveLength(2)
+    for (const gap of observed) {
+      // jitter: 2_500 ≤ gap < 5_000, where the uncapped schedule would be 60_000–240_000.
+      expect(gap).toBeGreaterThanOrEqual(2_500)
+      expect(gap).toBeLessThan(5_000)
+    }
+  })
+
+  test('maxBackoff defaults to 30_000', async () => {
+    // R-03's second acceptance criterion: the same measurement with the option omitted — jittered
+    // 15–30 s per attempt, where the uncapped schedule would be 60–240 s.
+    const times: Array<number> = []
+
+    await onVirtualClock(
+      withGrpcRetry(attempts(times, () => {}).pipe(Effect.andThen(() => Effect.fail(unavailable()))), {
+        initialBackoff: 120_000,
+        maxRetries: 2,
+      }),
+    )
+
+    const observed = gaps(times)
+    expect(observed).toHaveLength(2)
+    for (const gap of observed) {
+      expect(gap).toBeGreaterThanOrEqual(15_000)
+      expect(gap).toBeLessThan(30_000)
+    }
   })
 })
 

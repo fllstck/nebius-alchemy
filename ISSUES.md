@@ -142,7 +142,7 @@ so it had to be able to fail.
 
 ## EMBARRASSING MOMENTS
 
-### R-03 — `maxBackoff` is documented, exported, and never implemented · `OPEN`
+### R-03 — `maxBackoff` is documented, exported, and never implemented · `DONE (2026-09-25)`
 
 **File**: `modules/api-client/grpc-utils.ts:56-63,75-100` (public: `modules/api-client/index.ts:2`)
 
@@ -162,6 +162,19 @@ saying the cap applies to the pre-jitter delay.
 - Test (via `Effect`'s `TestClock`, not a real sleep): the scheduled delay for a large attempt is
   the cap, not `initial * 2 ** attempt`.
 - Test: with no `maxBackoff`, the cap is 30 s.
+
+**Fixed**: `const delay = Math.min(initial * Math.pow(2, attempt), maxBackoff)` with
+`maxBackoff = options?.maxBackoff ?? 30_000`, and the option's doc comment now says the cap applies to
+the **pre-jitter** delay (jitter scales the capped value to 50–100 %), which is why the assertions are
+windows rather than equalities.
+
+**Met** — both acceptance tests run on `TestClock`: with `initialBackoff: 120_000` (uncapped 120 s and
+240 s, jittered 60–240 s) the observed gaps are 2_500–5_000 ms for an explicit `maxBackoff: 5_000` and
+15_000–30_000 ms with the option omitted. The explicit case is what catches a *hardcoded* cap: a
+constant 30 s would fail the 5 s window.
+
+**Negative control (run)**: reverting the `Math.min` fails both tests — the gaps come back as
+60–240 s windows — so the assertions are wired to the fix, not to the absence of one.
 
 ---
 
@@ -457,7 +470,7 @@ survivor is listed in `AGENTS.md`; `bun run check` clean.
 
 ---
 
-### R-11 — `paginateAll` loops forever on a repeated `nextPageToken` · `OPEN`
+### R-11 — `paginateAll` loops forever on a repeated `nextPageToken` · `DONE (2026-09-25)`
 
 **File**: `modules/api-client/grpc-utils.ts:627-641`
 
@@ -472,6 +485,25 @@ bound (default generous, e.g. 1000) with an actionable message.
 
 **Acceptance**: a test with a stub returning the same token twice fails fast with the tagged error
 and a bounded call count.
+
+**Fixed**, with one deliberate deviation from the fix as written: the loop stops with a **defect**
+(`Effect.die`) carrying a `PaginationLoopError`, not with a typed failure. The request was well-formed
+and the server broke its own contract, so no caller has a recovery to offer — and adding the error to
+`paginateAll`'s channel would have widened the error type of **all 49 call sites** (every `list` in every
+service, and everything that composes them) for a condition none of them can act on. A defect still
+fails loudly, naming the token and the page count. `MAX_PAGES` (1000 — 100k items at the usual
+`pageSize`) bounds an endpoint whose tokens are always fresh; a token that repeats the one it was given
+stops the loop immediately, which is the case `do { … } while (pageToken)` could not see.
+
+**Met** — two tests: a stub offering the same token twice fails with
+`PaginationLoopError{pageToken: 'same-token', pages: 2}` after exactly **2** calls, and an
+"always-fresh token" stub stops after exactly `MAX_PAGES` calls.
+
+**Negative control (run, and stronger than expected)**: with the guards removed the tests do not fail —
+they **never return**. The unguarded loop starves the runtime badly enough that it ignores a test
+timeout and emits no output (the verification command had to be killed), which is a better picture of
+the bug than the issue's "unbounded allocator" phrasing: it is a hang that cannot be interrupted from
+inside the process.
 
 ---
 
@@ -495,7 +527,7 @@ explicitly configured).
 
 ---
 
-### R-13 — A unit test really sleeps ~1 s to cover a backoff default · `OPEN`
+### R-13 — A unit test really sleeps ~1 s to cover a backoff default · `DONE (2026-09-25)`
 
 **File**: `tests/api-client/grpc-utils.test.ts:683-703`
 
@@ -509,6 +541,24 @@ seam, or use `TestClock`) and `TestClock.adjust` past it. Fold into R-03's work.
 
 **Acceptance**: the test asserts the default backoff **value** rather than waiting for it; `bun test
 tests/api-client/grpc-utils.test.ts` reports no test over ~50 ms.
+
+**Fixed** by taking R-13's `TestClock` branch, folded into R-03. The three retry tests fork the effect,
+`TestClock.adjust('1 hour')` and `Fiber.join`, then assert the **virtual gaps** between attempts:
+500–1000, 1000–2000 and 2000–4000 ms for the defaults (which pins `initialBackoff ?? 1000` — the
+mutation `&& 1000` makes the delay `NaN` and the retry never fires), plus the two `maxBackoff` windows.
+They now take 10–19 ms each instead of ~1 s of wall clock, and they observe the schedule *exactly*
+rather than merely waiting it out.
+
+**Met, with one honest exception**: the file's remaining slow test is
+`pollOperation > polls until the operation finishes` (~980 ms). That is `pollOperation`'s own poll
+interval against an in-process gRPC server, not a sleep in a unit test — virtualising it means
+threading a clock through `pollOperation` too, so it is recorded here as a follow-up rather than
+smuggled into this change. Every test this issue named is under 20 ms.
+
+**A v4 gotcha worth recording** (it cost a debugging round): a `Fiber` is **not** an `Effect` in Effect
+v4 — `Effect.fork` is gone in favour of `Effect.forkChild`, and the fiber must be `Fiber.join`ed before
+`Effect.exit`/`Effect.race` can be given it, otherwise the run fails at the *runtime* with
+`Fiber.runLoop: Not a valid effect: [object Object]`, which names neither the call nor the type.
 
 ---
 
@@ -640,7 +690,8 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 1. **R-04 + R-05 + R-06 — all done 2026-09-25** — fix the guardrails, with the self-test that proves the
    fix. This step is complete: the harness proves the rules, `Effect.ignore` and the constant-handler class
    are both enforced at `error`, and all 32 swallows are classified. Next is step 2 below.
-2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit.
+2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit. **R-03 + R-13 +
+   R-11 are done** (2026-09-25, one `grpc-utils.ts` pass; R-17 is all that remains of this step).
 3. **R-02 (done 2026-09-25), R-07, R-09, R-14** — error-shape corrections, each independently testable.
    R-02 is the reference implementation for R-06's 31-site classification.
 4. **R-01** — the only HIGH-risk item. Needs the duplicate-`Issue` probe before choosing a branch.
@@ -657,5 +708,7 @@ Recording them here so a future sweep does not re-litigate them:
 - The `__ALCHEMY_RUNTIME__` DCE guard (`modules/resources/storage/v1/bucket.ts` is the reference copy).
 - `tests/**` calling the real `AlchemyDiff.deepEqual` — it pins the framework trap itself.
 - `Effect.die(new Error(…))` for genuinely unreachable program states, once documented as such
-  (the R-07/R-09 work separates these from runtime outcomes).
+  (the R-07/R-09 work separates these from runtime outcomes). `paginateAll`'s `PaginationLoopError` is
+  the second of the shape: a list endpoint that repeats a page token or never terminates is a broken
+  server, not a caller-recoverable condition (R-11).
 - The declared-but-non-converging props listed per resource in `tests/convergence.test.ts`.
