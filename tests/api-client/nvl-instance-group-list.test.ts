@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import Long from 'long'
 
 import { nvlInstanceGroupListRequest } from '../../modules/api-client/compute.ts'
+import { TEST_PROJECT_ID } from '../helpers/fixtures.ts'
 
 /**
  * The NVL InstanceGroup service rejects `pageSize: 100` with
@@ -12,10 +13,10 @@ import { nvlInstanceGroupListRequest } from '../../modules/api-client/compute.ts
  */
 describe('nvlInstanceGroupListRequest', () => {
   test('leaves pageSize unset — this service rejects 100', () => {
-    const request = nvlInstanceGroupListRequest('project-e00eq4g7pr00j746m1fttd', '')
+    const request = nvlInstanceGroupListRequest(TEST_PROJECT_ID, '')
 
     expect(request.pageSize.equals(Long.ZERO)).toBe(true)
-    expect(request.parentId).toBe('project-e00eq4g7pr00j746m1fttd')
+    expect(request.parentId).toBe(TEST_PROJECT_ID)
   })
 
   test('carries the page token through for paging', () => {

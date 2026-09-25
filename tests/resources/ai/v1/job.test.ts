@@ -1,8 +1,13 @@
 import * as BunTest from 'bun:test'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Module from '../../../../modules/resources/ai/v1/job.ts'
 import * as SchemaModule from '../../../../modules/resources/ai/v1/job.schema.ts'
+import * as AiGrpc from '../../../../modules/api-client/ai.ts'
+import { GrpcDeadlineExceededError, GrpcError } from '../../../../modules/api-client/grpc-utils.ts'
+import * as NebiusJobSchema from '../../../../schemas/nebius/ai/v1/job.ts'
 import { resolveProvider, runDiff, runEffect } from '../../../helpers/provider.ts'
+import { fakeSession, instanceIdLayer, stackLayer, testConfigLayer } from '../../../helpers/mocks.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -179,6 +184,83 @@ describe('Nebius.ai.v1.Job', () => {
         }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+    })
+  })
+
+  describe('reconcile — create-failure recovery (R-20)', () => {
+    // Drive the real reconcile through the create path (no persisted output), with a mocked AI
+    // service whose `create` fails. R-20: the recovery lookup must only run for failures that can
+    // hide a successful create — INVALID_ARGUMENT means the create never landed, so a getByName can
+    // only add a wrong diagnosis and is skipped; DEADLINE_EXCEEDED can hide a landed create, so the
+    // lookup still runs and adopts the recovered job.
+    // oxlint-disable-next-line no-explicit-any — reconcile input mock (see provider.ts runReconcile)
+    const reconcile = (svc: any, jobLayer: Layer.Layer<AiGrpc.AiGrpcService, never, never>) =>
+      svc.reconcile({
+        id: 'job_test',
+        fqn: 'job_test',
+        instanceId: 'inst',
+        news: validJobProps,
+        output: undefined,
+        olds: undefined,
+        session: fakeSession,
+      }).pipe(
+        Effect.provide(jobLayer),
+        Effect.provide(testConfigLayer),
+        Effect.provide(stackLayer),
+        Effect.provide(instanceIdLayer),
+      )
+
+    test('INVALID_ARGUMENT makes exactly one create call and no getByName', async () => {
+      const svc = await resolveProvider(Module.NebiusJob.Provider, Module.NebiusJobProvider)
+      let createCalls = 0
+      let getByNameCalls = 0
+      const jobLayer = Layer.succeed(AiGrpc.AiGrpcService, {
+        job: {
+          create: () => {
+            createCalls += 1
+            return Effect.fail(new GrpcError({ code: 3, message: 'invalid argument', details: '' }))
+          },
+          getByName: () => {
+            getByNameCalls += 1
+            return Effect.never
+          },
+        },
+      } as unknown as AiGrpc.AiGrpcServiceShape)
+
+      const failure = await runEffect(Effect.flip(reconcile(svc, jobLayer)))
+      expect(failure).toMatchObject({ _tag: 'GrpcError', code: 3, message: 'invalid argument' })
+      expect(createCalls).toBe(1)
+      expect(getByNameCalls).toBe(0)
+    })
+
+    test('DEADLINE_EXCEEDED still recovers via getByName', async () => {
+      const svc = await resolveProvider(Module.NebiusJob.Provider, Module.NebiusJobProvider)
+      let createCalls = 0
+      const getByNameCalls: Array<{ parentId: string; name: string }> = []
+      const jobLayer = Layer.succeed(AiGrpc.AiGrpcService, {
+        job: {
+          create: () => {
+            createCalls += 1
+            return Effect.fail(new GrpcDeadlineExceededError({ message: 'deadline exceeded' }))
+          },
+          getByName: (req: { parentId: string; name: string }) => {
+            getByNameCalls.push(req)
+            return Effect.succeed(
+              NebiusJobSchema.Job.fromJSON({
+                metadata: { id: 'job-abc123', parentId: req.parentId, name: req.name },
+                spec: {},
+                status: {},
+              }),
+            )
+          },
+        },
+      } as unknown as AiGrpc.AiGrpcServiceShape)
+
+      const result = await runEffect(reconcile(svc, jobLayer))
+      expect(createCalls).toBe(1)
+      expect(getByNameCalls).toHaveLength(1)
+      expect(getByNameCalls[0]!.parentId).toBe('project-test-1')
+      expect(result.id).toBe('job-abc123')
     })
   })
 })

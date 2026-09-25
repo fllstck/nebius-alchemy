@@ -49,6 +49,15 @@ sI688QaeYs7WH2py42CdJXy3sMbrD5gXKRQMnzYYGuF0AwNwwqrxVcydt0hfmc7V
 // embedded rather than generated per run so fixtures do not pay ~2 s of keygen, and so the sweep and
 // the unit tests exercise real key material — the placeholder PEMs they used before are exactly what
 // hid the algorithm constraint.
+/**
+ * A synthetic project id for tests that only need an opaque, well-formed id.
+ *
+ * The previous value was the maintainer's real project id, committed by accident
+ * (ISSUES.md R-18); this matches the value `tests/helpers/mocks.ts` already uses
+ * (`project-test-1`) so the two stay consistent.
+ */
+export const TEST_PROJECT_ID = 'project-test-1'
+
 export const RSA_4096_PUBLIC_KEY_A = `-----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAudE0/3rHnGfLd5P6X5KZ
 zeWRpYoBMKtIC/vcEdZt1lAsiSz+YBLx/NLOwaiml7af2eddfpuF1+AUY15c3oyX

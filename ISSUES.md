@@ -780,7 +780,15 @@ fixtures (R-04) to be worth trusting. Worth doing the next time the plugin is to
 
 ---
 
-### R-18 — The maintainer's real project id is committed in 9 places · `OPEN`
+### R-18 — The maintainer's real project id is committed in 9 places · `DONE (2026-09-25)`
+
+**Fixed**: one exported fixture, `TEST_PROJECT_ID = 'project-test-1'` in `tests/helpers/fixtures.ts`
+(the value `tests/helpers/mocks.ts` already used), replacing all 9 occurrences across
+`tests/api-client/mk8s-requests.test.ts`, `tests/api-client/nvl-instance-group-list.test.ts` and
+`tests/resources/actions/capacity-discovery.test.ts`. The fixtures file's comment names the leak but
+deliberately does **not** repeat the literal, so the acceptance grep stays at zero.
+
+**Met**: `grep -rn "project-e00eq" tests/` → **0**.
 
 **Files**: `tests/api-client/mk8s-requests.test.ts:30` · `tests/api-client/nvl-instance-group-list.test.ts:15,18` ·
 `tests/resources/actions/capacity-discovery.test.ts:108,305,337,370,371`
@@ -815,7 +823,23 @@ generated `EnvironmentFile` on a real VM (or a documented plan-time rejection wi
 
 ---
 
-### R-20 — Create-failure recovery does not classify the failure first · `OPEN`
+### R-20 — Create-failure recovery does not classify the failure first · `DONE (2026-09-25)`
+
+**Fixed**: new `isCreateRecoveryCandidate(error)` in `modules/api-client/grpc-utils.ts` — `true` for
+`GrpcDeadlineExceededError` (code 4, which surfaces as that distinct typed error) and `GrpcError` codes
+`ALREADY_EXISTS` (6), `ABORTED` (10), `INTERNAL` (13), `UNAVAILABLE` (14); `false` for everything else.
+The create-recovery blocks in `compute/v1/instance.ts`, `ai/v1/endpoint.ts` and `ai/v1/job.ts` now
+`return yield* Effect.fail(e)` before the `getByName` lookup when the predicate is false — so
+`INVALID_ARGUMENT` (a bad spec) re-raises immediately instead of running a lookup that can only produce a
+wrong diagnosis. (`endpoint.ts`'s "attempting recovery" warning sits behind the guard too, so it never
+narrates a recovery that will not happen.)
+
+**Met**:
+- `tests/api-client/grpc-utils.test.ts` — the predicate directly: every recovery code in, every other
+  code out, plus non-gRPC values.
+- `tests/resources/ai/v1/job.test.ts` (`describe('reconcile — create-failure recovery (R-20)')`) drives the
+  **real** reconcile with a mocked AI service: `INVALID_ARGUMENT` → exactly 1 `create` call and 0
+  `getByName`; `DEADLINE_EXCEEDED` → 1 `getByName` and the recovered job is adopted.
 
 **Files**: `modules/resources/compute/v1/instance.ts:561-575` · `modules/resources/ai/v1/endpoint.ts:230-245`
 (and `ai/v1/job.ts:98-106`)
@@ -882,7 +906,7 @@ both the create and the list parent, not by a mapper unit test (the parent seman
 5. **R-19** — needs a live instance; pair with any other live probe session.
 6. **R-10, R-12, R-15, R-16, R-18, R-20, R-21** — incremental cleanups, safe to interleave. R-15 + R-16 are
 done (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
-miss), and R-21 was found by R-01's probe (2026-09-25).
+miss), R-18 + R-20 are done (2026-09-25), and R-21 was found by R-01's probe (2026-09-25).
 7. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 

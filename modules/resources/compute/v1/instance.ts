@@ -579,6 +579,8 @@ export const NebiusInstanceProvider: Layer.Layer<
           // no ID to act on and silently leaks a running VM + boot disk.
           Effect.catch((e: unknown) =>
             Effect.gen(function* () {
+              // R-20: only failures that can hide a successful create warrant the lookup.
+              if (!GrpcUtils.isCreateRecoveryCandidate(e)) return yield* Effect.fail(e)
               const recovered = yield* computeGrpcService.instance
                 .getByName({ parentId, name })
                 .pipe(

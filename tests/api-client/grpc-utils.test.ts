@@ -21,6 +21,7 @@ import * as grpc from '@grpc/grpc-js'
 
 import {
   GrpcDeadlineExceededError,
+  isCreateRecoveryCandidate,
   isRetryableReadMethod,
   MAX_PAGES,
   OperationFailedError,
@@ -453,6 +454,33 @@ describe('isRetryableReadMethod', () => {
   test('getSecretOnce is a read by name only — consuming it has a side effect, so it is not retried', () => {
     expect(isRetryableReadMethod('get')).toBe(true)
     expect(isRetryableReadMethod('getSecretOnce')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// isCreateRecoveryCandidate (R-20)
+// ---------------------------------------------------------------------------
+
+describe('isCreateRecoveryCandidate', () => {
+  const grpcError = (code: number) => new GrpcError({ code, message: 'boom', details: '' })
+
+  test('DEADLINE_EXCEEDED (the distinct typed error) is a candidate', () => {
+    expect(isCreateRecoveryCandidate(new GrpcDeadlineExceededError({ message: 'deadline' }))).toBe(true)
+  })
+
+  test('ALREADY_EXISTS, ABORTED, INTERNAL and UNAVAILABLE are candidates', () => {
+    for (const code of [6, 10, 13, 14]) expect(isCreateRecoveryCandidate(grpcError(code))).toBe(true)
+  })
+
+  test('anything else is not: the create genuinely did not land', () => {
+    for (const code of [3, 5, 7, 8, 9, 11, 12, 15, 16]) {
+      expect(isCreateRecoveryCandidate(grpcError(code))).toBe(false)
+    }
+  })
+
+  test('a non-gRPC value is not a candidate', () => {
+    expect(isCreateRecoveryCandidate(new Error('boom'))).toBe(false)
+    expect(isCreateRecoveryCandidate('boom')).toBe(false)
   })
 })
 

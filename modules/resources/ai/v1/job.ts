@@ -10,6 +10,7 @@ import * as AlchemyTags from 'alchemy/Tags'
 import * as NebiusJobSchema from '../../../../schemas/nebius/ai/v1/job.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
 import * as AiGrpc from '../../../api-client/ai.ts'
+import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as JobSchema from './job.schema.ts'
@@ -97,6 +98,8 @@ export const NebiusJobProvider: Layer.Layer<
           // no ID to act on and silently leaks a running workload.
           Effect.catch((e: unknown) =>
             Effect.gen(function* () {
+              // R-20: only failures that can hide a successful create warrant the lookup.
+              if (!GrpcUtils.isCreateRecoveryCandidate(e)) return yield* Effect.fail(e)
               const recovered = yield* aiGrpcService.job
                 .getByName({ parentId, name })
                 .pipe(

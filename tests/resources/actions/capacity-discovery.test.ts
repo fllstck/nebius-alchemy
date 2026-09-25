@@ -16,6 +16,7 @@ import {
   capacityIntervalListRequest,
 } from '../../../modules/api-client/capacity.ts'
 import { runEffect } from '../../helpers/provider.ts'
+import { TEST_PROJECT_ID } from '../../helpers/fixtures.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -105,7 +106,7 @@ const allowance = (overrides: { limit?: string; state?: number; name?: string } 
   NebiusCapacityAllowanceSchema.CapacityAllowance.fromJSON({
     metadata: {
       id: 'capacityallowance-e00xyz',
-      parentId: 'project-e00eq4g7pr00j746m1fttd',
+      parentId: TEST_PROJECT_ID,
       ...(overrides.name === undefined ? {} : { name: overrides.name }),
     },
     spec: {
@@ -302,7 +303,7 @@ describe('capacity allowance → attributes', () => {
   test('maps the (project, block group) pair and the unit', () => {
     const attrs = CapacityAllowanceSchema.toFriendlyAttributes(allowance({ limit: '8', name: 'gpu-reservation' }))
     expect(String(attrs.id)).toBe('capacityallowance-e00xyz')
-    expect(String(attrs.parentId)).toBe('project-e00eq4g7pr00j746m1fttd')
+    expect(String(attrs.parentId)).toBe(TEST_PROJECT_ID)
     expect(attrs.name).toBe('gpu-reservation')
     expect(String(attrs.capacityBlockGroupId)).toBe('capacityblockgroup-e00abc123')
     expect(attrs.limit).toBe('8')
@@ -334,7 +335,7 @@ describe('capacity allowance → attributes', () => {
     // "compare against the default" possible for a caller.
     const attrs = CapacityAllowanceSchema.toFriendlyAttributes(
       NebiusCapacityAllowanceSchema.CapacityAllowance.fromJSON({
-        metadata: { parentId: 'project-e00eq4g7pr00j746m1fttd' },
+        metadata: { parentId: TEST_PROJECT_ID },
         spec: { capacityBlockGroupId: 'capacityblockgroup-e00abc123' },
       }),
     )
@@ -367,8 +368,8 @@ describe('capacity pagination requests', () => {
   })
 
   test('allowances paginate by PROJECT', () => {
-    const request = capacityAllowanceListRequest('project-e00eq4g7pr00j746m1fttd', '')
-    expect(request.parentId).toBe('project-e00eq4g7pr00j746m1fttd')
+    const request = capacityAllowanceListRequest(TEST_PROJECT_ID, '')
+    expect(request.parentId).toBe(TEST_PROJECT_ID)
     expect(request.pageSize.toNumber()).toBe(100)
   })
 

@@ -53,6 +53,31 @@ export class GrpcDeadlineExceededError extends Schema.TaggedError<GrpcDeadlineEx
  */
 const RETRYABLE_CODES = new Set([4, 8, 10, 13, 14, 15])
 
+/** gRPC codes that can hide a successful create (see {@link isCreateRecoveryCandidate}). */
+const CREATE_RECOVERY_CODES = new Set([6, 10, 13, 14])
+
+/**
+ * Whether a create failure is worth a get-by-name recovery lookup (ISSUES.md R-20).
+ *
+ * A create can fail *after* the server has already created the resource — the long-running
+ * operation is created server-side before the response reaches us — so a get-by-name lookup can
+ * recover a resource nothing would otherwise track (and that destroy would then leak). Only
+ * these outcomes can hide a successful create:
+ *
+ * - `DEADLINE_EXCEEDED` (4) — surfaces as {@link GrpcDeadlineExceededError}, never as a
+ *   {@link GrpcError} with code 4 (see `wrapUnaryCall`);
+ * - `ALREADY_EXISTS` (6) — the resource exists, and the lookup adopts it;
+ * - `ABORTED` (10), `INTERNAL` (13), `UNAVAILABLE` (14) — the operation may have been applied
+ *   before the failure was reported.
+ *
+ * Anything else (`INVALID_ARGUMENT`, `NOT_FOUND`, `PERMISSION_DENIED`, …) means the create
+ * genuinely did not land: a lookup there can only produce a wrong diagnosis, so callers re-raise
+ * it immediately.
+ */
+export const isCreateRecoveryCandidate = (error: unknown): boolean =>
+  error instanceof GrpcDeadlineExceededError ||
+  (error instanceof GrpcError && CREATE_RECOVERY_CODES.has(error.code))
+
 /** Options for automatic retry of transient gRPC failures. */
 export interface GrpcRetryOptions {
   /** Maximum number of retry attempts (default: 3). */

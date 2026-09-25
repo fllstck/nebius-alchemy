@@ -6,6 +6,7 @@ import {
   ListClusterControlPlaneVersionsRequest,
 } from '../../schemas/nebius/mk8s/v1/cluster_service.ts'
 import { GetNodeGroupRequest } from '../../schemas/nebius/mk8s/v1/node_group_service.ts'
+import { TEST_PROJECT_ID } from '../helpers/fixtures.ts'
 
 /**
  * The mk8s list/read request shapes, pinned without an engine or a network.
@@ -26,8 +27,8 @@ import { GetNodeGroupRequest } from '../../schemas/nebius/mk8s/v1/node_group_ser
 
 describe('mk8s list requests', () => {
   test('clusters paginate by IAM container (project) with pageSize 100', () => {
-    const request = clusterListRequest('project-e00eq4g7pr00j746m1fttd', '')
-    expect(request.parentId).toBe('project-e00eq4g7pr00j746m1fttd')
+    const request = clusterListRequest(TEST_PROJECT_ID, '')
+    expect(request.parentId).toBe(TEST_PROJECT_ID)
     expect(request.pageSize.toNumber()).toBe(100)
     expect(request.pageToken).toBe('')
   })

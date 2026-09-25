@@ -12,7 +12,7 @@ import * as AlchemyTags from 'alchemy/Tags'
 import * as NebiusEndpointSchema from '../../../../schemas/nebius/ai/v1/endpoint.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
 import * as AiGrpc from '../../../api-client/ai.ts'
-import type { GrpcDeadlineExceededError, GrpcError } from '../../../api-client/grpc-utils.ts'
+import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as EndpointSchema from './endpoint.schema.ts'
@@ -99,7 +99,7 @@ const waitUntilRunning = /* @__PURE__ */ Effect.fn('Nebius.ai.v1.Endpoint.waitUn
   note: (message: string) => Effect.Effect<void>,
 ): Effect.fn.Return<
   NebiusEndpointSchema.Endpoint,
-  GrpcError | GrpcDeadlineExceededError | EndpointNotReady,
+  GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError | EndpointNotReady,
   AiGrpc.AiGrpcService
 > {
   const aiGrpcService = yield* AiGrpc.AiGrpcService
@@ -229,6 +229,8 @@ export const NebiusEndpointProvider: Layer.Layer<
           // no ID to act on and silently leaks a running workload.
           Effect.catch((e: unknown) =>
             Effect.gen(function* () {
+              // R-20: only failures that can hide a successful create warrant the lookup.
+              if (!GrpcUtils.isCreateRecoveryCandidate(e)) return yield* Effect.fail(e)
               yield* Effect.logWarning(
                 `Nebius.ai.v1.Endpoint create failed — attempting recovery: ${String(e)}`,
               )
