@@ -4,6 +4,7 @@ import Long from 'long'
 
 import * as Module from '../../../../modules/resources/mk8s/v1/cluster.ts'
 import * as SchemaModule from '../../../../modules/resources/mk8s/v1/cluster.schema.ts'
+import * as Ids from '../../../../modules/resources/mk8s/v1/ids.ts'
 import * as NebiusClusterSchema from '../../../../schemas/nebius/mk8s/v1/cluster.ts'
 import {
   instanceIdLayer,
@@ -268,6 +269,37 @@ describe('Nebius.mk8s.v1.Cluster', () => {
       expect(String(attrs.subnetId)).toBe('vpcsubnet-1')
       expect(attrs.version).toBeUndefined()
       expect(attrs.state).toBeUndefined()
+    })
+
+    test('exposes a nebius-mk8s connection: endpoint + base64 CA + cluster id', () => {
+      const attrs = SchemaModule.toFriendlyAttributes(
+        clusterProto({
+          status: {
+            state: NebiusClusterSchema.ClusterStatus_State.RUNNING,
+            controlPlane: {
+              version: '1.35.2-nebius-cp.4',
+              etcdClusterSize: Long.fromNumber(3),
+              endpoints: { publicEndpoint: '203.0.113.9', privateEndpoint: '10.0.0.9' },
+              auth: { clusterCaCertificate: '-----BEGIN CERTIFICATE-----' },
+            },
+            events: [],
+            reconciling: false,
+          },
+        }),
+      )
+      // Passing the whole cluster as a `Kubernetes.*` workload's `cluster` resolves
+      // through `connection` — auth is `nebius-mk8s`, the CA is base64 (the API's
+      // PEM → alchemy's `Connection` contract), and the public endpoint wins.
+      expect(attrs.connection).toEqual({
+        endpoint: '203.0.113.9',
+        certificateAuthorityData: Buffer.from('-----BEGIN CERTIFICATE-----').toString('base64'),
+        auth: { kind: 'nebius-mk8s', clusterId: Ids.ClusterId.make(CLUSTER_ID) },
+      })
+    })
+
+    test('a status-less cluster still carries a connection (adapter re-describes)', () => {
+      const attrs = SchemaModule.toFriendlyAttributes(clusterProto())
+      expect(attrs.connection).toEqual({ auth: { kind: 'nebius-mk8s', clusterId: Ids.ClusterId.make(CLUSTER_ID) } })
     })
   })
 

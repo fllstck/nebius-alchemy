@@ -5,6 +5,7 @@ import * as Validation from '../../validation.ts'
 import * as Ids from './ids.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
+import { mk8sConnectionOf } from './kubernetes-adapter.ts'
 
 // ---------------------------------------------------------------------------
 // Domain validations
@@ -175,6 +176,22 @@ export const validateClusterProps = Validation.makeValidateProps(ClusterPropsSch
 // `status.strategy`-style fields are objects), while this module's attributes are
 // the JSON-shaped view consumers read. See TASKS.md §NEXT UP item 5.
 
+/**
+ * The `Connection` an mk8s cluster exposes — a narrowed view of alchemy's
+ * `Connection` with auth fixed to `nebius-mk8s` (see `kubernetes-adapter.ts`).
+ * Narrowed, not general, because the schema must round-trip through the JSON
+ * state store; the `nebius-mk8s` auth descriptor is exactly what we emit.
+ */
+const Mk8sConnectionSchema = Schema.Struct({
+  endpoint: Schema.optional(Schema.String),
+  certificateAuthorityData: Schema.optional(Schema.String),
+  insecureSkipTlsVerify: Schema.optional(Schema.Boolean),
+  auth: Schema.Struct({
+    kind: Schema.Literal('nebius-mk8s'),
+    clusterId: Ids.ClusterId,
+  }),
+})
+
 export const ClusterAttributesSchema = Schema.Struct({
   id: Ids.ClusterId,
   parentId: IamV2Ids.ProjectId,
@@ -215,6 +232,13 @@ export const ClusterAttributesSchema = Schema.Struct({
   clusterCaCertificate: Schema.optional(Schema.String),
   /** An operation is in flight on the cluster. */
   reconciling: Schema.optional(Schema.Boolean),
+  /**
+   * The cluster-agnostic `Kubernetes.Connection` for this cluster. Passing the
+   * whole cluster resource as a `Kubernetes.*` workload's `cluster` prop
+   * resolves through this — auth uses the ambient IAM access token
+   * (`nebius-mk8s`), resolved CLI-free by `Nebius.providers()`.
+   */
+  connection: Mk8sConnectionSchema,
 })
 
 export type ClusterAttributes = typeof ClusterAttributesSchema.Type
@@ -234,6 +258,8 @@ export const toFriendlyAttributes = (raw: NebiusClusterSchema.Cluster): ClusterA
   const status = raw.status
   const statusCp = status?.controlPlane
   const endpoints = statusCp?.endpoints
+  const endpoint = endpoints?.publicEndpoint || endpoints?.privateEndpoint
+  const clusterCaCertificate = statusCp?.auth?.clusterCaCertificate
 
   return {
     id: Ids.ClusterId.make(raw.metadata?.id ?? ''),
@@ -252,9 +278,15 @@ export const toFriendlyAttributes = (raw: NebiusClusterSchema.Cluster): ClusterA
             publicEndpoint: endpoints.publicEndpoint ? endpoints.publicEndpoint : undefined,
             privateEndpoint: endpoints.privateEndpoint ? endpoints.privateEndpoint : undefined,
           },
-    clusterCaCertificate: statusCp?.auth?.clusterCaCertificate
-      ? statusCp.auth.clusterCaCertificate
-      : undefined,
+    clusterCaCertificate: clusterCaCertificate ? clusterCaCertificate : undefined,
+    connection: mk8sConnectionOf({
+      clusterId: raw.metadata?.id ?? '',
+      endpoint: endpoint ?? undefined,
+      // `Connection.certificateAuthorityData` is base64; the API hands back PEM.
+      certificateAuthorityData: clusterCaCertificate
+        ? Buffer.from(clusterCaCertificate).toString('base64')
+        : undefined,
+    }),
     reconciling: status?.reconciling ?? false,
   }
 }

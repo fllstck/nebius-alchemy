@@ -15,3 +15,9 @@ export {
 export { nodeGroupSpecDrifted } from './node-group.ts'
 export * as action from './actions.ts'
 export { ClusterId, NodeGroupId } from './ids.ts'
+// The `nebius-mk8s` Kubernetes cluster adapter + its `connection` builder —
+// `Nebius.providers()` registers the adapter; `Cluster` attributes carry a
+// `connection` built with `mk8sConnectionOf` so the whole cluster resource can
+// be passed as any `Kubernetes.*` workload's `cluster` prop.
+export { Mk8sKubernetesAdapter, mk8sConnectionOf } from './kubernetes-adapter.ts'
+export type { Mk8sConnection } from './kubernetes-adapter.ts'

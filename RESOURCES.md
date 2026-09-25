@@ -898,6 +898,7 @@ Resource-level validations (they compare several props, so they are not attached
 
 | attribute | always present | type | documented as |
 | --- | --- | --- | --- |
+| `connection` | **yes** | `Mk8sConnectionSchema` | The cluster-agnostic `Kubernetes.Connection` for this cluster. |
 | `id` | **yes** | `Ids.ClusterId` | — |
 | `name` | **yes** | `Schema.String` | — |
 | `parentId` | **yes** | `IamV2Ids.ProjectId` | — |

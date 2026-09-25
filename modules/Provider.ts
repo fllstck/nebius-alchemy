@@ -34,6 +34,7 @@ import * as DiskSnapshotResource from './resources/compute/v1/disk-snapshot.ts'
 import * as GpuClusterResource from './resources/compute/v1/gpu-cluster.ts'
 import * as Mk8sClusterResource from './resources/mk8s/v1/cluster.ts'
 import * as Mk8sNodeGroupResource from './resources/mk8s/v1/node-group.ts'
+import * as Mk8sKubernetesAdapter from './resources/mk8s/v1/kubernetes-adapter.ts'
 import * as NVLInstanceGroupResource from './resources/compute/v1/nvl-instance-group.ts'
 import * as ZoneResource from './resources/dns/v1/zone.ts'
 import * as RecordResource from './resources/dns/v1/record.ts'
@@ -116,6 +117,12 @@ const resources = AlchemyProvider.collection([
 
 export const providers = () =>
   Layer.effect(Providers, resources).pipe(
+    // The `nebius-mk8s` Kubernetes cluster adapter is provideMerged (not just
+    // provided) so the cluster-agnostic `Kubernetes.*` workload providers can
+    // resolve it dynamically from the ambient stack context. Merged FIRST so
+    // its requirements (Mk8sGrpcService, NebiusCredentials) are fed by the
+    // gRPC + credential merges further down the chain.
+    Layer.provideMerge(Mk8sKubernetesAdapter.Mk8sKubernetesAdapter()),
     Layer.provideMerge(BucketResource.NebiusBucketProvider),
     Layer.provideMerge(TransferResource.NebiusTransferProvider),
     Layer.provideMerge(ProjectResource.NebiusProjectProvider),
