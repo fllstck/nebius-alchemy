@@ -15,8 +15,25 @@
  */
 import { afterEach, describe, expect, test } from 'bun:test'
 import * as Effect from 'effect/Effect'
+import { request } from 'node:http'
 import * as OAuth from '../../modules/auth/oauth.ts'
 import { stubTokenEndpoint } from '../helpers/oauth-token-double.ts'
+
+/**
+ * GET a loopback path with an explicitly chosen `Host` header.
+ *
+ * `node:http.request`, not `fetch`: `Host` is a forbidden header name in the Fetch spec, so `fetch`
+ * silently drops it and the test would assert nothing. This is the only way to send one.
+ */
+const getWithHost = (port: number, path: string, host: string) =>
+  new Promise<{ status: number; location: string | undefined }>((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port, path, method: 'GET', headers: { host } }, (res) => {
+      res.resume()
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, location: res.headers.location }))
+    })
+    req.on('error', reject)
+    req.end()
+  })
 
 const failureMessage = (effect: Effect.Effect<unknown, OAuth.OAuthError, never>) =>
   Effect.runPromise(Effect.catch(effect, (e) => Effect.succeed(e.message)))
@@ -154,6 +171,25 @@ describe('OAuth.startCallbackServer (real loopback listener)', () => {
       const message = await failureMessage(server.waitForCode)
       expect(message).toContain('Timed out waiting for the Nebius browser login')
       expect(message).toContain('5 minutes')
+    } finally {
+      await Effect.runPromise(server.close)
+    }
+  })
+
+  test('a hostile Host header cannot influence the callback — the parse origin is hardcoded (R-14)', async () => {
+    const server = await Effect.runPromise(OAuth.startCallbackServer('expected-state'))
+    try {
+      // `Host` is what a request URL would be parsed *against*. Nothing is derived from the parsed
+      // origin today (only `code`/`state` are read from the query), which is exactly why this is
+      // pinned before someone derives a redirect from it.
+      const response = await getWithHost(server.port, '/?code=the-code&state=expected-state', 'evil.example.com')
+
+      expect(response.status).toBe(302)
+      // The redirect target on this path is a constant — nothing the request carried reaches it.
+      expect(response.location).toContain('alchemy')
+      expect(response.location).not.toContain('evil.example.com')
+      // …and the matching state still resolves the code, so the hostile header broke nothing.
+      expect(await Effect.runPromise(server.waitForCode)).toBe('the-code')
     } finally {
       await Effect.runPromise(server.close)
     }

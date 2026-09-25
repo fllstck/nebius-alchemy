@@ -113,9 +113,15 @@ export const startCallbackServer = (
 
     const server = yield* Effect.sync(() =>
       createServer((req, res) => {
-        const url = new URL(req.url ?? '/', `http://${req.headers.host ?? '127.0.0.1'}`)
-        const code = url.searchParams.get('code')
-        const state = url.searchParams.get('state')
+        // The request target is **never parsed as a URL**: only its query is read, so there is no origin
+        // for anyone to get wrong. The previous `new URL(req.url, `http://${req.headers.host}`)` let a
+        // caller-supplied header choose that base — harmless while only `code`/`state` are read, and one
+        // copy-paste away from an open redirect the moment anything derives a target from it (R-14).
+        const rawTarget = req.url ?? '/'
+        const queryStart = rawTarget.indexOf('?')
+        const url = new URLSearchParams(queryStart === -1 ? '' : rawTarget.slice(queryStart + 1))
+        const code = url.get('code')
+        const state = url.get('state')
         if (code != null && state === expectedState) {
           // Same Alchemy-styled landing page as the Cloudflare provider.
           res.writeHead(302, { Location: AUTH_SUCCESS_URL })

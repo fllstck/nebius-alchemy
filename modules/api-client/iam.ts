@@ -539,6 +539,10 @@ const makeStaticKeyService = Effect.Effect.gen(function* () {
             }),
           )
         } else {
+          // Deliberate defect, and the only `die` left in this file: `Issue` answered with neither an
+          // operation nor a name, so there is nothing to look up and no recovery a caller could offer —
+          // the server broke its own contract. (R-09 keeps `die` for exactly this shape, and for
+          // unreachable states; every *runtime* outcome in here is a tagged error.)
           return yield* Effect.Effect.die(
             `Static key issue returned no operation and no name to look up. ` +
             `Request: ${JSON.stringify(req)}`,

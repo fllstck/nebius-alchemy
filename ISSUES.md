@@ -362,7 +362,7 @@ suite before and after the sweep, not assumed.
 
 ---
 
-### R-07 — `Effect.fail(new Error(…))`: plain `Error` in a typed failure channel · `OPEN`
+### R-07 — `Effect.fail(new Error(…))`: plain `Error` in a typed failure channel · `DONE (2026-09-25)`
 
 **File**: `modules/resources/mk8s/v1/kubernetes-adapter.ts:159`
 
@@ -385,6 +385,21 @@ a discriminating field) and add it to the adapter's declared error channel.
 **Acceptance**: `Effect.catchTag('ClusterNotReadyError', …)` compiles and is exercised by a test;
 `grep -n "new Error(" modules/resources/mk8s/v1/kubernetes-adapter.ts` shows only the
 `Effect.die` case at `:93` (defect by design — document why).
+
+**Met** — `ClusterNotReadyError` is a `Schema.TaggedError` in `mk8s/v1/cluster.schema.ts` with a
+**branded** `clusterId` (`Ids.ClusterId`, which the R-15 audit would have demanded anyway), raised by the
+new `requireClusterTransport` helper, and covered by two tests: the error shape
+(`_tag` + `clusterId`) and `Effect.catchTag('ClusterNotReadyError', …)` recovering. The file's only
+remaining `new Error(` is the `die` at `:93`, now with a doc comment saying why (a closed auth union plus
+an adapter that only ever receives connections it built ⟹ a programmer error, not a runtime outcome).
+
+**One measured limit, recorded rather than papered over**: alchemy's `ClusterAdapterService.connect`
+declares its error as `ClusterNotFoundError | Error`, and `Error` carries no `_tag`, so at *that*
+boundary `Effect.catchTag('ClusterNotReadyError')` does not typecheck — the tag discriminates in our own
+channel (`requireClusterTransport`, which is what `connect` calls) and at runtime, but not through the
+framework interface. That is why the tagged channel was extracted into a helper instead of left inline:
+the acceptance asks for a test that exercises the capability, and this is the only place it is
+statically reachable.
 
 ---
 
@@ -416,7 +431,7 @@ through the front door. It is also the file consumers read when learning the pro
 
 ---
 
-### R-09 — User-config errors raised as `Effect.die` defects, inconsistently · `OPEN`
+### R-09 — User-config errors raised as `Effect.die` defects, inconsistently · `DONE (2026-09-25)`
 
 **Files**: `modules/resources/capacity/v1/actions.ts:251-258` vs `modules/resources/shared/tenant.ts:50-57`
 
@@ -440,6 +455,35 @@ genuinely unreachable states, and say so in a comment at `kubernetes-adapter.ts:
 
 **Acceptance**: each of the four sites has a tagged error with a test asserting `.catchTag`
 recovers; `grep -rn "Effect.die(new Error" modules/` returns only documented unreachable-state cases.
+
+**Met, with two honest notes.** The three converted sites:
+
+- `capacity/v1 actions.ListCapacityAllowances` → **`MissingProjectIdError`** (new
+  `modules/resources/shared/project.ts`, mirroring `MissingTenantIdError`'s guidance shape).
+- `compute/v1 instance.ts` “entered ERROR state” → **`InstanceUnhealthyError`**.
+- `compute/v1 instance.ts` “did not reach RUNNING” → **`InstanceStartTimeoutError`**.
+
+The adapter's `die` is kept and documented (R-07's note), and so is `api-client/iam.ts`'s “Issue returned
+neither an operation nor a name” — a server that breaks its own contract, which R-09's own rule (“keep
+`Effect.die` for genuinely unreachable states”) covers. The acceptance grep now returns **exactly one**
+line: the documented adapter `die`.
+
+**Note 1 — the raise sites are covered, except one.** The two instance errors are driven through the real
+`waitForInstanceState` (exported for tests, with an injectable `deadlineMs` — the same seam
+`startCallbackServer` has for `timeoutMs`, because 15 minutes of wall clock is not a unit test): the
+timeout branch with `deadlineMs: 0`, the `ERROR` branch with a mocked `instance.get`, both asserting
+`catchTag` recovery. `MissingProjectIdError`'s test asserts the error and its guidance, **not** the raise
+site: `ListCapacityAllowances` is an `Alchemy.Action`, and every action test in this repo targets a pure
+helper, so driving it means building an action harness first. Recorded in the test file too.
+
+**Note 2 — three same-shaped sites are left, and they use a *string* `die`:**
+`iam/v1 invitation.ts:64`, `iam/v1 static-key.ts:140`, `iam/v2 access-key.ts:178` all raise
+`Effect.die(\`…\`)` when a live resource vanished out of band and cannot be re-created (the one-time secret
+is gone). By R-09's own reasoning these are runtime outcomes, not programmer errors, so they want a
+typed error — one shared `ResourceVanishedError` (with `resourceType` + `message`, no id field, so no
+polymorphic-brand question) would serve all three. Left out of this change to keep it reviewer-sized;
+they are invisible to the acceptance grep because it matches `new Error(`, which is exactly the kind of
+narrow check this issue exists to distrust.
 
 ---
 
@@ -562,7 +606,7 @@ v4 — `Effect.fork` is gone in favour of `Effect.forkChild`, and the fiber must
 
 ---
 
-### R-14 — Loopback callback URL built from the untrusted `Host` header · `OPEN`
+### R-14 — Loopback callback URL built from the untrusted `Host` header · `DONE (2026-09-25)`
 
 **File**: `modules/auth/oauth.ts:116`
 
@@ -577,6 +621,20 @@ already binds only to `127.0.0.1`.
 
 **Acceptance**: a test asserting a request with a hostile `Host` header still parses `code`/`state`
 from the raw query and cannot influence any redirect target.
+
+**Met, and hardened past the prescribed fix.** The request target is no longer parsed as a URL at all:
+the handler takes the substring after `?` into a `URLSearchParams`, so there is **no origin in the code**
+for anyone to get wrong — the prescribed "hardcode `http://127.0.0.1`" would still construct a URL whose
+base someone could later use. The test sends `Host: evil.example.com` through `node:http` (not `fetch`,
+which silently drops `Host` as a forbidden header) and asserts the success redirect is the constant and
+the code still resolves.
+
+**Measured, and worth stating plainly**: that test **passes against the old header-derived code too**. It
+asserts the two things the acceptance names — hostile `Host` still parses the query, and it cannot
+influence the redirect — but it is *not* a regression guard, because today nothing reads the parsed
+origin at all. The change removes a landmine; it does not change behaviour, and no behavioural test can
+say otherwise. A guard for this would have to be a source-level one, which is the kind of mechanism this
+repo retired on purpose.
 
 ---
 
@@ -762,8 +820,9 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit. **All done**
    (2026-09-25: R-03 + R-13 + R-11 in one `grpc-utils.ts` pass; R-17 the config entry that replaced 41
    stale disable comments).
-3. **R-02 (done 2026-09-25), R-07, R-09, R-14** — error-shape corrections, each independently testable.
-   R-02 is the reference implementation for R-06's 31-site classification.
+3. **R-02, R-07, R-09, R-14** — error-shape corrections, each independently testable. **R-02, R-07, R-09
+   and R-14 are all done** (2026-09-25). R-02 is the reference implementation for R-06's 31-site
+   classification.
 4. **R-01** — the only HIGH-risk item. Needs the duplicate-`Issue` probe before choosing a branch.
 5. **R-19** — needs a live instance; pair with any other live probe session.
 6. **R-10, R-12, R-15, R-16, R-18, R-20** — incremental cleanups, safe to interleave. **R-15 + R-16 are

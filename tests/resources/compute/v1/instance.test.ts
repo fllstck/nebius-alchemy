@@ -8,11 +8,52 @@ import * as SchemaModule from '../../../../modules/resources/compute/v1/instance
 import * as IamIds from '../../../../modules/resources/iam/v1/ids.ts'
 import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 import * as BillingIds from '../../../../modules/resources/billing/v1/ids.ts'
-import { GpuClusterId } from '../../../../modules/resources/compute/v1/ids.ts'
+import { GpuClusterId, InstanceId } from '../../../../modules/resources/compute/v1/ids.ts'
 import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
 import { readInput, resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
+import { mockComputeLayer } from '../../../helpers/mocks.ts'
 
 const { describe, expect, test } = BunTest
+
+/**
+ * R-09 — a VM that fails to boot is a *runtime outcome*, so it is raised as a catchable tagged error
+ * rather than as a defect (which reports as a crash and cannot be `catchTag`'d).
+ *
+ * Both branches are driven through the real function: the timeout via `deadlineMs: 0` (the seam exists
+ * for exactly this — 15 minutes of wall clock is not a unit test), and the `ERROR` state via a mocked
+ * `instance.get`. The `mockComputeLayer` is empty for the timeout case because the deadline is already
+ * past when the loop starts — no call is made.
+ */
+describe('Nebius.compute.v1.Instance waitForInstanceState failures (R-09)', () => {
+  const session = { note: () => Effect.void }
+  const instanceId = InstanceId.make('computeinstance-e00testinstanceid')
+
+  test('a timeout is InstanceStartTimeoutError, and catchTag recovers', async () => {
+    const recovered = await runEffect(
+      Module.waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session, deadlineMs: 0 }).pipe(
+        Effect.catchTag('InstanceStartTimeoutError', (error) =>
+          Effect.succeed(`timed out after ${error.targetStates.join('/')}`),
+        ),
+        Effect.provide(mockComputeLayer({})),
+      ),
+    )
+
+    expect(recovered).toBe('timed out after RUNNING')
+  })
+
+  test('an ERROR state is InstanceUnhealthyError, and catchTag recovers', async () => {
+    const recovered = await runEffect(
+      Module.waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session }).pipe(
+        Effect.catchTag('InstanceUnhealthyError', (error) => Effect.succeed(`unhealthy: ${error.state}`)),
+        Effect.provide(
+          mockComputeLayer({ instance: { get: () => Effect.succeed({ status: { state: 'ERROR' } }) } }),
+        ),
+      ),
+    )
+
+    expect(recovered).toBe('unhealthy: ERROR')
+  })
+})
 
 /** Run the provider diff with a custom persisted `output` (default: none). */
 // oxlint-disable-next-line no-explicit-any — test helper bridging Effect.fn's any-captured context

@@ -39,6 +39,7 @@ import type { Connection } from 'alchemy/Kubernetes/Connection'
 import * as Mk8sGrpc from '../../../api-client/mk8s.ts'
 import * as NebiusCredentialsModule from '../../../Credentials.ts'
 import * as Ids from './ids.ts'
+import { ClusterNotReadyError } from './cluster.schema.ts'
 import { ClusterStatus_State } from '../../../../schemas/nebius/mk8s/v1/cluster.ts'
 
 declare module 'alchemy/Kubernetes/Connection' {
@@ -87,6 +88,38 @@ export const mk8sConnectionOf = (options: {
   auth: { kind: 'nebius-mk8s', clusterId: Ids.ClusterId.make(options.clusterId) },
 })
 
+/**
+ * Require both halves of a cluster transport, or fail with the tagged {@link ClusterNotReadyError}.
+ *
+ * Extracted so that outcome has a **declared, tagged channel of its own** instead of being erased into
+ * the `Error` leg of alchemy's `ClusterAdapterService.connect` contract
+ * (`ClusterNotFoundError | Error`) — which is what let a plain `Error` stand in for a state a caller is
+ * supposed to tell apart from “gone” (R-07).
+ */
+export const requireClusterTransport = (
+  clusterId: Ids.ClusterId,
+  described: { readonly endpoint?: string; readonly certificateAuthorityData?: string },
+): Effect.Effect<
+  { readonly endpoint: string; readonly certificateAuthorityData: string },
+  ClusterNotReadyError
+> =>
+  described.endpoint && described.certificateAuthorityData
+    ? Effect.succeed({ endpoint: described.endpoint, certificateAuthorityData: described.certificateAuthorityData })
+    : Effect.fail(
+        new ClusterNotReadyError({
+          clusterId,
+          message: `mk8s cluster '${clusterId}' has no endpoint or certificate authority yet (still creating?)`,
+        }),
+      )
+
+/**
+ * Narrow the connection's auth to this adapter's kind.
+ *
+ * The `die` is deliberate, and the only one left in this file: `Connection.auth` is a closed union and
+ * this adapter is only ever handed connections it built itself (`mk8sConnectionOf`), so a different kind
+ * means the adapter registry wired the wrong adapter — a programmer error, not a runtime outcome. Every
+ * *runtime* failure here is a tagged error (R-09).
+ */
 const narrowMk8sAuth = (connection: Connection) =>
   connection.auth.kind === 'nebius-mk8s'
     ? Effect.succeed(connection.auth)
@@ -154,18 +187,15 @@ export const Mk8sKubernetesAdapter = (): Layer.Layer<ClusterAdapterService, neve
           const described = yield* describeLiveCluster(auth)
           endpoint = described.endpoint
           certificateAuthorityData = described.certificateAuthorityData
-          if (!endpoint || !certificateAuthorityData) {
-            return yield* Effect.fail(
-              new Error(
-                `mk8s cluster '${auth.clusterId}' has no endpoint or certificate authority yet (still creating?)`,
-              ),
-            )
-          }
         }
 
+        // Both halves must be present by now — checked here rather than inside the branch above, so the
+        // tagged `ClusterNotReadyError` also covers a connection that carried an incomplete pair (R-07).
+        const transport = yield* requireClusterTransport(auth.clusterId, { endpoint, certificateAuthorityData })
+
         return {
-          endpoint,
-          certificateAuthorityData,
+          endpoint: transport.endpoint,
+          certificateAuthorityData: transport.certificateAuthorityData,
           headers: Effect.succeed({ Authorization: `Bearer ${Redacted.value(apiKey)}` }),
         } satisfies ClusterTransport
       })

@@ -7,6 +7,19 @@ import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as VpcIds from '../../vpc/v1/ids.ts'
 import { mk8sConnectionOf } from './kubernetes-adapter.ts'
 
+/**
+ * The cluster exists but the platform has not published an endpoint + CA for it yet.
+ *
+ * Tagged, not a plain `Error`: the distinction a caller needs is “still creating” (worth retrying)
+ * versus `ClusterNotFoundError` “gone” (fatal) — and a plain `Error` cannot be caught by tag at all,
+ * so no caller could make that distinction (R-07). Deliberately a separate class rather than a flag on
+ * `ClusterNotFoundError`: the two answers are opposite.
+ */
+export class ClusterNotReadyError extends Schema.TaggedError<ClusterNotReadyError>()('ClusterNotReadyError', {
+  clusterId: Ids.ClusterId,
+  message: Schema.String,
+}) {}
+
 // ---------------------------------------------------------------------------
 // Domain validations
 // ---------------------------------------------------------------------------

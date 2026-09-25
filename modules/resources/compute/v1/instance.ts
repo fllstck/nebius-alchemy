@@ -16,6 +16,7 @@ import * as GrpcUtils from '../../../api-client/grpc-utils.ts'
 import * as ResourceUtils from '../../utilities.ts'
 
 import * as InstanceSchema from './instance.schema.ts'
+import * as Ids from './ids.ts'
 import * as Factory from '../../factory.ts'
 import { tryPromiseRaw } from '../../../effect-utils.ts'
 
@@ -406,21 +407,35 @@ const friendlyState = (state: unknown): string => {
  * bundles (measured: 100 `grpc-js` sites in the instance bundle). See TASKS.md
  * §D8.
  */
-const waitForInstanceState = /* @__PURE__ */ Effect.fn('waitForInstanceState')(function* ({
+/**
+ * Poll the instance until it reaches one of `targetStates` (or fails).
+ * Emits `session.note` progress on every state transition.
+ *
+ * Exported for tests: the failure branches are runtime outcomes an operator sees, and they are only
+ * reachable through this function. `deadlineMs` is injectable for the same reason
+ * `startCallbackServer` takes `timeoutMs` — the timeout branch is real behaviour, and 15 minutes of
+ * wall clock cannot be exercised in a unit test.
+ */
+export const waitForInstanceState = /* @__PURE__ */ Effect.fn('waitForInstanceState')(function* ({
   instanceId,
   targetStates,
   session,
+  deadlineMs = 15 * 60 * 1000,
 }: {
-  instanceId: string
+  instanceId: Ids.InstanceId
   targetStates: Array<string>
   session: { note(message: string): Effect.Effect<void> }
+  deadlineMs?: number
 }): Effect.fn.Return<
   string,
-  GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError,
+  | GrpcUtils.GrpcError
+  | GrpcUtils.GrpcDeadlineExceededError
+  | InstanceSchema.InstanceUnhealthyError
+  | InstanceSchema.InstanceStartTimeoutError,
   ComputeGrpc.ComputeGrpcService
 > {
   const computeGrpcService = yield* ComputeGrpc.ComputeGrpcService
-  const deadline = Date.now() + 15 * 60 * 1000
+  const deadline = Date.now() + deadlineMs
   let last: string | undefined
   while (Date.now() < deadline) {
     const current = yield* computeGrpcService.instance.get(instanceId)
@@ -431,17 +446,21 @@ const waitForInstanceState = /* @__PURE__ */ Effect.fn('waitForInstanceState')(f
     }
     if (targetStates.includes(state)) return state
     if (state === 'ERROR' || state === 'DELETING') {
-      return yield* Effect.die(
-        new Error(`Nebius.compute.v1.Instance (${instanceId}) entered ${state} state — aborting`),
-      )
+      return yield* new InstanceSchema.InstanceUnhealthyError({
+        instanceId,
+        state,
+        message: `Nebius.compute.v1.Instance (${instanceId}) entered ${state} state — aborting`,
+      })
     }
     yield* Effect.sleep('5 seconds')
   }
-  return yield* Effect.die(
-    new Error(
-      `Nebius.compute.v1.Instance (${instanceId}) did not reach ${targetStates.join('/')} within 15 minutes`,
-    ),
-  )
+  return yield* new InstanceSchema.InstanceStartTimeoutError({
+    instanceId,
+    targetStates,
+    message: `Nebius.compute.v1.Instance (${instanceId}) did not reach ${targetStates.join('/')} within ${Math.round(
+      deadlineMs / 60000,
+    )} minutes`,
+  })
 })
 
 /**
@@ -587,7 +606,7 @@ export const NebiusInstanceProvider: Layer.Layer<
         )
     }
 
-    const instanceId = instance.metadata!.id
+    const instanceId = Ids.InstanceId.make(instance.metadata!.id)
     const desiredStopped = Boolean(specNews.stopped)
 
     // 3. Sync — update if the spec drifted from desired (hosted merges the

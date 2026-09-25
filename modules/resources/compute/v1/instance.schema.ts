@@ -511,6 +511,29 @@ export const InstancePropsSchema = Schema.Struct({
  * instead of letting the apply meet the refusal. `stopped: false` cannot express the workaround (a proto3
  * bool default is encoded as absent), which is why the message names `stopped: true` and the `Start` RPC.
  */
+/**
+ * The instance reached a terminal state that is not the one being waited for (`ERROR`, `DELETING`).
+ *
+ * Typed, not a defect: a VM that fails to boot is a *runtime outcome*, and the operator needs it as a
+ * message they can act on rather than as a crash (R-09).
+ */
+export class InstanceUnhealthyError extends Schema.TaggedError<InstanceUnhealthyError>()('InstanceUnhealthyError', {
+  instanceId: Ids.InstanceId,
+  /** The state the platform reported, e.g. `ERROR`. */
+  state: Schema.String,
+  message: Schema.String,
+}) {}
+
+/** The instance did not reach a target state within the boot deadline (R-09). */
+export class InstanceStartTimeoutError extends Schema.TaggedError<InstanceStartTimeoutError>()(
+  'InstanceStartTimeoutError',
+  {
+    instanceId: Ids.InstanceId,
+    targetStates: Schema.Array(Schema.String),
+    message: Schema.String,
+  },
+) {}
+
 export class PricingChangeRequiresStoppedInstance extends Schema.TaggedError<PricingChangeRequiresStoppedInstance>()(
   'PricingChangeRequiresStoppedInstance',
   { detail: Schema.String },

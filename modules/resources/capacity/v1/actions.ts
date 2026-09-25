@@ -4,6 +4,7 @@ import * as Config from 'effect/Config'
 import * as Option from 'effect/Option'
 import * as CapacityGrpc from '../../../api-client/capacity.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { MissingProjectIdError, missingProjectIdMessage } from '../../shared/project.ts'
 import * as ResourceAdviceSchema from './resource-advice.schema.ts'
 import * as CapacityBlockGroupSchema from './capacity-block-group.schema.ts'
 import * as CapacityIntervalSchema from './capacity-interval.schema.ts'
@@ -246,14 +247,10 @@ export const ListCapacityAllowances = Alchemy.Action(
       Effect.gen(function* () {
         const projectId = filter.projectId ?? Option.getOrUndefined(configuredProjectId)
         if (!projectId) {
-          // Same actionable shape as `resolveTenantId`: name the variable and
-          // say how to supply it, rather than failing on a bare Config error.
-          return yield* Effect.die(
-            new Error(
-              'Nebius project ID is required to list capacity allowances but NEBIUS_PROJECT_ID is not set. ' +
-                'Pass `{ projectId }` or export NEBIUS_PROJECT_ID.',
-            ),
-          )
+          // Same actionable shape as `resolveTenantId` — and now the same *kind* of failure: a tagged,
+          // catchable error (R-09). A defect cannot be `catchTag`'d, retried, or reported as anything
+          // but a crash, which is the wrong shape for missing user configuration.
+          return yield* new MissingProjectIdError({ message: missingProjectIdMessage('NEBIUS_PROJECT_ID') })
         }
         const rows = yield* capacity.capacityAllowance.list(projectId)
         const mapped = rows.map((raw) => CapacityAllowanceSchema.toFriendlyAttributes(raw))

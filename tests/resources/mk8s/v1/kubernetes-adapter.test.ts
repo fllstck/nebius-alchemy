@@ -7,6 +7,7 @@ import { ClusterAdapter, type ClusterAdapterService } from 'alchemy/Kubernetes/C
 import type { Connection } from 'alchemy/Kubernetes/Connection'
 
 import * as Module from '../../../../modules/resources/mk8s/v1/kubernetes-adapter.ts'
+import { requireClusterTransport } from '../../../../modules/resources/mk8s/v1/kubernetes-adapter.ts'
 import * as SchemaModule from '../../../../modules/resources/mk8s/v1/cluster.schema.ts'
 import * as NebiusCredentialsModule from '../../../../modules/Credentials.ts'
 import * as Ids from '../../../../modules/resources/mk8s/v1/ids.ts'
@@ -196,7 +197,7 @@ describe('Nebius.mk8s.ClusterAdapter', () => {
       expect(error).toMatchObject({ _tag: 'Kubernetes.ClusterNotFoundError' })
     })
 
-    test('a cluster with no endpoint/CA yet fails with a clear error', async () => {
+    test('a cluster with no endpoint/CA yet fails with ClusterNotReadyError, catchable by tag', async () => {
       const layer = adapterLayer({
         get: () => Effect.succeed(clusterWith({}, '')),
       })
@@ -210,6 +211,23 @@ describe('Nebius.mk8s.ClusterAdapter', () => {
         ),
       )
       expect(String(error)).toContain('no endpoint or certificate authority yet')
+      // The point of R-07: the tag is the discriminator, so a caller can tell “still creating” from
+      // "gone" — and this is what pins it (the old plain `Error` matched nothing).
+      expect(error).toMatchObject({ _tag: 'ClusterNotReadyError', clusterId: CLUSTER })
+    })
+
+    test('ClusterNotReadyError is recoverable with Effect.catchTag (the R-07 contract)', async () => {
+      // Exercised through `requireClusterTransport`, which is where the tagged channel is *declared*:
+      // alchemy's `ClusterAdapterService.connect` types its error as `ClusterNotFoundError | Error`, so
+      // at that boundary the tag is structurally blurred (`Error` carries no `_tag` for `catchTag` to
+      // discriminate). The capability R-07 asks for exists in the typed helper `connect` itself uses.
+      const recovered = await runEffect(
+        requireClusterTransport(Ids.ClusterId.make(CLUSTER), { endpoint: 'https://cp', certificateAuthorityData: undefined }).pipe(
+          Effect.catchTag('ClusterNotReadyError', (error) => Effect.succeed(`retry ${error.clusterId}`)),
+        ),
+      )
+
+      expect(recovered).toBe(`retry ${CLUSTER}`)
     })
   })
 })
