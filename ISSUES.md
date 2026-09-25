@@ -86,7 +86,18 @@ Do **not** leave both comment and code as they are.
 
 ---
 
-### R-02 — Destroy silently leaks a live S3 fetch AccessKey when the key list fails · `OPEN`
+### R-02 — Destroy silently leaks a live S3 fetch AccessKey when the key list fails · `DONE (2026-09-25)`
+
+**Fixed**: `cleanupHostedRuntime` (`modules/resources/compute/v1/hosted.ts:1251-1281`) recognises
+`NOT_FOUND` (5) as the only benign code on **both** the list and the delete, and reports every other
+outcome as an `Effect.logWarning` naming the key (and, on delete, its id) and the error.
+
+**Warn-and-continue, not fail-hard, on purpose** — a failed delete makes the planner skip every
+dependent and leaks the *parents* (AGENTS.md §"Resource provider patterns"), while the cause — a key
+the caller can neither list nor delete — is persistent, so a re-run fails identically. The leak cannot
+be repaired from here; making it visible can. The delete branch carried the second half of the same
+defect: its blanket catch labelled *every* failure "already gone", so a `PERMISSION_DENIED` was
+reported as a successful cleanup.
 
 **File**: `modules/resources/compute/v1/hosted.ts:1224`
 
@@ -111,6 +122,21 @@ pretend the list succeeded**. Re-raise if the delete path cannot continue safely
 - Test: a mocked list failing with `PERMISSION_DENIED` produces a warning that names
   `hostedRuntimeKeyName(id)` and the error, and does not resolve to a silent success.
 - Test: a list answering `[]` (genuinely no key) stays silent — no false alarm.
+
+**Met** — 6 offline tests in `tests/resources/compute/v1/hosted.test.ts` (`describe('hosted
+cleanupHostedRuntime — the fetch key is never lost silently')`): denied list, `[]` list, `NOT_FOUND`
+list, the happy path, denied delete, `NOT_FOUND` delete. Mocked `IamGrpcService` with `output`
+undefined, so no S3 client is constructed and nothing touches the network.
+
+**Negative control (run, not asserted)**: with the old body restored, exactly the two leak assertions
+fail — the denied list reports `deleted === []` (no delete attempted, i.e. the leak) and the denied
+delete names neither the key nor its id. The other four are invariants the old code happened to hold.
+
+**Rider (same defect, the verifier itself)**: `tests/resources/compute/v1/hosted-instance.integration.test.ts`
+`verifyAssetsCleanup` swallowed its own list failures, so a `PERMISSION_DENIED` there reported "no leak" —
+a green verifier for exactly this leak. Both lists now treat `NOT_FOUND` as success and propagate
+everything else (`safeDestroy` fails the test on a failing verify). It is the live witness for this fix,
+so it had to be able to fail.
 
 ---
 
@@ -506,7 +532,8 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 1. **R-04 + R-05 + R-06** together — fix the guardrails, with the self-test that proves the fix. Also
    cheap and it makes the rest of the list harder to regress.
 2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit.
-3. **R-02, R-07, R-09, R-14** — error-shape corrections, each independently testable.
+3. **R-02 (done 2026-09-25), R-07, R-09, R-14** — error-shape corrections, each independently testable.
+   R-02 is the reference implementation for R-06's 31-site classification.
 4. **R-01** — the only HIGH-risk item. Needs the duplicate-`Issue` probe before choosing a branch.
 5. **R-19** — needs a live instance; pair with any other live probe session.
 6. **R-10, R-12, R-15, R-16, R-18, R-20** — incremental cleanups, safe to interleave.

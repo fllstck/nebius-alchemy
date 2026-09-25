@@ -1,4 +1,6 @@
 import * as BunTest from 'bun:test'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
 import { S3Errors } from '@bradenmacdonald/s3-lite-client'
 import {
@@ -9,7 +11,10 @@ import {
   planHostedUploads,
   hostedEnv,
   isTransientS3Error,
+  cleanupHostedRuntime,
 } from '../../../../modules/resources/compute/v1/hosted.ts'
+import { GrpcError } from '../../../../modules/api-client/grpc-utils.ts'
+import { mockIamLayer, notFoundError, protoMetadata, recordingLogs, testConfigLayer } from '../../../helpers/mocks.ts'
 
 const { describe, expect, test } = BunTest
 
@@ -295,5 +300,118 @@ describe('hosted hostedEnv — the binding → shipped env file seam', () => {
   test('defaults PORT to 3000 when the instance declares none', () => {
     const env = hostedEnv({ stackName: 'S', stage: 'live_t', port: undefined, userEnv: undefined, bindings: [] })
     expect(env.PORT).toBe(3000)
+  })
+})
+
+const PERMISSION_DENIED = () => new GrpcError({ code: 7, message: 'PermissionDenied', details: '' })
+
+/** An `AccessKey` as `accessKeyV2.list` answers it — `protoMetadata` is the *metadata* message. */
+const listedAccessKey = (id: string, name: string) => ({ metadata: protoMetadata(id, name, 'project-test-1') })
+
+/**
+ * A mocked `IamGrpcService` whose `accessKeyV2` is scripted per test. `deleted` records every
+ * delete *attempt*, so `deleted === []` after a failed list proves the leak rather than asserting
+ * around it.
+ */
+const mockAccessKeyIam = (script: {
+  list: () => Effect.Effect<ReadonlyArray<unknown>, unknown>
+  delete?: (id: string) => Effect.Effect<void, unknown>
+}) => {
+  const deleted: Array<string> = []
+  const layer = mockIamLayer({
+    accessKeyV2: {
+      list: script.list,
+      delete: (id: string) => {
+        deleted.push(id)
+        return script.delete ? script.delete(id) : Effect.void
+      },
+    },
+  })
+  return { layer, deleted }
+}
+
+/**
+ * R-02 — `cleanupHostedRuntime`'s fetch-key lookup. The destroy path's whole observable contract
+ * is the log text: it deliberately cannot fail (a failed delete makes the planner skip every
+ * dependent and leaks the parents), so the assertions below are on warnings, not on a return
+ * value. `output` is left `undefined` throughout, which skips the S3 branch entirely — no S3
+ * client is constructed, so none of this touches the network.
+ */
+describe('hosted cleanupHostedRuntime — the fetch key is never lost silently', () => {
+  // `hostedRuntimeKeyName('instance-1')` = `ak-` + `${id}HostedRuntimeKey` lower-cased. Pinned as
+  // a literal so the assertions cover the derivation, not merely that *some* name was mentioned.
+  const KEY_NAME = 'ak-instance-1hostedruntimekey'
+  const KEY_ID = 'accesskey-e00testfetchkey'
+
+  /** Run the cleanup and return only the warnings that talk about *this* key. */
+  const runCleanup = async (iamLayer: ReturnType<typeof mockAccessKeyIam>['layer']) => {
+    const logs = recordingLogs()
+    const result = await Effect.runPromise(
+      cleanupHostedRuntime({ id: 'instance-1' }).pipe(
+        Effect.provide(Layer.mergeAll(iamLayer, testConfigLayer, logs.layer)),
+      ),
+    )
+    return { result, keyWarnings: logs.messages().filter((message) => message.includes(KEY_NAME)) }
+  }
+
+  test('a list failing with PERMISSION_DENIED warns by name instead of reporting a clean destroy', async () => {
+    const { layer, deleted } = mockAccessKeyIam({ list: () => Effect.fail(PERMISSION_DENIED()) })
+    const { result, keyWarnings } = await runCleanup(layer)
+
+    expect(keyWarnings).toHaveLength(1)
+    expect(keyWarnings[0]).toContain(KEY_NAME)
+    expect(keyWarnings[0]).toContain('PermissionDenied')
+    expect(keyWarnings[0]).toContain('may survive this destroy')
+    // The delete was never attempted — that IS the leak, and it is now visible instead of silent.
+    expect(deleted).toEqual([])
+    expect(result).toBeUndefined()
+  })
+
+  test('a list answering [] (genuinely no key) stays silent — no false alarm', async () => {
+    const { layer, deleted } = mockAccessKeyIam({ list: () => Effect.succeed([]) })
+    const { keyWarnings } = await runCleanup(layer)
+
+    expect(keyWarnings).toEqual([])
+    expect(deleted).toEqual([])
+  })
+
+  test('NOT_FOUND on the list is the one benign code — the parent project is gone', async () => {
+    const { layer } = mockAccessKeyIam({ list: () => Effect.fail(notFoundError()) })
+    const { keyWarnings } = await runCleanup(layer)
+
+    expect(keyWarnings).toEqual([])
+  })
+
+  test('a listed key of the expected name is deleted', async () => {
+    const { layer, deleted } = mockAccessKeyIam({ list: () => Effect.succeed([listedAccessKey(KEY_ID, KEY_NAME)]) })
+    const { keyWarnings } = await runCleanup(layer)
+
+    expect(deleted).toEqual([KEY_ID])
+    expect(keyWarnings).toEqual([])
+  })
+
+  test('a delete failing with PERMISSION_DENIED warns with the id, and does not fail the destroy', async () => {
+    const { layer, deleted } = mockAccessKeyIam({
+      list: () => Effect.succeed([listedAccessKey(KEY_ID, KEY_NAME)]),
+      delete: () => Effect.fail(PERMISSION_DENIED()),
+    })
+    const { result, keyWarnings } = await runCleanup(layer)
+
+    expect(deleted).toEqual([KEY_ID])
+    expect(keyWarnings).toHaveLength(1)
+    expect(keyWarnings[0]).toContain(KEY_ID)
+    expect(keyWarnings[0]).toContain('PermissionDenied')
+    expect(result).toBeUndefined()
+  })
+
+  test('a delete answering NOT_FOUND is quiet — already gone is success, not a warning', async () => {
+    const { layer } = mockAccessKeyIam({
+      list: () => Effect.succeed([listedAccessKey(KEY_ID, KEY_NAME)]),
+      delete: () => Effect.fail(notFoundError()),
+    })
+    const { result, keyWarnings } = await runCleanup(layer)
+
+    expect(keyWarnings).toEqual([])
+    expect(result).toBeUndefined()
   })
 })

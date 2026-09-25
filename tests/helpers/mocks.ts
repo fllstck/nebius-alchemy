@@ -9,6 +9,7 @@
  */
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Logger from 'effect/Logger'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import Long from 'long'
 
@@ -104,6 +105,39 @@ export const recordingSession = () => {
     /** Everything narrated so far, in order. */
     messages: (): ReadonlyArray<string> => messages,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+/**
+ * A Logger that **records** every `Effect.log*` message instead of printing it.
+ *
+ * For several destroy paths the warning *is* the whole observable contract: they deliberately
+ * cannot fail the destroy (a failed delete makes the planner skip every dependent and leaks the
+ * parents — AGENTS.md §"Resource provider patterns"), so "it did not silently succeed" can only
+ * be asserted on the log text — R-02's unverifiable hosted fetch key is the first of them.
+ * `Logger.layer` replaces the default logger, so the run stays quiet while `messages()` is read.
+ *
+ * Usage:
+ *
+ *   const logs = recordingLogs()
+ *   await Effect.runPromise(program.pipe(Effect.provide(logs.layer)))
+ *   expect(logs.messages().some((m) => m.includes('ak-…'))).toBe(true)
+ */
+export const recordingLogs = () => {
+  const messages: Array<string> = []
+  const logger = Logger.make<unknown, void>(({ message }) => {
+    messages.push(
+      typeof message === 'string'
+        ? message
+        : Array.isArray(message)
+          ? message.map(String).join(' ')
+          : String(message),
+    )
+  })
+  return { layer: Logger.layer([logger]), messages: (): ReadonlyArray<string> => messages }
 }
 
 // ---------------------------------------------------------------------------

@@ -263,6 +263,17 @@ planner then skips every dependent (`Skipping delete — blocked by failed delet
 leaking the parents. `storage/v1/transfer` leaked two buckets, a service account and an access key
 that way (live 2026-09-22).
 
+**The same asymmetry binds a *lookup* inside a delete, and the failure must be loud.** `NOT_FOUND` is
+success, but every other code has to be reported — never folded into an empty result, because an empty
+result means "nothing left to clean up" and completes the destroy as if it were clean. A blanket
+`Effect.catch(() => Effect.succeed([]))` around the list in `cleanupHostedRuntime` turned
+`PERMISSION_DENIED` (a rotated or expired key) into "no key found", skipped the delete, and let a
+**still-valid credential with read access to the bundle bucket** outlive `alchemy destroy --yes` with no
+log line (R-02, found 2026-09-25). Its sibling with the opposite sign is the same bug: a blanket catch on
+the *delete* labelled every failure "already gone", so a `PERMISSION_DENIED` read as a successful
+cleanup. Warn rather than fail — a failing delete leaks the parents (above) while the cause is
+persistent, so a re-run fails identically — and name the resource and the error in the warning.
+
 **A resource with no `Update` RPC MUST be tabulated prop by prop in the convergence sweep.**
 That is the only shape in which the silent-no-op class can survive. With an update RPC,
 `reconcile` sends the full `desired` spec, so any prop change is written and the API adjudicates

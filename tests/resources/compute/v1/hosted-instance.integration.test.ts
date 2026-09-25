@@ -79,14 +79,24 @@ const probeJson = async (url: string): Promise<unknown> => {
  * Post-destroy leak verification: the dedicated hosted-runtime fetch key must
  * be gone, and no hosted-assets bucket may survive (the instance's cleanup
  * emptied it, so the stack-owned bucket deletes cleanly).
+ *
+ * `NOT_FOUND` (5) — "nothing left to list" — is the ONLY code swallowed here. A blanket
+ * `Effect.catch(() => Effect.succeed([]))` reported "no leak" whenever the list itself failed
+ * (`PERMISSION_DENIED` on a rotated key, the common case), i.e. a green verifier for exactly the
+ * leak `cleanupHostedRuntime` is about (R-02). `safeDestroy` fails the test on a failing verify,
+ * so everything else propagates — a verifier that cannot fail is a comment with a schema.
  */
 const verifyAssetsCleanup = Effect.gen(function* () {
   const iam = yield* IamGrpc.IamGrpcService
-  const keys = yield* iam.accessKeyV2.list(PROJECT).pipe(Effect.catch(() => Effect.succeed([])))
+  const keys = yield* iam.accessKeyV2
+    .list(PROJECT)
+    .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed([]) : Effect.fail(e))))
   expect(keys.some((key) => key.metadata?.name === FETCH_KEY_NAME)).toBe(false)
 
   const storage = yield* StorageGrpc.StorageGrpcService
-  const buckets = yield* storage.bucket.list(PROJECT).pipe(Effect.catch(() => Effect.succeed([])))
+  const buckets = yield* storage.bucket
+    .list(PROJECT)
+    .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed([]) : Effect.fail(e))))
   const leakedAssets = buckets.filter((bucket) => bucket.metadata?.name?.includes('hostedassets'))
   expect(leakedAssets).toHaveLength(0)
 })

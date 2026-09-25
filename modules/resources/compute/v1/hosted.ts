@@ -1146,10 +1146,40 @@ export const hostedEnv = ({
 }
 
 /**
+ * The destroy path's two loud failure modes for the dedicated fetch key (R-02).
+ *
+ * A blanket `Effect.catch(() => Effect.succeed([]))` turned `PERMISSION_DENIED` (rotated or
+ * expired key, changed IAM role) into "no key found": the delete was skipped and a
+ * **still-valid credential granting read access to the bundle bucket** outlived
+ * `alchemy destroy --yes` with no log line. `NOT_FOUND` is the only benign code — the parent
+ * project is gone, so there is nothing left to clean — and is recognised at the call site.
+ *
+ * These warn rather than fail on purpose. Failing the destroy makes the planner skip every
+ * dependent (`Skipping delete — blocked by failed delete of <resource>`, AGENTS.md §"Resource
+ * provider patterns") and leak the *parents* instead, while the cause — a key the caller cannot
+ * list or delete — is persistent, so a re-run fails identically. The leak itself is not
+ * fixable from here; making it visible is.
+ */
+const warnFetchKeyListFailed = (keyName: string, error: unknown) =>
+  Effect.logWarning(
+    `Hosted fetch key cleanup for '${keyName}' could not list access keys (${messageOf(error)}) — a still-valid key of that name may survive this destroy with read access to the bundle bucket; check with: nebius iam access-key list`,
+  )
+
+/** The delete half of {@link warnFetchKeyListFailed} — the id is known here, so name it too. */
+const warnFetchKeyDeleteFailed = (keyName: string, keyId: string, error: unknown) =>
+  Effect.logWarning(
+    `Hosted fetch key cleanup for '${keyName}' could not delete access key ${keyId} (${messageOf(error)}) — a still-valid credential may survive this destroy with read access to the bundle bucket`,
+  )
+
+/**
  * Delete the hosted S3 objects (under `assetPrefix`) and the DEDICATED
  * hosted-runtime fetch key. Idempotent — anything already gone is success.
  * Uses the persisted upload creds (the fetch key is read-only by design and
  * can't delete objects).
+ *
+ * Neither step may fail the destroy (a failed delete leaks the parents — see
+ * {@link warnFetchKeyListFailed}), so both report an unverifiable key as a loud warning instead:
+ * silence here would be a clean-destroy report that left a live credential behind.
  */
 export const cleanupHostedRuntime = Effect.fn('cleanupHostedRuntime')(function* ({
   id,
@@ -1221,14 +1251,29 @@ export const cleanupHostedRuntime = Effect.fn('cleanupHostedRuntime')(function* 
   // 2. Dedicated fetch key — deterministic name lookup, already-gone = success.
   const iamGrpcService = yield* IamGrpc.IamGrpcService
   const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
-  const keys = yield* iamGrpcService.accessKeyV2.list(parentId).pipe(Effect.catch(() => Effect.succeed([])))
-  const key = keys.find((candidate) => candidate.metadata?.name === hostedRuntimeKeyName(id))
-  if (key?.metadata?.id) {
-    yield* iamGrpcService.accessKeyV2.delete(key.metadata.id).pipe(
-      Effect.catch((e: unknown) =>
-        Effect.succeed(undefined).pipe(
-          Effect.tap(() => Effect.logWarning(`Hosted fetch key already gone (${messageOf(e)})`)),
-        ),
+  const keyName = hostedRuntimeKeyName(id)
+  const keys = yield* iamGrpcService.accessKeyV2.list(parentId).pipe(
+    Effect.catch((error: unknown) =>
+      // NOT_FOUND (5) = the parent project is gone, so there is nothing left to clean up. Every
+      // other outcome — PERMISSION_DENIED above all, which `list` also reports (not retried, so
+      // it arrives here first-hand) — MUST NOT read as "no key exists": the delete below would
+      // be skipped and the credential would survive the destroy silently.
+      error instanceof GrpcUtils.GrpcError && error.code === 5
+        ? Effect.succeed([])
+        : warnFetchKeyListFailed(keyName, error).pipe(Effect.andThen(Effect.succeed([]))),
+    ),
+  )
+  const key = keys.find((candidate) => candidate.metadata?.name === keyName)
+  const keyId = key?.metadata?.id
+  if (keyId) {
+    yield* iamGrpcService.accessKeyV2.delete(keyId).pipe(
+      // NOT_FOUND = already deleted (a re-run destroy reaches here) = success, quietly. A blanket
+      // catch used to label *every* failure "already gone" — a PERMISSION_DENIED that left the key
+      // alive included, which is the same silent leak from the other side.
+      Effect.catch((error: unknown) =>
+        error instanceof GrpcUtils.GrpcError && error.code === 5
+          ? Effect.void
+          : warnFetchKeyDeleteFailed(keyName, keyId, error),
       ),
     )
   }
