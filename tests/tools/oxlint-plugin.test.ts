@@ -28,12 +28,23 @@
  * compare equal and the drift check silently never fires. Both instances of that
  * bug found in a `reconcile` on 2026-09-21 (dns record `ttl`, dns zone
  * `soaSpec.negativeTtl`) were exactly this shape.
+ *
+ * **Every rule now carries a must-fail and a must-pass snippet** (`CASES` below, plus the two
+ * hand-written `no-alchemy-deepequal` tests, and `rule coverage` fails if a new rule arrives
+ * without them) — that is the whole point, because the two rules with the worst history here were
+ * the ones nobody had ever watched *fail*: `no-effect-ignore` (severity `error`) could not see
+ * `pipe(Effect.ignore)`, the only form the repo wrote, and `no-silent-error-swallow` banned
+ * `() => Effect.void` — zero occurrences — while `() => Effect.succeed([])`, the shape that turns a
+ * failed `list` into "this resource does not exist", sat uncaught in 31 places. A rule that has
+ * never been observed failing is a comment with a schema, and "the lint is green" then reads as
+ * evidence when it is not.
  */
 import * as BunTest from 'bun:test'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import plugin from '../../tools/oxlint-nebius-plugin/index.js'
 
 const { afterAll, describe, expect, test } = BunTest
 
@@ -73,13 +84,13 @@ afterAll(() => {
 })
 
 /**
- * Run the real linter over `source` with only this rule enabled, reading the JSON report.
+ * Run the real linter over `source` with only `rule` enabled, reading the JSON report.
  *
  * Returns the exit status and the parsed diagnostics; throws with the raw output when the report is
  * not JSON (that happens when the config or the plugin could not be loaded, which is precisely the
  * failure a reader needs to see).
  */
-const runOxlint = (source: string): { status: number; diagnostics: ReadonlyArray<Diagnostic> } => {
+const runOxlint = (source: string, rule: string): { status: number; diagnostics: ReadonlyArray<Diagnostic> } => {
   const fixture = join(tempDir, 'fixture.ts')
   const config = join(tempDir, 'oxlintrc.json')
   writeFileSync(fixture, source)
@@ -87,7 +98,7 @@ const runOxlint = (source: string): { status: number; diagnostics: ReadonlyArray
   // our rule, and an unrelated diagnostic would change the exit status.
   writeFileSync(
     config,
-    JSON.stringify({ plugins: [], jsPlugins: [PLUGIN], rules: { 'nebius/no-alchemy-deepequal': 'error' } }),
+    JSON.stringify({ plugins: [], jsPlugins: [PLUGIN], rules: { [`nebius/${rule}`]: 'error' } }),
   )
 
   const { status, output } = ((): { status: number; output: string } => {
@@ -147,7 +158,7 @@ describe('nebius/no-alchemy-deepequal', () => {
       `export const g = AlchemyDiff.isResolved(x)`, // 14 ok: unreachable by comparison
     ].join('\n')
 
-    const { status, diagnostics } = runOxlint(source)
+    const { status, diagnostics } = runOxlint(source, 'no-alchemy-deepequal')
 
     expect(status).not.toBe(0)
     // Exactly the four reachable paths — no more, no fewer.
@@ -176,9 +187,168 @@ describe('nebius/no-alchemy-deepequal', () => {
       `export const c = AlchemyDiff.diffTags(a, b)`,
     ].join('\n')
 
-    const { status, diagnostics } = runOxlint(source)
+    const { status, diagnostics } = runOxlint(source, 'no-alchemy-deepequal')
 
     expect(diagnostics).toEqual([])
     expect(status).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// One must-fail and one must-pass snippet per rule (R-04)
+// ---------------------------------------------------------------------------
+
+/** A snippet plus what it is for. `source` is linted verbatim — it never needs to typecheck. */
+interface RuleCase {
+  readonly title: string
+  readonly source: string
+}
+
+interface RuleCoverage {
+  /** Each of these MUST produce a diagnostic for the rule under test. */
+  readonly mustTrip: ReadonlyArray<RuleCase>
+  /** Each of these must produce NO diagnostic at all — see the assertion below. */
+  readonly mustPass: ReadonlyArray<RuleCase>
+}
+
+const CASES: Readonly<Record<string, RuleCoverage>> = {
+  'no-effect-ignore': {
+    mustTrip: [
+      {
+        // The form the repo actually wrote, and the reason the rule was inert while configured
+        // `error`: `pipe(Effect.ignore)` passes the member by *reference*, so there is no
+        // `CallExpression` to match. Before R-05 the rule only looked at the call form.
+        title: 'piped by reference',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.succeed(1).pipe(Effect.ignore)`,
+      },
+      {
+        title: 'called directly',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.ignore(Effect.succeed(1))`,
+      },
+    ],
+    mustPass: [
+      {
+        // Effect v4's `ignore` takes an options object, and `log` makes the discarded `Cause`
+        // (defects included) audible. That is the difference between "best effort, and you can see
+        // it" and "best effort, and nobody will ever know", so the rule bans the silent forms only
+        // — otherwise the one legitimate use needs an `oxlint-disable` with a comment.
+        title: 'logged ignore options',
+        source: `import * as Effect from 'effect/Effect'\nexport const audible = Effect.succeed(1).pipe(Effect.ignore({ log: 'Warn', message: 'best effort' }))`,
+      },
+      {
+        title: 'catch and log',
+        source: `import * as Effect from 'effect/Effect'\nexport const logged = Effect.succeed(1).pipe(Effect.catch((error) => Effect.logWarning(String(error))))`,
+      },
+    ],
+  },
+
+  'no-effect-catchallcause': {
+    mustTrip: [
+      {
+        // Measured 2026-09-25: `catchAllCause` does not exist anywhere in the pinned Effect
+        // (4.0.0-rc.117 — `grep -rl catchAllCause node_modules/effect/dist` finds nothing), so this
+        // snippet proves the rule *fires*, not that it protects anything today. It is kept as a
+        // guard against the v3 name coming back; the v4 spelling is `catchCause` (below).
+        title: 'the v3 name',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catchAllCause(Effect.succeed(1), () => Effect.succeed(0))`,
+      },
+    ],
+    mustPass: [
+      {
+        // Deliberately NOT banned: catching a whole `Cause` is the right tool for best-effort work
+        // (a destroy-path cleanup must not fail on a defect), and `no-silent-error-swallow` plus the
+        // log-asserting tests are what keep it honest. The rule bans a name, not the capability.
+        title: 'catchCause — the v4 capability',
+        source: `import * as Effect from 'effect/Effect'\nexport const recovered = Effect.catchCause(Effect.succeed(1), (cause) => Effect.logWarning(String(cause)))`,
+      },
+    ],
+  },
+
+  'no-silent-error-swallow': {
+    mustTrip: [
+      {
+        title: 'Effect.void handler',
+        source: `import * as Effect from 'effect/Effect'\nexport const swallow = Effect.catchTag('GrpcError', () => Effect.void)`,
+      },
+    ],
+    mustPass: [
+      {
+        title: 'handler that logs',
+        source: `import * as Effect from 'effect/Effect'\nexport const logged = Effect.catchTag('GrpcError', (error) => Effect.logWarning(String(error)))`,
+      },
+    ],
+  },
+
+  'no-disable-validation': {
+    mustTrip: [
+      {
+        title: 'literal true',
+        source: `export const options = { disableValidation: true }`,
+      },
+    ],
+    mustPass: [
+      {
+        title: 'explicit false',
+        source: `export const options = { disableValidation: false }`,
+      },
+      {
+        title: 'non-literal value',
+        source: `const disableValidation = false\nexport const options = { disableValidation }`,
+      },
+    ],
+  },
+}
+
+/**
+ * Rules whose cases are written out as dedicated tests (above) instead of a `CASES` entry, because
+ * they assert diagnostic *line numbers* and an exact count — neither of which a table row can
+ * express. Keeping the list short is the point; `rule coverage` fails on any rule in neither place.
+ */
+const DEDICATED_RULE_TESTS = ['no-alchemy-deepequal']
+
+/** The plugin's own rule list — the completeness check's source of truth. */
+const DECLARED_RULES = Object.keys(plugin.rules ?? {})
+
+for (const [rule, coverage] of Object.entries(CASES)) {
+  describe(rule, () => {
+    for (const testCase of coverage.mustTrip) {
+      test(`${testCase.title} — trips the rule`, () => {
+        const { status, diagnostics } = runOxlint(testCase.source, rule)
+        expect(status).not.toBe(0)
+        expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(`nebius(${rule})`)
+      })
+    }
+
+    for (const testCase of coverage.mustPass) {
+      test(`${testCase.title} — passes`, () => {
+        const { status, diagnostics } = runOxlint(testCase.source, rule)
+        // Any diagnostic at all fails a must-pass case: a *different* rule firing here would be a
+        // finding (the rules are supposed to be independent), not noise to filter out.
+        expect(diagnostics).toEqual([])
+        expect(status).toBe(0)
+      })
+    }
+  })
+}
+
+describe('rule coverage', () => {
+  test('every declared rule has a must-fail and a must-pass snippet', () => {
+    const covered = new Set([...Object.keys(CASES), ...DEDICATED_RULE_TESTS])
+    expect(DECLARED_RULES.filter((rule) => !covered.has(rule))).toEqual([])
+    // …and no case names a rule the plugin does not declare, which is how a rename would silently
+    // orphan a case that no longer tests anything.
+    expect(Object.keys(CASES).filter((rule) => !DECLARED_RULES.includes(rule))).toEqual([])
+  })
+
+  test('the plugin declares exactly the five documented rules', () => {
+    // A new rule changes this list, and that is the prompt to add its cases above: without this the
+    // count could drift while the completeness check above still passed for the wrong reason.
+    expect(DECLARED_RULES.toSorted()).toEqual([
+      'no-alchemy-deepequal',
+      'no-disable-validation',
+      'no-effect-catchallcause',
+      'no-effect-ignore',
+      'no-silent-error-swallow',
+    ])
   })
 })

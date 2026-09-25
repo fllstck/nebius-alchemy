@@ -38,8 +38,9 @@
   ],
   "scripts": {
     "audit": "bun audit",
-    "check": "bun run typecheck && bun run lint",
+    "check": "bun run typecheck && bun run lint && bun run test:rules",
     "test": "bun test tests/",
+    "test:rules": "bun test tests/tools/",
     "test:integration": "SLOW_TESTS=1 bun test tests/",
     "generate:schemas": "buf generate",
     "lint": "oxlint modules/ tests/ examples/ tools/",

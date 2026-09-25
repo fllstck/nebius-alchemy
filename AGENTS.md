@@ -46,6 +46,18 @@ These rules are hard requirements. Violations must be corrected immediately.
   workaround itself) and `tests/**` (where the framework trap is pinned by calling the real
   helper).
 
+  **Every custom rule carries a self-test.** `tests/tools/oxlint-plugin.test.ts` drives the real
+  `oxlint` binary over a temp fixture and asserts on its JSON report: one snippet that MUST trip each
+  rule and one that must not, with a completeness check (the plugin is imported, so every declared rule
+  must be covered). `bun run check` runs it via `bun run test:rules`. This is recorded history rather
+  than hygiene: `nebius/no-effect-ignore` was configured `error` yet could not see
+  `pipe(Effect.ignore)` — the only form in the repo — and `nebius/no-silent-error-swallow` banned
+  `() => Effect.void` (0 occurrences) while `() => Effect.succeed([])`, the shape that turns a failed
+  `list` into "this resource does not exist", sat uncaught in 31 places. A rule that has never been
+  observed failing is a comment with a schema. Two consequences to know when writing code: the audible
+  `Effect.ignore({ log, message })` is the **allowed** form (only silent `Effect.ignore` is banned), and
+  the ban on `Effect.catchAllCause` is a v3-era name that no longer exists in the pinned Effect.
+
   **Corollary — switching to `specDeepEqual` is not always enough.** `deepEqual` also
   reports a live `Long` as equal to `undefined`, so comparing an **optional** prop against a
   **non-optional** wire field is only safe when the news side is present:

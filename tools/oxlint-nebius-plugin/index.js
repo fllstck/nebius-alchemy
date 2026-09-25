@@ -5,7 +5,8 @@
  *
  * Rules:
  *   - nebius/no-effect-catchallcause: bans Effect.catchAllCause (use catchTag/catch instead)
- *   - nebius/no-effect-ignore: bans Effect.ignore (use catch + log instead)
+ *   - nebius/no-effect-ignore: bans *silent* Effect.ignore — a bare reference or a call without
+ *     `log`; `Effect.ignore({ log, message })` is audible and allowed (use catch + log otherwise)
  *   - nebius/no-silent-error-swallow: bans () => Effect.void as an error handler
  *   - nebius/no-disable-validation: bans disableValidation: true
  *   - nebius/no-alchemy-deepequal: bans alchemy/Diff's deepEqual in provider code
@@ -22,6 +23,17 @@ const plugin = {
     // ── no-effect-catchallcause ────────────────────────────────────────────
     // Bans `Effect.catchAllCause` because it catches all causes including
     // defects and interruptions. Prefer `Effect.catchTag` or `Effect.catch`.
+    //
+    // Measured 2026-09-25: `catchAllCause` does not exist anywhere in the pinned
+    // Effect (`4.0.0-rc.117` — `grep -rl catchAllCause node_modules/effect/dist`
+    // finds nothing). It is the v3 name; v4 spells the capability `catchCause`,
+    // which is deliberately NOT banned: catching a whole `Cause` is the right tool
+    // for best-effort work (a destroy-path cleanup must not fail on a defect), and
+    // `no-silent-error-swallow` plus the tests that assert on log lines are what
+    // keep that honest. So this rule bans a *name*, not the capability — it can
+    // only ever fire on code that would not compile, and is kept as a guard against
+    // the v3 spelling reappearing. Pinned by a must-fail fixture in
+    // `tests/tools/oxlint-plugin.test.ts`, which is also where that measurement lives.
     'no-effect-catchallcause': {
       meta: {
         type: 'suggestion',
@@ -53,33 +65,43 @@ const plugin = {
     },
 
     // ── no-effect-ignore ─────────────────────────────────────────────────
-    // Bans `Effect.ignore` because it silently swallows errors.
-    // Prefer catching and logging the error.
+    // Bans *silent* `Effect.ignore`.
+    //
+    // Two things this rule got wrong until R-05 (2026-09-25):
+    //   1. It matched only `Effect.ignore(effect)` — a `CallExpression`. The form
+    //      the repo actually writes is `.pipe(Effect.ignore)`, which passes the
+    //      member by *reference*, so the rule was inert against its one real
+    //      occurrence while configured `error`. It now runs on the
+    //      `MemberExpression`, which covers both.
+    //   2. `Effect.ignore` is not inherently silent: v4 takes an options object and
+    //      `log` makes the discarded `Cause` — defects included — audible. That is
+    //      the sanctioned "best effort: log and continue", so it is allowed rather
+    //      than forced behind an `oxlint-disable` with a comment.
     'no-effect-ignore': {
       meta: {
         type: 'suggestion',
         docs: {
-          description: 'Disallow Effect.ignore (prefer catch + log instead of silently swallowing)',
+          description:
+            'Disallow silent Effect.ignore (use Effect.ignore({ log, message }) or catch + log instead)',
           recommended: true,
         },
         schema: [],
       },
       create(context) {
         return {
-          CallExpression(node) {
-            if (
-              node.callee.type === 'MemberExpression' &&
-              node.callee.property.type === 'Identifier' &&
-              node.callee.property.name === 'ignore'
-            ) {
-              const objectName = extractObjectName(node.callee.object)
-              if (objectName === 'Effect') {
-                context.report({
-                  node: node.callee.property,
-                  message: 'Do not use Effect.ignore. Catch and log the error instead.',
-                })
-              }
-            }
+          MemberExpression(node) {
+            if (node.computed === true) return
+            if (node.property.type !== 'Identifier' || node.property.name !== 'ignore') return
+            if (extractObjectName(node.object) !== 'Effect') return
+
+            const call = node.parent
+            if (call && call.type === 'CallExpression' && call.callee === node && ignoreLogsTheCause(call)) return
+
+            context.report({
+              node: node.property,
+              message:
+                "Do not use Effect.ignore: it discards the failure cause (defects included) silently. Log and continue with Effect.ignore({ log: 'Warn', message: … }), or catch and log the error.",
+            })
           },
         }
       },
@@ -332,6 +354,23 @@ const plugin = {
       },
     },
   },
+}
+
+/**
+ * Does an `Effect.ignore(...)` call pass `log`?
+ *
+ * `Effect.ignore` is overloaded on its first argument — `ignore(effectOrOptions?, options?)` — so
+ * either slot may carry the options object that makes the discarded `Cause` audible.
+ */
+function ignoreLogsTheCause(call) {
+  return call.arguments.some(
+    (argument) =>
+      argument.type === 'ObjectExpression' &&
+      argument.properties.some(
+        (property) =>
+          property.type === 'Property' && property.key.type === 'Identifier' && property.key.name === 'log',
+      ),
+  )
 }
 
 /**

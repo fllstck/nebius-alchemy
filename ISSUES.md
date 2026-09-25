@@ -165,7 +165,29 @@ saying the cap applies to the pre-jitter delay.
 
 ---
 
-### R-04 — Custom lint rules have no self-test · `OPEN`
+### R-04 — Custom lint rules have no self-test · `DONE (2026-09-25)`
+
+**Deviation from the fix as written** — no `__fixtures__/` directory and no `bun test tools/`. There is
+already a purpose-built harness for exactly this job: `tests/tools/oxlint-plugin.test.ts` drives the real
+`oxlint` binary over a temp fixture + temp config, asserts on structured JSON, and locates the binary by
+walking up (`node_modules/.bin` is not copied into Stryker's mutation sandbox). It covered only
+`no-alchemy-deepequal`. A second mechanism beside it is the layering this repo retires rather than adds,
+and the on-disk shape costs config changes purely to keep deliberate violations out of the build: a
+config inside `__fixtures__/` **shadows the root config for its subtree** (oxlint resolves the *nearest*
+config per file — measured), so the root's `ignorePatterns` never skips the fixtures, and the snippets
+would need a `tsconfig.json` exclusion since `Effect.catchAllCause` cannot compile.
+
+**What shipped**: the existing harness now takes the rule as a parameter and carries `CASES` — one
+must-trip and one must-pass snippet for each of the four remaining rules — plus two mechanical
+completeness checks: every rule the plugin declares must be covered (the plugin is imported, so that list
+is not hand-maintained), and the declared list is itself pinned so a new rule prompts its cases.
+`check` now runs `bun run test:rules` (`bun test tests/tools/`), which is the acceptance criterion made
+literal.
+
+**Acceptance**: measured in both directions. (1) **Rule inert** (the `pipe(Effect.ignore)` hole): the
+must-trip case fails and `bun run check` exits 1 — the negative control for R-05 *is* this criterion, and
+it was run. (2) **Rule over-broad** (the `log` allowance removed): the must-pass case fails. With both
+directions restored, `check` exits 0.
 
 **File**: `tools/oxlint-nebius-plugin/index.js` (all five rules)
 
@@ -182,9 +204,12 @@ it into `bun run check`. **Land this before or with R-05/R-06** so the fix is it
 
 **Acceptance**: `bun run check` fails if a rule stops matching its must-fail fixture.
 
+**Met** — `check` runs the rule tests, and breaking a rule's match (verified: renaming the property the
+`no-effect-ignore` visitor matches) turns `bun run check` into exit 1 within the same command.
+
 ---
 
-### R-05 — `no-effect-ignore` (severity `error`) cannot see `pipe(Effect.ignore)` · `OPEN`
+### R-05 — `no-effect-ignore` (severity `error`) cannot see `pipe(Effect.ignore)` · `DONE (2026-09-25)`
 
 **File**: `tools/oxlint-nebius-plugin/index.js:57-82` vs `modules/resources/compute/v1/hosted.ts:1213`
 
@@ -208,6 +233,32 @@ or ban the import member outright so both forms are covered. Then decide what to
 `hosted.ts:1213` — log-and-continue explicitly rather than ignore.
 
 **Acceptance**: R-04's must-fail fixture for this rule includes the `pipe(Effect.ignore)` form.
+
+**Met** — `CASES['no-effect-ignore']` carries both forms as must-trip cases.
+
+**Fixed**: the rule matches a `MemberExpression` instead of a `CallExpression`, so the reference form is
+covered, and it distinguishes *audible* from *silent*: `Effect.ignore` is not inherently silent in v4 — it
+takes an options object and `log` emits the full `Cause`, defects included. Banning the member outright
+would have pushed the one legitimate use behind an `oxlint-disable` with a comment, so
+`Effect.ignore({ log, message })` is allowed and the report message names it. `hosted.ts`'s occurrence now
+uses that form, replacing `tapError` + bare `ignore`: the `tapError` only ever saw *typed* failures, so a
+**defect in the cleanup was discarded with no log line at all** — a second, quieter hole in the same line.
+
+**Two findings while fixing it**, recorded rather than left in a session log:
+
+- **`nebius/no-effect-catchallcause` bans an API that does not exist.** `grep -rl catchAllCause
+  node_modules/effect/dist` is empty for the pinned `4.0.0-rc.117`; v4 spells the capability
+  `catchCause`, which is deliberately NOT banned (best-effort cleanup — a destroy path must not fail on a
+  defect — is its legitimate use). So the rule can only ever fire on code that would not compile. It is
+  kept for now as a guard against the v3 name returning, with the measurement in its comment and a
+  must-fail fixture that proves the rule *fires* rather than that it protects. Next session would either
+  re-target it or retire it (the repo retires mechanisms rather than layering them).
+- **The fixed rule adds two `warn`-level hits in `tests/**`** (where `.oxlintrc.json` deliberately
+downgrades it): `tests/api-client/storage/BucketGrpcService.test.ts:284` and
+  `tests/helpers/cleanup.ts:118`. The latter **must not** be "fixed": it logs `redact(String(e))` and then
+  ignores, and `ignore({ log })` would emit the *unredacted* cause — the one site where the warn is a true
+  false positive. Escalating the rule to `error` for `tests/**` would therefore need that site exempted
+  with a reason first.
 
 ---
 
@@ -529,8 +580,10 @@ test asserting `DEADLINE_EXCEEDED` still recovers.
 
 ## Suggested sequencing
 
-1. **R-04 + R-05 + R-06** together — fix the guardrails, with the self-test that proves the fix. Also
-   cheap and it makes the rest of the list harder to regress.
+1. **R-04 + R-05 (both done 2026-09-25) + R-06** together — fix the guardrails, with the self-test that
+   proves the fix. Also cheap and it makes the rest of the list harder to regress. **R-06 is what is left
+   of this step**: the harness and the `Effect.ignore` rule are done, and `CASES` is where R-06 adds its
+   `() => Effect.succeed([])` rows.
 2. **R-03, R-13, R-11, R-17** — small, offline, no behavioural risk; batch into one commit.
 3. **R-02 (done 2026-09-25), R-07, R-09, R-14** — error-shape corrections, each independently testable.
    R-02 is the reference implementation for R-06's 31-site classification.

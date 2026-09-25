@@ -1233,14 +1233,16 @@ export const cleanupHostedRuntime = Effect.fn('cleanupHostedRuntime')(function* 
           { concurrency: 'unbounded' },
         ),
       ),
-      // Log failures loudly — a silent leak (BucketNotEmpty on the bucket
-      // delete) is worse than a noisy destroy.
-      Effect.tapError((error: unknown) =>
-        Effect.logWarning(
-          `Hosted assets S3 cleanup failed for ${output.hostedBucketName} (${output.assetPrefix}): ${messageOf(error)}`,
-        ),
-      ),
-      Effect.ignore,
+      // Best effort: report the failure and let the destroy continue — a silent leak
+      // (BucketNotEmpty on the bucket delete) is worse than a noisy destroy. `Effect.ignore({ log })`
+      // is v4's spelling of "ignore, audibly": it emits the full `Cause`, which the bare
+      // `Effect.ignore` it replaced did not — that one discarded a *defect* in the cleanup without a
+      // log line, since the `tapError` it was paired with only ever saw typed failures. Banned in
+      // its silent form by `nebius/no-effect-ignore`.
+      Effect.ignore({
+        log: 'Warn',
+        message: `Hosted assets S3 cleanup failed for ${output.hostedBucketName} (${output.assetPrefix})`,
+      }),
     )
   } else {
     yield* Effect.logWarning(
