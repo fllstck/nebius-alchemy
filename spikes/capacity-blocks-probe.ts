@@ -43,6 +43,7 @@ import {
 } from '../schemas/nebius/capacity/v1/capacity_block_group_service.ts'
 import { CapacityIntervalServiceClient } from '../schemas/nebius/capacity/v1/capacity_interval_service.ts'
 import { ListCapacityIntervalsRequest } from '../schemas/nebius/capacity/v1/capacity_interval_service.ts'
+import { requireProjectId, requireTenantId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -66,8 +67,7 @@ const authLayer = Layer.mergeAll(ProfileStoreLive, NebiusAuthModule.NebiusAuth).
 const program = Effect.gen(function* () {
   const allowance = yield* GrpcUtils.makeGrpcService(CapacityAllowanceServiceClient)
 
-  // The project id this repo's .env carries (verified via `nebius iam project get`).
-  const projectId = process.env.NEBIUS_PROJECT_ID ?? ''
+  const projectId = requireProjectId()
   console.log(`project: ${projectId}`)
 
   const listResult = yield* allowance
@@ -105,7 +105,7 @@ const program = Effect.gen(function* () {
   // while its neighbours accept it, so an unset page size is the safe default
   // unless probed. An error whose text is NOT about the page size also counts
   // as "the request shape is accepted" (the validation runs field by field).
-  const tenantId = process.env.NEBIUS_TENANT_ID ?? 'tenant-e00xt8cvv67054nhsj'
+  const tenantId = requireTenantId()
   const blockGroups = yield* (yield* GrpcUtils.makeGrpcService(CapacityBlockGroupServiceClient))
     .list(ListCapacityBlockGroupsRequest.fromPartial({ parentId: tenantId, pageSize: 100 }))
     .pipe(Effect.catch((e) => Effect.succeed({ items: [], nextPageToken: '', failed: String(e) })))

@@ -49,6 +49,7 @@ import * as SaBootstrapModule from '../modules/auth/sa-bootstrap.ts'
 import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import { tryPromiseRaw } from '../modules/effect-utils.ts'
 import { ClusterStatus_State, type Cluster } from '../schemas/nebius/mk8s/v1/cluster.ts'
+import { requireProjectId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -59,7 +60,7 @@ const { Mk8sGrpcService, Mk8sGrpcServiceLive } = Mk8sGrpcModule
 
 // Values reused from the 2026-09-23 probe session. `CLUSTER_ID` is optional —
 // when absent, the first `RUNNING` cluster in the project is used.
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
+const PROJECT_ID = requireProjectId()
 const CLUSTER_ID = process.env.CLUSTER_ID
 
 // Same auth-layer assembly as `spikes/mk8s-probe.ts`: resolves the ambient

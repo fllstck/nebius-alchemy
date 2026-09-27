@@ -35,6 +35,7 @@ import * as SaBootstrapModule from '../modules/auth/sa-bootstrap.ts'
 import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import { NodeGroupSpec } from '../schemas/nebius/mk8s/v1/node_group.ts'
 import { PreflightCheckContext_Action } from '../schemas/nebius/common/v1/preflight_check.ts'
+import { requireProjectId, requireSubnetId, requireOtherSubnetId, requireServiceAccountId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -43,12 +44,12 @@ const { fromAuthProvider } = NebiusCredentialsModule
 const { NebiusGrpcTransportLive } = GrpcTransportModule
 const { Mk8sGrpcService, Mk8sGrpcServiceLive } = Mk8sGrpcModule
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
-const SERVICE_ACCOUNT_ID = 'serviceaccount-e00r4d1ae86rb4n03a'
+const PROJECT_ID = requireProjectId()
+const SERVICE_ACCOUNT_ID = requireServiceAccountId()
 /** The pre-existing default subnet — what the cluster is created in. */
-const SUBNET_ORIGINAL = 'vpcsubnet-e00rf5t1vkbq0ew96x'
+const SUBNET_ORIGINAL = requireSubnetId()
 /** A second subnet, created for this probe only, to change `subnetId` *to*. */
-const SUBNET_OTHER = 'vpcsubnet-e00mnmn33gafa14s40'
+const SUBNET_OTHER = requireOtherSubnetId()
 const CLUSTER_NAME = 'alchemy-mk8s-write-probe'
 const NODE_GROUP_NAME = 'alchemy-mk8s-write-probe-ng'
 

@@ -39,6 +39,7 @@ import * as NebiusCredentialsModule from '../modules/Credentials.ts'
 import * as SaBootstrapModule from '../modules/auth/sa-bootstrap.ts'
 import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import * as NebiusDiskSchema from '../schemas/nebius/compute/v1/disk.ts'
+import { requireProjectId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -49,7 +50,7 @@ const { VpcGrpcService, VpcGrpcServiceLive } = VpcGrpcModule
 const { ComputeGrpcService, ComputeGrpcServiceLive } = ComputeGrpcModule
 const { DiskSpec } = NebiusDiskSchema
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
+const PROJECT_ID = requireProjectId()
 const NAME = 'alchemy-empty-label-probe'
 const DISK_NAME = 'alchemy-empty-label-probe-disk'
 

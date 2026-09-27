@@ -17,6 +17,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as InstanceSchema from './instance.schema.ts'
 import * as Ids from './ids.ts'
+import { assertHostedEnvKeys } from './hosted-env.ts'
 import * as Factory from '../../factory.ts'
 import { tryPromiseRaw } from '../../../effect-utils.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
@@ -534,6 +535,12 @@ export const NebiusInstanceProvider: Layer.Layer<
     // `exports` is stripped by validation below (it is not a schema field).
     yield* assertHostedEntryIsRunnable(id, news, (news as Record<string, unknown>).exports !== undefined)
 
+    // Hosted env keys (R-24), before validation and before the first API call: a key containing `=`, `\n` or
+    // `\r` is unrepresentable in the systemd EnvironmentFile the VM reads, so it must fail the deploy rather
+    // than quietly ship a different variable (see `hosted-env.ts` for the parser measurement). The same
+    // guard runs in `diff` (plan time) and in `uploadHostedArtifacts` (the binding-supplied half).
+    yield* assertHostedEnvKeys(news.env)
+
     // Validate user input at runtime
     news = yield* InstanceSchema.validateInstanceProps(news)
 
@@ -772,6 +779,12 @@ export const NebiusInstanceProvider: Layer.Layer<
     // dropping the runtime-only key from everything downstream.
     news = resolvableNews as typeof news
     if (!AlchemyDiff.isResolved(news)) return undefined
+
+    // Hosted env keys (R-24) — the plan-time half of the guard `reconcile` and `uploadHostedArtifacts` also
+    // run. Here rather than earlier because an `env` *value* may legitimately be an `Output`, and it is
+    // gated by `isResolved` above; the **keys** are always plain strings. Unconditional, not host-mode-only:
+    // `=`/newline in a key is never meaningful, and a low-level instance ignores `env` entirely.
+    yield* assertHostedEnvKeys(news.env)
 
     // Plan-time props validation — fails `alchemy plan` fast, BEFORE any API
     // call (same checks reconcile runs): boot-disk image required, 64 GiB

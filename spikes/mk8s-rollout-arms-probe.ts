@@ -54,6 +54,7 @@ import * as NebiusCredentialsModule from '../modules/Credentials.ts'
 import * as SaBootstrapModule from '../modules/auth/sa-bootstrap.ts'
 import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import * as NodeGroupSchema from '../schemas/nebius/mk8s/v1/node_group.ts'
+import { requireProjectId, requireSubnetId, requireServiceAccountId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -66,9 +67,9 @@ const { IamGrpcService, IamGrpcServiceLive } = IamGrpcModule
 const { VpcGrpcService, VpcGrpcServiceLive } = VpcGrpcModule
 const { NodeGroupSpec } = NodeGroupSchema
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
-const SERVICE_ACCOUNT_ID = process.env.NEBIUS_SA_ID ?? 'serviceaccount-e00r4d1ae86rb4n03a'
-const SUBNET_ID = process.env.NEBIUS_SUBNET_ID ?? 'vpcsubnet-e00rf5t1vkbq0ew96x'
+const PROJECT_ID = requireProjectId()
+const SERVICE_ACCOUNT_ID = requireServiceAccountId()
+const SUBNET_ID = requireSubnetId()
 const PLATFORM = 'cpu-d3'
 const PRESET = '2vcpu-8gb'
 /** A different, real preset of the same platform — the control that MUST replace the node. */

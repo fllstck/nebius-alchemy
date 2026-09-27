@@ -12,7 +12,12 @@ import {
   hostedEnv,
   isTransientS3Error,
   cleanupHostedRuntime,
+  uploadHostedArtifacts,
 } from '../../../../modules/resources/compute/v1/hosted.ts'
+import {
+  assertHostedEnvKeys,
+  invalidHostedEnvKeys,
+} from '../../../../modules/resources/compute/v1/hosted-env.ts'
 import { GrpcError } from '../../../../modules/api-client/grpc-utils.ts'
 import { mockIamLayer, notFoundError, protoMetadata, recordingLogs, testConfigLayer } from '../../../helpers/mocks.ts'
 
@@ -320,6 +325,64 @@ describe('hosted hostedEnv — the binding → shipped env file seam', () => {
   test('defaults PORT to 3000 when the instance declares none', () => {
     const env = hostedEnv({ stackName: 'S', stage: 'live_t', port: undefined, userEnv: undefined, bindings: [] })
     expect(env.PORT).toBe(3000)
+  })
+})
+
+/**
+ * R-24 — an env **key** containing `=`, `\n` or `\r` is unrepresentable in the systemd `EnvironmentFile=`
+ * the VM reads: the parser ends a key at the first `=` and an assignment at a newline, so the process would
+ * receive a *different* variable than the one configured, with nothing in the deploy output saying so.
+ *
+ * Three assertions, because the three call sites see different key sources: the predicate (both plan-time
+ * guards), and the compose-time backstop, which is the only place a **binding-supplied** key is visible.
+ * The backstop test runs `uploadHostedArtifacts` and relies on the guard preceding `makeS3Client`, so no
+ * S3 request is ever attempted.
+ */
+describe('hosted env keys (R-24) — a key systemd cannot read back must fail rather than ship', () => {
+  test('rejects exactly the three structural characters, and only those', () => {
+    expect(invalidHostedEnvKeys({ 'KE\nY': 'v', 'A=B': 'v', 'C\rD': 'v' })).toEqual(['KE\nY', 'A=B', 'C\rD'])
+    // The negative half is the point of the rule: this is not an env-name charset.
+    expect(invalidHostedEnvKeys({ 'MY.KEY': 'v', 'MY-KEY': 'v', 'MY_KEY': 'v', MIXED123: 'v' })).toEqual([])
+    expect(invalidHostedEnvKeys(undefined)).toEqual([])
+    expect(invalidHostedEnvKeys({})).toEqual([])
+  })
+
+  test('the guard names the offending key — JSON-encoded, so a newline is visible in the message', async () => {
+    const error = await Effect.runPromise(assertHostedEnvKeys({ 'KE\nY': 'v' }).pipe(Effect.flip))
+    expect(error._tag).toBe('InvalidHostedEnvKey')
+    expect(error.keys).toEqual(['KE\nY'])
+    expect(error.message).toContain('"KE\\nY"')
+  })
+
+  test('the compose-time backstop rejects a key only a BINDING could inject', async () => {
+    // `hostedEnv` is where a binding's `data.env` joins the map — the plan-time guards in `instance.ts`
+    // cannot see these keys at all, which is why the writer re-checks the final map.
+    const env = hostedEnv({
+      stackName: 'S',
+      stage: 'live_t',
+      port: undefined,
+      userEnv: undefined,
+      bindings: [{ sid: 'Nebius.storage.v1.Bucket.GetObject', data: { env: { 'KE\nY': 'v' } } }],
+    })
+    const error = await Effect.runPromise(
+      uploadHostedArtifacts({
+        assetPrefix: 'compute/x',
+        bucketName: 'b',
+        region: 'eu-north1',
+        accessKeyId: 'a',
+        secretAccessKey: 'b',
+        files: [],
+        env,
+      }).pipe(Effect.flip),
+    )
+    expect(error._tag).toBe('InvalidHostedEnvKey')
+    if (error._tag !== 'InvalidHostedEnvKey') throw new Error(`expected InvalidHostedEnvKey, got ${error._tag}`)
+    expect(error.keys).toEqual(['KE\nY'])
+  })
+
+  test('positive control — an ordinary map is written unchanged (the guard is not a blanket rejection)', () => {
+    expect(invalidHostedEnvKeys({ MY_KEY: 'v' })).toEqual([])
+    expect(renderEnvFile({ MY_KEY: 'v' })).toBe("MY_KEY='v'")
   })
 })
 

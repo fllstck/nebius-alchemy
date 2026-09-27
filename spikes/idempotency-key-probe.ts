@@ -54,6 +54,7 @@ import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import * as AccessSchema from '../schemas/nebius/iam/v1/access.ts'
 import * as StaticKeySchema from '../schemas/nebius/iam/v1/static_key.ts'
 import * as StaticKeyServiceSchema from '../schemas/nebius/iam/v1/static_key_service.ts'
+import { requireProjectId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -64,7 +65,7 @@ const { IamGrpcService, IamGrpcServiceLive } = IamGrpcModule
 const { endpointFor } = EndpointsModule
 const { NebiusCredentials } = NebiusCredentialsModule
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
+const PROJECT_ID = requireProjectId()
 const RUN = new Date().toISOString().replace(/[:.]/g, '-')
 const SA_PREFIX = 'alchemy-idem-probe'
 const SA_NAME = `${SA_PREFIX}-${RUN}`

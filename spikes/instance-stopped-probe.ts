@@ -29,8 +29,9 @@ export default Alchemy.Stack(
   'InstanceStoppedProbe',
   { providers: Nebius.providers(), state: Alchemy.localState() },
   Effect.gen(function* () {
-    const subnetId = yield* Config.String('SUBNET_ID')
-    const serviceAccountId = yield* Config.String('NEBIUS_SA_ID')
+    // The names `spikes/spike-env.ts` requires, so one value in `.env` serves every probe (R-23).
+    const subnetId = yield* Config.String('NEBIUS_SUBNET_ID')
+    const serviceAccountId = yield* Config.String('NEBIUS_SERVICE_ACCOUNT_ID')
     // The only difference between the two runs: whether the prop is pinned at all.
     const stopped = process.env.PROBE_STOPPED === '1'
 

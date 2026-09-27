@@ -796,19 +796,21 @@ fixtures (R-04) to be worth trusting. Worth doing the next time the plugin is to
 `tests/resources/actions/capacity-discovery.test.ts`. The fixtures file's comment names the leak but
 deliberately does **not** repeat the literal, so the acceptance grep stays at zero.
 
-**Met**: `grep -rn "project-e00eq" tests/` → **0**.
+**Met, and the sweep was too narrow** (see R-23): `grep -rn "<the project-id literal>" tests/` → **0**.
 
 **Files**: `tests/api-client/mk8s-requests.test.ts:30` · `tests/api-client/nvl-instance-group-list.test.ts:15,18` ·
 `tests/resources/actions/capacity-discovery.test.ts:108,305,337,370,371`
 
-**Evidence**: `project-e00eq4g7pr00j746m1fttd` — the local `.env` value, hardcoded in tracked test
-fixtures used as opaque strings.
+**Evidence**: the local `.env` project-id value — not reproduced here (R-23: this line *was* one of the
+24 tracked copies, and the only one in a non-`tests/` file that R-18's acceptance did not look at), which
+was hardcoded in tracked test fixtures used as opaque strings.
 
 **Fix**: one exported fixture constant (e.g. `tests/helpers/fixtures.ts` →
 `TEST_PROJECT_ID = 'project-test-1'`, matching `tests/helpers/mocks.ts:38`) and use it everywhere.
 `project-1` already appears in the same file (`nvl-instance-group-list.test.ts:24`) — pick one.
 
-**Acceptance**: `grep -rn "project-e00eq" tests/ → 0`.
+**Acceptance**: `grep -rn "<the project-id literal>" tests/ → 0`. **Widened by R-23** to the whole tracked
+tree — a path prefix was the scope, not a rule, and `spikes/` is where the literal actually survived.
 
 ---
 
@@ -1068,7 +1070,48 @@ standing unmeasured and unclaimed rather than extrapolated from the relations ab
 
 ---
 
-### R-23 — R-18's leak sweep was scoped to `tests/`, so the real project id sits in 23 tracked spike files · `OPEN`
+### R-23 — R-18's leak sweep was scoped to `tests/`, so the real project id sat in 23 tracked spike files · `DONE (2026-09-27)`
+
+**Fixed**: one shared helper, `spikes/spike-env.ts`, exporting `requireProjectId()`, `requireTenantId()`,
+`requireSubnetId()`, `requireOtherSubnetId()` and `requireServiceAccountId()` — each reads `process.env`
+and `process.exit(1)`s naming the variable and the reason, so there is no `??` left anywhere in `spikes/`
+to fall through to a committed value. All 23 offenders now import it; the two probes that already carried
+the inline guard (`static-key-parent-probe.ts`, `parent-delete-cascade-probe.ts`) were folded into it so
+there is exactly one copy; the `ISSUES.md` literal is gone.
+
+Three things the sweep turned up beyond the entry's own scope, all the same class:
+
+- **The tenant id was committed too** (`tenant-e00…` in `spikes/cpu-presets.ts` and
+  `spikes/capacity-blocks-probe.ts`) — the value that decides which tenant `alchemy unsafe nuke` fans out
+  across. Removed like the project id; `requireTenantId()` names where to get it.
+- **The subnet and service-account ids were committed** (`vpcsubnet-e00…` in 13 files,
+  `serviceaccount-e00…` in 10) — not credentials, but a committed default is the same silent choice. Both
+  now come from the helper, and `mk8s-write-probe.ts`'s *second* subnet — the one it changes `subnetId`
+  **to** — is `NEBIUS_SUBNET_ID_OTHER`, which is what makes the two distinguishable to a reader.
+- **`NEBIUS_SA_ID` could not be reused as the probe's variable name**: that is Alchemy's own SA-key
+  credential variable, and `AuthProvider.ts` records that setting only part of the triple (`NEBIUS_SA_ID` +
+  `NEBIUS_SA_KEY_ID` + `NEBIUS_SA_PRIVATE_KEY`) “hijacked resolution and killed provider loading”. A probe
+  whose error message told you to export `NEBIUS_SA_ID` would have broken the deploy it was probing, so the
+  probe's variable is `NEBIUS_SERVICE_ACCOUNT_ID` and the helper says why. `NEBIUS_TENANT_ID` is the mirror
+  case in the other direction: production code reads that name, so it is documented as an export-for-the-run
+  variable rather than being written into the shared, gitignored `.env` — a stale tenant there would not
+  fail loudly the way a stale subnet id does, it would enumerate the wrong tenant. The local `.env` gained
+  the three probe-only values so the existing probes keep running.
+
+**Acceptance (run)**: the literal is gone from the whole tracked tree —
+`git grep -nE "project-e00[0-9a-z]{10,}" | wc -l` → **0** (was 24: 23 spikes + this file; the pattern is
+written so it cannot match its own source) — and no probe defaults a tenant id:
+`git grep -nE "\?\? *'(project|tenant|serviceaccount|vpcsubnet)-e0[0-9a-z]{6,}" -- spikes/` → **0**
+(was 23). The loud path was exercised, not assumed: with `NEBIUS_PROJECT_ID=` empty,
+`requireProjectId()` prints `NEBIUS_PROJECT_ID is required — no default is committed (R-18/R-23). …` and
+exits **1**, while with the local `.env` present the same import resolves all four ids. R-23's rule replaces
+R-18's path-scoped acceptance (widened above), which is the actual fix for the recurring shape this file
+keeps finding: a grep that checks where the author looked is not a rule about the value.
+
+**Not changed**: `ISSUES.md`'s *measurement* ids (`statickey-e00rgp93kahkm10hs2`, …) and
+`tests/…/instance-minimal-online.test.ts`'s `project-e00public-images` — the first are recorded probe
+readings (deleted resources, quoted as evidence), the second is a synthetic fixture. Neither is a default a
+probe silently falls back to, which is the shape this entry is about.
 
 **Files**: 23 of the 35 tracked files under `spikes/` (one line each) + `ISSUES.md:797` (in R-18's own
 *Evidence* line, which quotes the literal while the entry's prose promises it does not)
@@ -1095,7 +1138,51 @@ spikes still run (each fails loudly with "NEBIUS_PROJECT_ID is required" when it
 than silently probing `project-1`). The literal stays in git history either way; the point is to stop
 adding it, and to make the run fail loudly instead of reaching for a committed default.
 
-### R-24 — A newline (or `=`) in an env **key** is silently misparsed · `OPEN`
+### R-24 — A newline (or `=`) in an env **key** is silently misparsed · `DONE (2026-09-27)`
+
+**Fixed**: the predicate and its error moved to a new pure module,
+`modules/resources/compute/v1/hosted-env.ts` — `invalidHostedEnvKeys()` (the three structural characters),
+`assertHostedEnvKeys()` and the tagged `InvalidHostedEnvKey { keys, message }`. It imports nothing but
+`effect/Schema` + `effect/Effect`, because the D8 guard forbids a static import of `hosted.ts` from
+`instance.ts` (rolldown/vite + the gRPC api-clients would land in every runtime bundle) — so neither side
+owns it, and both import it.
+
+Three call sites, one predicate — the key sources differ, so all three are needed:
+
+1. **`diff`, after `AlchemyDiff.isResolved`** (plan-time; an `env` *value* may legitimately be an `Output`,
+   while the *keys* are always literal strings).
+2. **The top of `reconcile`**, before props validation and before the `ComputeGrpcService` yield — so a
+   deploy fails before this resource's first API call and names the key rather than the API's silence.
+3. **`uploadHostedArtifacts`** — the compose-time backstop on the final map, which is the *only* place a
+   **binding-supplied** key exists (`hostedEnv` merges `binding.data.env` there, and nothing reaches the
+   writer without passing through it). `resolveHostedRuntime`'s error union gained `InvalidHostedEnvKey`
+   for it.
+
+**Two places it deliberately does NOT fire, with the reason recorded**:
+
+- **`transformProps`**, even though it is the only hook that runs at *plan* time for a greenfield resource
+  (and the one that declares the hosted identity's sibling bucket/key/permit). Alchemy evaluates
+  `transformProps` for **every** command that builds the graph — `alchemy destroy` included — so a props
+  failure there would make a stack with a bad env key *undestroyable*: the same "never block the delete"
+  doctrine R-02 and R-19 follow (a blocked delete leaks the parents).
+- **`read`** (the greenfield adoption probe, which is what lets `alchemy plan` fail fast for the *boot-disk*
+  validators). `Factory.makeCrudRead`'s `validate` hook is typed
+  `Effect.Effect<unknown, PropsValidationError, unknown>`; raising `InvalidHostedEnvKey` through it means
+  widening that channel for all 40 resources, which does not belong in an S-sized fix. The honest residual:
+  a **first** `alchemy plan` of a hosted instance does not reject the key; the deploy does, in `reconcile`,
+  before this resource calls the API. This is the same documented gap `assertHostedEntryIsRunnable` carries
+  (alchemy calls `diff` only for resources that already have state).
+
+**Acceptance (run)**: 8 new tests, and the four required shapes are among them — the predicate refusing
+`\n`, `\r` and `=`; the **negative control** that `MY.KEY`/`MY-KEY`/`MY_KEY` are
+accepted (so this stays three impossible characters, not an env-name charset); `diff` propagating the
+**tagged** error with `keys` equal to the offending key for both `{'KE\nY': 'v'}` and `{'A=B': 'v'}`;
+`reconcile` refusing before any API call (asserted with **no layers provided**, so a guard that drifted
+past the `ComputeGrpcService` yield would fail the test instead of passing vacuously); and the compose-time
+backstop rejecting a key only a binding could inject, through `hostedEnv` + `uploadHostedArtifacts` (the
+check precedes `makeS3Client`, so no S3 request is made). An ordinary env change still plans as
+`{ action: 'update', stables: ['id', 'parentId', 'name'] }` — the guard is not a blanket rejection.
+`bun run check` clean · `bun test` **1687 pass / 75 skip / 0 fail**.
 
 **File**: `modules/resources/compute/v1/hosted.ts` (`quoteEnvValue`, `renderEnvFile`) — the **key** side,
 which `quoteEnvValue` never touched (it quotes values only)
@@ -1164,9 +1251,14 @@ done too (its measurement is `spikes/static-key-parent-probe.ts`). R-10 and R-12
    (`FAILED_PRECONDITION`, naming the child), and nothing was `ORPHANED` — the one reading that would
    make a blind `list` a silent leak. No provider behaviour changed; the eight comments now carry their
    own reading and the table lives in AGENTS.md.
-8. **R-23, R-24** — both offline and small: R-23 is the 23 tracked `spikes/` files that still carry the
-   maintainer's real project id (no API call; the shape is already in the two new probes), R-24 the env-key
-   guard whose implementation shapes are spelled out in its entry.
+8. **R-23 — done 2026-09-27**; **R-24 — done 2026-09-27** — both offline and small. R-23 turned out to be
+   the project id *plus* the tenant, subnet and service-account ids (23 → 27 files), one shared
+   `spikes/spike-env.ts`, and two footguns the fix had to avoid: `NEBIUS_SA_ID` belongs to Alchemy's SA-key
+   credentials (`AuthProvider.ts`), and `NEBIUS_TENANT_ID` is read by the nuke fan-out, so neither could
+   become the probes' variable. R-24's env-key guard landed in a new pure `hosted-env.ts` with three call
+   sites, and its two deliberate *non*-sites (`transformProps`, `read`) are recorded in its entry — the
+   first because a props failure there would block a destroy.
+9. **R-10, R-12** remain open from step 6, then **R-08** last as originally ordered.
 9. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 

@@ -33,6 +33,7 @@ import * as NebiusAuthModule from '../modules/AuthProvider.ts'
 import * as NebiusCredentialsModule from '../modules/Credentials.ts'
 import * as SaBootstrapModule from '../modules/auth/sa-bootstrap.ts'
 import * as SaTokenModule from '../modules/auth/sa-token.ts'
+import { requireProjectId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -49,7 +50,7 @@ const { KmsGrpcService, KmsGrpcServiceLive } = KmsGrpcModule
 const { MysteryBoxGrpcService, MysteryBoxGrpcServiceLive } = MysteryboxGrpcModule
 const { BillingGrpcService, BillingGrpcServiceLive } = BillingGrpcModule
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
+const PROJECT_ID = requireProjectId()
 
 /** Anything with proto metadata — every resource in this package. */
 interface HasMetadata {

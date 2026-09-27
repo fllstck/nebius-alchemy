@@ -41,6 +41,7 @@ import type { ResourceBinding } from 'alchemy'
 import type { Region } from '../../regions.schema.ts'
 
 import * as InstanceSchema from './instance.schema.ts'
+import { assertHostedEnvKeys, InvalidHostedEnvKey } from './hosted-env.ts'
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -581,6 +582,10 @@ export const quoteEnvValue = (value: unknown): string => {
  * `EnvironmentFile=` reads it back intact (`quoteEnvValue`). The newline that separates two assignments
  * is therefore only a separator because it follows a closing quote; nothing here may assume
  * "one line per assignment".
+ *
+ * A *key* has no such quoting, so it is validated BEFORE it gets here (R-24): `=`, `\n` and `\r` are
+ * structural to systemd's parser, and `hosted-env.ts` rejects them at plan time and at the compose-time
+ * boundary. This function therefore assumes well-formed keys and stays a pure string writer.
  */
 export const renderEnvFile = (env: Record<string, unknown>): string =>
   Object.entries(env)
@@ -898,7 +903,15 @@ export const uploadHostedArtifacts = Effect.fn('uploadHostedArtifacts')(function
   secretAccessKey: string
   files: Array<Bundle.BundleFile>
   env: Record<string, unknown>
-}): Effect.fn.Return<{ manifestKey: string; manifest: HostedManifest }, HostedRuntimeError> {
+}): Effect.fn.Return<
+  { manifestKey: string; manifest: HostedManifest },
+  HostedRuntimeError | InvalidHostedEnvKey
+> {
+  // Compose-time backstop (R-24): this is the only place the env map is complete — a binding's `data.env`
+  // is merged in by `hostedEnv` below, and binding keys exist nowhere the plan-time guards can see. No call
+  // path reaches the writer without passing through here, so an unrepresentable key cannot ship.
+  yield* assertHostedEnvKeys(env)
+
   const client = makeS3Client(region, bucketName, accessKeyId, secretAccessKey)
   const plan = planHostedUploads({ assetPrefix, files, env })
   if (!plan.manifest) {
@@ -1050,6 +1063,7 @@ export const resolveHostedRuntime = Effect.fn('resolveHostedRuntime')(function* 
 }): Effect.fn.Return<
   NebiusHostedRuntimeState,
   | HostedRuntimeError
+  | InvalidHostedEnvKey
   | BucketRegionMismatch
   | Bundle.BundleError
   | PlatformError.PlatformError

@@ -37,6 +37,7 @@ import * as NebiusCredentialsModule from '../modules/Credentials.ts'
 import * as SaBootstrapModule from '../modules/auth/sa-bootstrap.ts'
 import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import * as InstanceSchema from '../schemas/nebius/compute/v1/instance.ts'
+import { requireProjectId, requireSubnetId, requireServiceAccountId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -47,9 +48,9 @@ const { ComputeGrpcService, ComputeGrpcServiceLive } = ComputeGrpcModule
 const { IamGrpcService, IamGrpcServiceLive } = IamGrpcModule
 const { VpcGrpcService, VpcGrpcServiceLive } = VpcGrpcModule
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
-const SERVICE_ACCOUNT_ID = process.env.NEBIUS_SA_ID ?? 'serviceaccount-e00r4d1ae86rb4n03a'
-const SUBNET_ID = process.env.NEBIUS_SUBNET_ID ?? 'vpcsubnet-e00rf5t1vkbq0ew96x'
+const PROJECT_ID = requireProjectId()
+const SERVICE_ACCOUNT_ID = requireServiceAccountId()
+const SUBNET_ID = requireSubnetId()
 const INSTANCE_NAME = 'alchemy-pricing-stopped-probe'
 
 const authLayer = Layer.mergeAll(ProfileStoreLive, NebiusAuthModule.NebiusAuth).pipe(

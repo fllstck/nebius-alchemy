@@ -10,7 +10,15 @@ import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 import * as BillingIds from '../../../../modules/resources/billing/v1/ids.ts'
 import { GpuClusterId, InstanceId } from '../../../../modules/resources/compute/v1/ids.ts'
 import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
-import { readInput, resolveProvider, runDiff, runEffect, diffInput } from '../../../helpers/provider.ts'
+import {
+  readInput,
+  resolveProvider,
+  runDiff,
+  runDiffExpectingError,
+  runReconcileExpectingError,
+  runEffect,
+  diffInput,
+} from '../../../helpers/provider.ts'
 import { mockComputeLayer } from '../../../helpers/mocks.ts'
 
 const { describe, expect, test } = BunTest
@@ -342,6 +350,24 @@ describe('Nebius.compute.v1.Instance', () => {
       } finally {
         await rm(entry, { force: true })
       }
+    })
+  })
+
+  /**
+   * R-24, the apply-time half. `reconcile` is the hook that can reject a **greenfield** deploy — alchemy
+   * never calls `diff` for a resource with no persisted state — so the same guard runs there, before the
+   * first API call and before the hosted identity's sibling resources have anything to converge.
+   *
+   * No layers are provided on purpose: the assertion is on the *tag*, so a guard that had drifted later
+   * (past the `ComputeGrpcService` yield, say) would surface as a service/config failure instead and this
+   * test would fail rather than pass vacuously.
+   */
+  describe('hosted env keys are refused at apply time too (R-24)', () => {
+    test('reconcile refuses an unrepresentable key before any API call', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const error = await runReconcileExpectingError(svc, { ...validInstanceProps, env: { 'A=B': 'v' } })
+      expect(error._tag).toBe('InvalidHostedEnvKey')
+      expect(error.keys).toEqual(['A=B'])
     })
   })
 
@@ -849,6 +875,42 @@ describe('Nebius.compute.v1.Instance', () => {
         }).pipe(Effect.flip),
       )
       expect(result._tag).toBe('PropsValidationError')
+    })
+
+    // ── Hosted env keys (R-24) — a key systemd cannot read back fails the PLAN, not the apply ──────
+    //
+    // The VM reads the env file through systemd's `EnvironmentFile=`, whose parser ends a key at the first
+    // `=` and an assignment at a newline. There is no quoting on the key side (unlike values: R-19), so a
+    // key carrying either character silently becomes a *different* variable. Three cases: two refusals and
+    // the negative control that keeps the rule from becoming an env-name charset.
+    test('plan-time: an env key containing a newline is refused, and the key is named', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const error = await runDiffExpectingError(
+        svc,
+        { ...validInstanceProps, env: { 'KE\nY': 'v' } },
+        validInstanceProps,
+      )
+      expect(error._tag).toBe('InvalidHostedEnvKey')
+      expect(error.keys).toEqual(['KE\nY'])
+      // JSON-encoded in the message, because a newline in a key is invisible in a log line otherwise.
+      expect(error.message).toContain('"KE\\nY"')
+    })
+
+    test('plan-time: `=` in a key is refused — the value would absorb the rest of the line', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const error = await runDiffExpectingError(svc, { ...validInstanceProps, env: { 'A=B': 'v' } }, validInstanceProps)
+      expect(error._tag).toBe('InvalidHostedEnvKey')
+      expect(error.keys).toEqual(['A=B'])
+    })
+
+    test('an ordinary env change still plans as an in-place update (the guard rejects only the 3 characters)', async () => {
+      const svc = await resolveProvider(Module.NebiusInstance.Provider, Module.NebiusInstanceProvider)
+      const result = await runDiff(
+        svc,
+        { ...validInstanceProps, env: { 'MY.KEY': 'a', 'MY-KEY': 'b', MY_KEY: 'c' } },
+        validInstanceProps,
+      )
+      expect(result).toEqual({ action: 'update', stables: ['id', 'parentId', 'name'] })
     })
 
     test('diff fails fast at plan time on a boot disk without an image', async () => {

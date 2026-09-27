@@ -22,6 +22,7 @@ import * as NebiusAuthModule from '../modules/AuthProvider.ts'
 import * as NebiusCredentialsModule from '../modules/Credentials.ts'
 import * as SaBootstrapModule from '../modules/auth/sa-bootstrap.ts'
 import * as SaTokenModule from '../modules/auth/sa-token.ts'
+import { requireTenantId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -30,7 +31,7 @@ const { fromAuthProvider } = NebiusCredentialsModule
 const { NebiusGrpcTransportLive } = GrpcTransportModule
 const { CapacityGrpcService, CapacityGrpcServiceLive } = CapacityGrpcModule
 
-const TENANT_ID = process.env.NEBIUS_TENANT_ID ?? 'tenant-e00xt8cvv67054nhsj'
+const TENANT_ID = requireTenantId()
 
 const authLayer = Layer.mergeAll(ProfileStoreLive, NebiusAuthModule.NebiusAuth).pipe(
   Layer.provide(CredentialsStoreLive),

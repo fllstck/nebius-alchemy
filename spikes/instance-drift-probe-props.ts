@@ -18,11 +18,12 @@
  */
 import * as Nebius from '@fllstck/nebius-alchemy'
 import type * as InstanceSchema from '../modules/resources/compute/v1/instance.schema.ts'
+import { requireProjectId, requireSubnetId, requireServiceAccountId } from './spike-env.ts'
 
-export const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
+export const PROJECT_ID = requireProjectId()
 /** The pre-existing default subnet (see the 2026-09-23 probes). */
-export const SUBNET_ID = process.env.NEBIUS_SUBNET_ID ?? 'vpcsubnet-e00rf5t1vkbq0ew96x'
-export const SERVICE_ACCOUNT_ID = process.env.NEBIUS_SA_ID ?? 'serviceaccount-e00r4d1ae86rb4n03a'
+export const SUBNET_ID = requireSubnetId()
+export const SERVICE_ACCOUNT_ID = requireServiceAccountId()
 export const INSTANCE_NAME = process.env.PROBE_INSTANCE_NAME ?? 'alchemy-instance-drift-probe'
 
 /**

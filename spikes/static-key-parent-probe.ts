@@ -55,6 +55,7 @@ import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import * as AccessSchema from '../schemas/nebius/iam/v1/access.ts'
 import * as StaticKeySchema from '../schemas/nebius/iam/v1/static_key.ts'
 import * as StaticKeyServiceSchema from '../schemas/nebius/iam/v1/static_key_service.ts'
+import { requireProjectId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -63,13 +64,9 @@ const { IamGrpcService, IamGrpcServiceLive } = IamGrpcModule
 const { NebiusGrpcTransportLive } = GrpcTransportModule
 const { fromAuthProvider } = NebiusCredentialsModule
 
-// No default: the previous probes hardcoded the maintainer's real project id (R-18, whose acceptance
-// grep was scoped to `tests/` and so missed `spikes/`). Read it from the environment.
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID
-if (!PROJECT_ID) {
-  console.error('NEBIUS_PROJECT_ID is required — no default is committed (R-18). Set it in .env.')
-  process.exit(1)
-}
+// R-23: read from the environment, never a committed default — the shared form of what used to be an
+// inline copy of this guard in every probe.
+const PROJECT_ID = requireProjectId()
 
 const RUN = new Date().toISOString().replace(/[:.]/g, '-').toLowerCase()
 const PREFIX = 'alchemy-sk-parent-probe'

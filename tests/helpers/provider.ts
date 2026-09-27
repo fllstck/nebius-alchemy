@@ -111,6 +111,23 @@ export const runDiff = async (
 }
 
 /**
+ * Run a provider's `diff` expecting it to FAIL, and return the error.
+ *
+ * `Effect.flip` swaps the channels, so an unexpected *success* (or a `undefined` "noop", which is also a
+ * success) surfaces as a thrown value and fails the test rather than passing silently — the point of the
+ * helper. Used by the plan-time guards, whose whole contract is "fail the plan, not the apply".
+ */
+export const runDiffExpectingError = async (
+  // oxlint-disable-next-line no-explicit-any
+  provider: { diff?: (input: any) => Effect.Effect<any, any, any> },
+  news: unknown,
+  olds?: unknown,
+): Promise<any> => {
+  if (!provider.diff) throw new Error('provider has no diff lifecycle')
+  return runEffect(provider.diff(diffInput(news, olds)).pipe(Effect.flip))
+}
+
+/**
  * Engine bookkeeping every lifecycle input carries and no Nebius lifecycle
  * inspects. Kept in one place so lifecycle tests need no per-test casts (the
  * provider lifecycle inputs are strictly typed — props, branded attribute ids,
@@ -148,6 +165,30 @@ export const runReconcile = async (
   let effect: Effect.Effect<any, any, any> = provider.reconcile({ ...bookkeeping(), news: props, olds, output })
   for (const provide of layers) effect = provide(effect)
   return runEffect(effect)
+}
+
+/**
+ * Run a provider's `reconcile` lifecycle expecting a **typed failure**, and return that failure.
+ *
+ * The apply-time counterpart of {@link runDiffExpectingError}: some guards exist in both because alchemy
+ * never calls `diff` for a resource with no persisted state (see `makeCrudRead`'s greenfield note), so
+ * `reconcile` is the only hook that can reject a *first* deploy.
+ */
+// oxlint-disable-next-line no-explicit-any — approved: test helper (see runDiff)
+export const runReconcileExpectingError = async (
+  // oxlint-disable-next-line no-explicit-any
+  provider: { reconcile?: (input: any) => Effect.Effect<any, any, any> },
+  props: unknown,
+  output?: { id: string },
+  olds?: unknown,
+  // oxlint-disable-next-line no-explicit-any
+  ...layers: Array<(effect: Effect.Effect<any, any, any>) => Effect.Effect<any, any, any>>
+): Promise<any> => {
+  if (!provider.reconcile) throw new Error('provider has no reconcile lifecycle')
+  // oxlint-disable-next-line no-explicit-any
+  let effect: Effect.Effect<any, any, any> = provider.reconcile({ ...bookkeeping(), news: props, olds, output })
+  for (const provide of layers) effect = provide(effect)
+  return runEffect(Effect.flip(effect))
 }
 
 /**

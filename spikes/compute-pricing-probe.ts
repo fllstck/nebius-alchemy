@@ -48,6 +48,7 @@ import * as InstanceSchema from '../schemas/nebius/compute/v1/instance.ts'
 import * as PricingPolicySchema from '../schemas/nebius/billing/v1/pricing_policy.ts'
 import * as PricingPolicyServiceSchema from '../schemas/nebius/billing/v1/pricing_policy_service.ts'
 import * as MetadataSchema from '../schemas/nebius/common/v1/metadata.ts'
+import { requireProjectId, requireSubnetId, requireServiceAccountId } from './spike-env.ts'
 
 const { PricingPolicyStatus_State } = PricingPolicySchema
 
@@ -60,9 +61,9 @@ const { ComputeGrpcService, ComputeGrpcServiceLive } = ComputeGrpcModule
 const { IamGrpcService, IamGrpcServiceLive } = IamGrpcModule
 const { VpcGrpcService, VpcGrpcServiceLive } = VpcGrpcModule
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
-const SERVICE_ACCOUNT_ID = process.env.NEBIUS_SA_ID ?? 'serviceaccount-e00r4d1ae86rb4n03a'
-const SUBNET_ID = process.env.NEBIUS_SUBNET_ID ?? 'vpcsubnet-e00rf5t1vkbq0ew96x'
+const PROJECT_ID = requireProjectId()
+const SERVICE_ACCOUNT_ID = requireServiceAccountId()
+const SUBNET_ID = requireSubnetId()
 const INSTANCE_NAME = 'alchemy-pricing-probe'
 const POLICY_NAME = 'alchemy-pricing-probe-policy'
 /** The advisor shows preemptible H100 capacity in this tenant, so it is the platform a bid can name. */

@@ -29,6 +29,7 @@ import * as SaTokenModule from '../modules/auth/sa-token.ts'
 import * as MetadataSchema from '../schemas/nebius/common/v1/metadata.ts'
 import * as PricingPolicySchema from '../schemas/nebius/billing/v1/pricing_policy.ts'
 import * as ServiceSchema from '../schemas/nebius/billing/v1/pricing_policy_service.ts'
+import { requireProjectId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -36,7 +37,7 @@ const { CredentialsStoreLive } = AlchemyCredentials
 const { fromAuthProvider } = NebiusCredentialsModule
 const { NebiusGrpcTransportLive } = GrpcTransportModule
 
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID ?? 'project-e00eq4g7pr00j746m1fttd'
+const PROJECT_ID = requireProjectId()
 const POLICY_NAME = 'alchemy-billing-update-probe'
 const PLATFORM = 'gpu-h100-sxm'
 

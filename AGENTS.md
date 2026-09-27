@@ -718,6 +718,15 @@ nebius storage bucket list
 - Use `AlchemyTestUtilities.make({ providers: ... as any })` for integration tests
 - Use sequential `stack.deploy()` calls for quota-sensitive resources
 - Not all API responses echo back provided fields — don't assert all input fields in output
+- **No tenant id is ever committed as a fallback, in a test OR a spike.** `NEBIUS_PROJECT_ID ?? '<the real
+  project id>'` silently targets the author's tenant for everyone else — and R-18's acceptance was scoped
+  to `tests/`, so 23 copies survived in `spikes/` until R-23. Read ids through `spikes/spike-env.ts`
+  (`requireProjectId()` / `requireTenantId()` / `requireSubnetId()` / `requireServiceAccountId()`), which
+  `process.exit(1)`s naming the variable; the check that keeps it honest greps the **whole tracked tree**,
+  not a directory that happens to be where the author looked. The probe's service-account variable is
+  `NEBIUS_SERVICE_ACCOUNT_ID`, deliberately not `NEBIUS_SA_ID` (that one is Alchemy's SA-key credential
+  variable — setting only part of the triple breaks provider loading), and `NEBIUS_TENANT_ID` stays
+  export-for-the-run rather than `.env`, because the nuke fan-out reads that same name.
 
 ### Package manifest — framework = peer, SDKs = dependencies
 
@@ -1070,7 +1079,18 @@ append everything but the quote character verbatim — including a newline — a
 same parser (`src/core/execute.c` → `load_env_file` → `parse_env_file_internal`), which is why a multi-line
 value (a PEM in `env`) *is* transportable. Measured 2026-09-25 against **v255**, the version the
 `ubuntu24.04-driverless` target image ships, and pinned by systemd's own `load_env_file_6` test (R-19).
-A newline in a **key** is the genuinely unrepresentable case — see R-24 in ISSUES.md.
+
+### The hosted env file's key encoding — three characters are refused at plan time
+
+A newline in a **key** *is* the unrepresentable case, and it is now enforced rather than documented:
+`modules/resources/compute/v1/hosted-env.ts` refuses `=`, `\n` and `\r` in any key with a tagged
+`InvalidHostedEnvKey` naming it. systemd reads a key up to the first `=` and ends an assignment at a
+newline, and — unlike a value — there is no quoting on the key side, so `{'A=B': 'v'}` ships as key `A`
+with the value `B='v'` and `{'KE\nY': 'v'}` ships as two variables, silently. The guard sits in `diff`
+(after `AlchemyDiff.isResolved`), at the top of `reconcile`, and in `uploadHostedArtifacts` — that last one
+because binding-supplied keys exist nowhere else. It is **not** in `transformProps`: alchemy evaluates that
+hook for `destroy` too, so a props failure there would make the stack undestroyable (R-24). The predicate
+is exactly those three characters — `MY.KEY`, `MY-KEY` and `MY_KEY` are all legal and pinned by tests.
 
 ### `hostIdentity` pins itself to the host's namespace
 

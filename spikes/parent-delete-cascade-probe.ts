@@ -79,6 +79,7 @@ import * as RouteTableSchema from '../schemas/nebius/vpc/v1/route_table.ts'
 import * as SecurityGroupSchema from '../schemas/nebius/vpc/v1/security_group.ts'
 import * as SecurityRuleSchema from '../schemas/nebius/vpc/v1/security_rule.ts'
 import { RSA_4096_PUBLIC_KEY_A } from '../tests/helpers/fixtures.ts'
+import { requireProjectId } from './spike-env.ts'
 
 const { AuthProviders } = AlchemyAuthProvider
 const { ProfileStoreLive } = AlchemyProfile
@@ -89,12 +90,8 @@ const { VpcGrpcService, VpcGrpcServiceLive } = VpcGrpcModule
 const { DnsGrpcService, DnsGrpcServiceLive } = DnsGrpcModule
 const { NebiusGrpcTransportLive } = GrpcTransportModule
 
-// No default: R-23 — the earlier probes committed the maintainer's real project id.
-const PROJECT_ID = process.env.NEBIUS_PROJECT_ID
-if (!PROJECT_ID) {
-  console.error('NEBIUS_PROJECT_ID is required — no default is committed (R-23). Set it in .env.')
-  process.exit(1)
-}
+// R-23: read from the environment, never a committed default.
+const PROJECT_ID = requireProjectId()
 
 const RUN = new Date().toISOString().replace(/[:.]/g, '-').toLowerCase()
 const PREFIX = 'alchemy-cascade-probe'
