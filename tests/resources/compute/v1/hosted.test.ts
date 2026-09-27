@@ -58,8 +58,28 @@ describe('hosted renderEnvFile', () => {
     expect(quoteEnvValue("it's")).toBe("'it'\"\"'s'")
   })
 
-  test('escapes newlines', () => {
-    expect(quoteEnvValue('line1\nline2')).toBe("'line1\\nline2'")
+  test('keeps a real newline inside the quotes — a multi-line value IS transportable (R-19)', () => {
+    // The bug: this used to become `'line1\nline2'`, and systemd recognises no C escapes, so the value
+    // read back with a literal backslash where the line break was — a PEM in `env` reached the process
+    // corrupted, with nothing in the deploy output saying so. A quoted newline, by contrast, is stored
+    // verbatim (`SINGLE_QUOTE_VALUE` appends every character but `'`; pinned by systemd's own
+    // `load_env_file_6`, and its `EnvironmentFile=` loader is the same state machine — see
+    // `quoteEnvValue`).
+    expect(quoteEnvValue('line1\nline2')).toBe("'line1\nline2'")
+    expect(renderEnvFile({ KEY: 'line1\nline2' })).toBe("KEY='line1\nline2'")
+    // The negative control: the old escaping must never come back.
+    expect(renderEnvFile({ KEY: 'line1\nline2' })).not.toContain('\\n')
+  })
+
+  test('a multi-line value keeps working when it also contains quotes', () => {
+    // The `'` → `'""'` dance has to survive a value that spans lines: `""` contributes nothing, and
+    // the newline stays inside a quoted region.
+    expect(quoteEnvValue("a'b\nc")).toBe("'a'\"\"'b\nc'")
+  })
+
+  test('leaves a literal backslash and a tab alone (they are representable, unlike an escaped newline)', () => {
+    expect(quoteEnvValue('back\\slash')).toBe("'back\\slash'")
+    expect(quoteEnvValue('a\tb')).toBe("'a\tb'")
   })
 
   test('unwraps a live Redacted config value (Platform captures Config as Redacted)', () => {

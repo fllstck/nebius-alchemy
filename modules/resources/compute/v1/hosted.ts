@@ -540,14 +540,48 @@ const parseRedactedEnvelope = (value: string): string | undefined => {
   }
 }
 
-/** Systemd EnvironmentFile escaping (copied from the AWS EC2 hosted runtime). */
+/**
+ * Systemd EnvironmentFile quoting (copied from the AWS EC2 hosted runtime, whose `\n` escaping is
+ * wrong — see below).
+ *
+ * **A newline is kept verbatim, inside the quotes.** It is *not* escaped to a literal `\n`: systemd's
+ * parser recognises no C-style escapes at all, so `'line1\nline2'` reads back as `line1\nline2` with a
+ * literal backslash — a PEM in `env` reached the VM corrupted, silently (that was R-19).
+ *
+ * What the parser actually does with a quoted value, measured against the **Ubuntu 24.04 target
+ * image's own systemd (v255)** and pinned by systemd's own test suite (`load_env_file_6` writes a
+ * single-quoted value that spans two lines of the file and asserts it reads back with a **real
+ * newline**, every backslash intact):
+ *
+ * | state (`src/basic/env-file.c`) | what it does | consequence here |
+ * | `SINGLE_QUOTE_VALUE` | only `'` is special; **every other character is appended verbatim** — there is no escape state | a real newline inside the quotes **is** the stored newline, so a multi-line value round-trips |
+ * | `DOUBLE_QUOTE_VALUE` / `_ESCAPE` | unescapes only `SHELL_NEED_ESCAPE` (`"`, `\\`, `` ` ``, `$`); `\n` keeps its backslash | why the escaping idiom must be single quotes |
+ *
+ * `src/core/execute.c` loads `EnvironmentFile=` through the same `parse_env_file_internal` state
+ * machine, so the unit's `EnvironmentFile=-<appDir>/env` reads a quoted multi-line value intact. The
+ * man page's former claim that C escapes such as `\t`/`\n` are recognised was **retracted** upstream
+ * ("Remove incorrect claim that C escapes … are recognized"); no escape produces a newline, but none is
+ * needed.
+ *
+ * The `'` → `'""'` dance keeps working across lines: `""` contributes nothing, and the value stays
+ * inside quoted regions while the newline is appended. (A newline in a **key** is a different matter and
+ * still unrepresentable — the parser ends the key at `=` and the assignment at a newline; see ISSUES.md
+ * R-24.)
+ */
 export const quoteEnvValue = (value: unknown): string => {
   const unwrapped = unwrapRedacted(value)
   const text = typeof unwrapped === 'string' ? unwrapped : JSON.stringify(unwrapped ?? null)
-  return `'${text.replaceAll(/'/g, `'""'`).replaceAll(/\n/g, '\\n')}'`
+  return `'${text.replaceAll(/'/g, `'""'`)}'`
 }
 
-/** Sorted `KEY=value` lines with quoted values. */
+/**
+ * Sorted `KEY=value` lines with quoted values.
+ *
+ * A *value* may legitimately span lines — that is how a multi-line value is transported, and the unit's
+ * `EnvironmentFile=` reads it back intact (`quoteEnvValue`). The newline that separates two assignments
+ * is therefore only a separator because it follows a closing quote; nothing here may assume
+ * "one line per assignment".
+ */
 export const renderEnvFile = (env: Record<string, unknown>): string =>
   Object.entries(env)
     .toSorted(([a], [b]) => a.localeCompare(b))

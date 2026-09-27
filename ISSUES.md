@@ -41,6 +41,7 @@ infra / credentials)
 | R-21 | EMBARRASSING | iam/v1 | Static keys are project-parented, but `list` queries per service account — nuke cannot see them | S | MED |
 | R-22 | EYE ROLL | modules/** | "Nebius does not cascade-delete associated resources" was asserted in 8 providers and is false for the IAM family | M | LOW |
 | R-23 | MEH | spikes/** | R-18's leak sweep was scoped to `tests/`, so the maintainer's real project id sits in 23 tracked spike files (and once in this file) | S | LOW |
+| R-24 | MEH | compute/hosted | A newline (or `=`) in an env **key** is silently misparsed, and the value-only fix for R-19 left it alone | S | LOW |
 
 ---
 
@@ -806,22 +807,58 @@ fixtures used as opaque strings.
 
 ---
 
-### R-19 — `quoteEnvValue` turns a newline into literal `\n`; no round-trip test · `OPEN`
+### R-19 — `quoteEnvValue` escaped newlines into a literal `\n`, which systemd reads back corrupted · `DONE (2026-09-25)`
 
-**File**: `modules/resources/compute/v1/hosted.ts:544-548` (consumed as a systemd `EnvironmentFile`
-at `:690`)
+**Fixed**: one line. `quoteEnvValue` no longer rewrites a newline to a literal `\n` — a quoted newline is
+kept **verbatim**, which is how a multi-line value is transported:
 
-**Evidence**: `text.replaceAll(/\n/g, '\\n')` inside a **single-quoted** value; the test pins the
-string (`tests/resources/compute/v1/hosted.test.ts:57`) but nothing pins a round-trip. Whether
-systemd unescapes `\n` inside single quotes decides whether a multi-line value (a PEM in `env`)
-reaches the VM intact.
+```ts
+- return `'${text.replaceAll(/'/g, `'""'`).replaceAll(/\n/g, '\\n')}'`
++ return `'${text.replaceAll(/'/g, `'""'`)}'`
+```
 
-**Fix**: determine the behaviour from the systemd documentation **and** a live instance, then either
-model it correctly or reject multi-line env values at build time with a clear error. Either way, add
-the assertion.
+**File**: `modules/resources/compute/v1/hosted.ts` (`quoteEnvValue`, `renderEnvFile`) ·
+`tests/resources/compute/v1/hosted.test.ts`
 
-**Acceptance**: a test that fails if a newline-bearing env value does not round-trip through the
-generated `EnvironmentFile` on a real VM (or a documented plan-time rejection with a test).
+**The reading — and it inverted the fix.** The issue framed this as "either model it correctly or reject
+multi-line env values at build time", and assumed the encoding was at best unknown. Reading systemd's
+parser at the **target image's own version** (Ubuntu 24.04 ships systemd **v255**) shows the format *can*
+carry a newline, and that the old encoder was the thing breaking it:
+
+| reading | source |
+| the parser has **no escape** that produces a newline: `SINGLE_QUOTE_VALUE` treats only `'` specially and appends **every other character verbatim**; `DOUBLE_QUOTE_VALUE_ESCAPE` unescapes only `SHELL_NEED_ESCAPE` (`"`, `\`, `` ` ``, `$`) and *keeps* the backslash on `\n`; unquoted `VALUE_ESCAPE` **drops** it | `src/basic/env-file.c` v255 (`SINGLE_QUOTE_VALUE`/`DOUBLE_QUOTE_VALUE`), and a man-page patch upstream: "Remove incorrect claim that C escapes … are recognized" |
+| a **real** newline inside quotes is appended verbatim, so a multi-line value round-trips | same state machine: neither quoted state has a `NEWLINE` case |
+| systemd asserts that itself: `load_env_file_6` writes a single-quoted value spanning two file lines and asserts it reads back with a real newline and every backslash intact | `src/test/test-env-file.c` (v255 and main) |
+| `EnvironmentFile=` uses that same parser — `src/core/execute.c` calls `load_env_file` → `parse_env_file_internal` | `src/core/execute.c:773` (v255) |
+
+So `'line1\nline2'` (the old output) read back as `line1\nline2` — a **literal backslash and `n`**, silently
+— and `'line1<real newline>line2'` reads back as the two lines the user wrote. A PEM in `env` was
+corrupted on every deploy; the same value is now transported intact.
+
+**A rejection was prototyped first, and deliberately thrown away.** Before reading the parser's quoted
+states I built the second branch the issue allows: a `HostedEnvNotRepresentableError`, a plan-time guard
+in `instance.ts` (`diff` + `reconcile`) and a compose-time backstop in `uploadHostedArtifacts`, plus a
+D8-safe shared module to hold them (`instance.ts` may not import `hosted.ts` statically — rolldown/vite
+in every runtime bundle). It passed its tests and was wrong: the format carries the value, so rejecting it
+would have *forbidden a PEM in `env`* while the actual bug stayed. Recorded here because the discarded
+version is the tempting one from the issue text, and because **R-24** now needs that machinery for the
+case that genuinely cannot be represented.
+
+**Acceptance** (the issue's second branch was "or a documented plan-time rejection with a test"; the fix
+turned out to be the first, so the test pins the round-trip):
+- `tests/resources/compute/v1/hosted.test.ts` → `keeps a real newline inside the quotes — a multi-line
+  value IS transportable`: asserts the emitted form, the real newline, and — as the negative control —
+  `expect(...).not.toContain('\\n')`, so the escaping idiom cannot come back.
+- `a multi-line value keeps working when it also contains quotes`: the `'` → `'""'` dance across lines.
+- **Negative control (run, not asserted)**: against the pre-fix encoder both tests fail, exactly as they
+  should (they are the only two failures in the file).
+- `bun run check` clean, `bun test` 1667 pass / 0 fail.
+
+**No live VM was needed, and the reason is stated rather than assumed**: the behaviour is systemd's parser,
+not the image's configuration — v255 *is* the target's version, `EnvironmentFile=` provably uses that
+parser, and systemd's own test suite pins the quoted-newline case. A VM run would corroborate, not decide.
+
+---
 
 ---
 
@@ -1053,6 +1090,43 @@ spikes still run (each fails loudly with "NEBIUS_PROJECT_ID is required" when it
 than silently probing `project-1`). The literal stays in git history either way; the point is to stop
 adding it, and to make the run fail loudly instead of reaching for a committed default.
 
+### R-24 — A newline (or `=`) in an env **key** is silently misparsed · `OPEN`
+
+**File**: `modules/resources/compute/v1/hosted.ts` (`quoteEnvValue`, `renderEnvFile`) — the **key** side,
+which `quoteEnvValue` never touched (it quotes values only)
+
+**Evidence**: found while fixing R-19. systemd's parser reads a key until the first `=`, and ends the
+assignment at a newline, so `renderEnvFile({ 'KE\nY': 'v' })` emits two lines that parse as **two
+assignments**, and `{ 'A=B': 'v' }` emits `A=B='v'`, which parses as key `A` with the value `B='v'` — the
+value the user set is not the value the process receives, with nothing in the deploy output saying so.
+(The same is true of the pre-R-19 code: the removed `.replaceAll(/\n/g, '\\n')` never applied to keys, so
+this is pre-existing rather than a regression from that fix.) `env` is `Record<string, string>` on the
+hosted props, and keys also arrive from bindings, so a template-generated key can carry either character.
+
+**Why it bites**: it is the same class as R-21 and R-22 — a silent, unmeasured misbehaviour. A hosted
+program with a `\n`-bearing key gets an environment variable named `KE` and another named `Y`, and the
+deploy reports success.
+
+**Fix**: reject keys containing `\n`, `\r` or `=` at plan time with a tagged error naming the key(s), the
+way the value case was *intended* to be handled before measurement showed the value case needs no
+guard. The machinery was prototyped for R-19 and deleted again once the value turned out to be
+representable, so the shapes are known:
+
+1. a **plan-time** guard raised from `diff` (re-plan; call it *after* `AlchemyDiff.isResolved`, since an
+   `env` value may legitimately be an `Output`) **and** from the top of `reconcile`;
+2. a **compose-time backstop** in `uploadHostedArtifacts` on the final map, which is the only place a
+   binding-supplied key is visible and which no call path can bypass;
+3. both need a module `instance.ts` may import **statically** and `hosted.ts` can share — the D8 guard
+   forbids a static import of `hosted.ts` from `instance.ts` (rolldown/vite in every runtime bundle), so
+   the predicate does not belong in either. A pure `hosted-env.ts` (effect/Schema + string work) is the
+   shape that worked.
+
+**Acceptance**: a test per file — the plan-time guard rejects `{'KE\nY': 'v'}` and `{'A=B': 'v'}` with the
+tagged error naming the key, `diff` propagates it (the plan-time half, via a `diff`-expecting-error
+helper), and the compose-time backstop rejects a newline-bearing key that only a binding could inject;
+plus a test that ordinary keys (`MY.KEY`, `MY-KEY`, `MY_KEY`) are **not** rejected — the predicate must be
+the three impossible characters, not an env-name charset, or it becomes an unrelated breaking change.
+
 ---
 
 ## Suggested sequencing
@@ -1070,7 +1144,10 @@ adding it, and to make the run fail loudly instead of reaching for a committed d
    **not** dedupe on `x-idempotency-key` (duplicate `Issue` → `ALREADY_EXISTS`, both completed and in
    flight), so branch 1 is a dead end and mutations are no longer retried at all. See the DONE section.
    The probe also exposed **R-21** (static keys are project-parented; `list` queries per service account).
-5. **R-19** — needs a live instance; pair with any other live probe session.
+5. **R-19 — done 2026-09-25** — and it **inverted**: the issue expected "model it correctly or reject",
+   and the parser reading (systemd v255, the target image's version) showed the value is representable and
+   the encoder was the bug. One line removed (`\n` escaping), two tests, no VM needed. It also spawned
+   **R-24** (the key side, which genuinely cannot be represented).
 6. **R-10, R-12, R-15, R-16, R-18, R-20, R-21** — incremental cleanups, safe to interleave. R-15 + R-16 are
 done (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
 miss), R-18 + R-20 are done (2026-09-25), and R-21 was found by R-01's probe (2026-09-25) and is now
@@ -1082,8 +1159,9 @@ done too (its measurement is `spikes/static-key-parent-probe.ts`). R-10 and R-12
    (`FAILED_PRECONDITION`, naming the child), and nothing was `ORPHANED` — the one reading that would
    make a blind `list` a silent leak. No provider behaviour changed; the eight comments now carry their
    own reading and the table lives in AGENTS.md.
-8. **R-23** — the last offline cleanup: 23 tracked `spikes/` files still carry the maintainer's real
-   project id. No API call needed; the shape is already in the two new probes.
+8. **R-23, R-24** — both offline and small: R-23 is the 23 tracked `spikes/` files that still carry the
+   maintainer's real project id (no API call; the shape is already in the two new probes), R-24 the env-key
+   guard whose implementation shapes are spelled out in its entry.
 9. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 

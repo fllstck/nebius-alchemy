@@ -1051,6 +1051,18 @@ Never `JSON.stringify` a Redacted into shipped env — the VM then receives
 `NEBIUS_REGION={"_tag":"Redacted","value":"eu-north1"}`, which broke SigV4
 signing in the hosted e2e.
 
+### The hosted env file's value encoding — a newline is kept, not escaped
+
+`quoteEnvValue` wraps each value in single quotes and leaves a newline **verbatim**; it must not escape it
+to `\n`. systemd recognises no C escapes at all (the man page's claim that `\t`/`\n` are recognised was
+**retracted** upstream), so an escaped newline reads back as a literal backslash: `'line1\nline2'` arrives
+as `line1\nline2` while `'line1<newline>line2'` arrives as the two lines written. The parser's quoted states
+append everything but the quote character verbatim — including a newline — and `EnvironmentFile=` uses that
+same parser (`src/core/execute.c` → `load_env_file` → `parse_env_file_internal`), which is why a multi-line
+value (a PEM in `env`) *is* transportable. Measured 2026-09-25 against **v255**, the version the
+`ubuntu24.04-driverless` target image ships, and pinned by systemd's own `load_env_file_6` test (R-19).
+A newline in a **key** is the genuinely unrepresentable case — see R-24 in ISSUES.md.
+
 ### `hostIdentity` pins itself to the host's namespace
 
 `modules/resources/shared/host-identity.ts` declares `<host>BindingSA/Group/
