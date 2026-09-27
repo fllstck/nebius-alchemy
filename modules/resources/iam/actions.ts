@@ -7,7 +7,7 @@ import * as ProjectModule from './v2/project.ts'
 import * as GroupModule from './v1/group.ts'
 import type * as Index from './index.ts'
 import { resolveTenantId } from '../shared/tenant.ts'
-import { bestEffortList, resolveParentIds } from '../shared/fan-out.ts'
+import { forEachParent, resolveParentIds } from '../shared/fan-out.ts'
 import { getOrUndefined } from '../shared/not-found.ts'
 
 // ── Project ───────────────────────────────────────────────────────────────
@@ -91,13 +91,12 @@ export const ListGroups = Alchemy.Action(
     return ({ parentId }: { parentId?: Index.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = yield* resolveParentIds(parentId)
-        const results = yield* Effect.forEach(parentIds, (pid) =>
-          bestEffortList(
-            `groups in project ${pid}`,
+        return yield* forEachParent(
+          parentIds,
+          (pid) => `groups in project ${pid}`,
+          (pid) =>
             iam.group.list(pid).pipe(Effect.map((items) => items.map((raw) => GroupModule.toFriendlyAttributes(raw)))),
-          ),
         )
-        return results.flat()
       })
   }),
 )

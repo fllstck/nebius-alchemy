@@ -15,7 +15,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as SecretVersionSchema from './secret-version.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { forEachParent } from '../../shared/fan-out.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
@@ -129,25 +129,23 @@ export const NebiusSecretVersionProvider: Layer.Layer<
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
-    const rows = yield* Effect.forEach(projects, (project) =>
-      bestEffortList(
-        `secrets in project ${project.metadata!.id}`,
-        mysterybox.secret.list(project.metadata!.id).pipe(
+    return yield* forEachParent(
+      projects.map((project) => project.metadata!.id),
+      (projectId) => `secrets in project ${projectId}`,
+      (projectId) =>
+        mysterybox.secret.list(projectId).pipe(
           Effect.flatMap((secrets) =>
-            Effect.forEach(secrets, (secret) =>
-              bestEffortList(
-                `versions of secret ${secret.metadata!.id}`,
+            forEachParent(
+              secrets.map((secret) => secret.metadata!.id),
+              (secretId) => `versions of secret ${secretId}`,
+              (secretId) =>
                 mysterybox.secretVersion
-                  .list(secret.metadata!.id)
+                  .list(secretId)
                   .pipe(Effect.map((versions) => versions.map((v) => toFriendlyAttributes(v)))),
-              ),
             ),
           ),
-          Effect.map((nested) => nested.flat()),
         ),
-      ),
     )
-    return rows.flat()
   }),
 
   diff: Effect.fn('Nebius.mysterybox.v1.SecretVersion.diff')(function* ({ news, olds }) {

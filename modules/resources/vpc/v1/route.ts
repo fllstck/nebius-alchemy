@@ -13,7 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as RouteSchema from './route.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { forEachParent } from '../../shared/fan-out.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
@@ -124,23 +124,23 @@ export const NebiusRouteProvider: Layer.Layer<
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
-    const rows = yield* Effect.forEach(projects, (project) =>
-      bestEffortList(
-        `route tables in project ${project.metadata!.id}`,
-        vpc.routeTable.list(project.metadata!.id).pipe(
+    return yield* forEachParent(
+      projects.map((project) => project.metadata!.id),
+      (projectId) => `route tables in project ${projectId}`,
+      (projectId) =>
+        vpc.routeTable.list(projectId).pipe(
           Effect.flatMap((tables) =>
-            Effect.forEach(tables, (table) =>
-              bestEffortList(
-                `routes in route table ${table.metadata!.id}`,
-                vpc.route.list(table.metadata!.id).pipe(Effect.map((routes) => routes.map((r) => toFriendlyAttributes(r)))),
-              ),
+            forEachParent(
+              tables.map((table) => table.metadata!.id),
+              (tableId) => `routes in route table ${tableId}`,
+              (tableId) =>
+                vpc.route
+                  .list(tableId)
+                  .pipe(Effect.map((routes) => routes.map((r) => toFriendlyAttributes(r)))),
             ),
           ),
-          Effect.map((nested) => nested.flat()),
         ),
-      ),
     )
-    return rows.flat()
   }),
 
   diff: Effect.fn('Nebius.vpc.v1.Route.diff')(function* ({ news, olds }) {

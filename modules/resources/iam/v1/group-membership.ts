@@ -14,7 +14,7 @@ import * as GroupMembershipSchema from './group-membership.schema.ts'
 import * as Factory from '../../factory.ts'
 import { GrpcError } from '../../../api-client/grpc-utils.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { forEachParent } from '../../shared/fan-out.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
@@ -156,25 +156,23 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
-    const rows = yield* Effect.forEach(projects, (project) =>
-      bestEffortList(
-        `groups in project ${project.metadata!.id}`,
-        iam.group.list(project.metadata!.id).pipe(
+    return yield* forEachParent(
+      projects.map((project) => project.metadata!.id),
+      (projectId) => `groups in project ${projectId}`,
+      (projectId) =>
+        iam.group.list(projectId).pipe(
           Effect.flatMap((groups) =>
-            Effect.forEach(groups, (group) =>
-              bestEffortList(
-                `members of group ${group.metadata!.id}`,
+            forEachParent(
+              groups.map((group) => group.metadata!.id),
+              (groupId) => `members of group ${groupId}`,
+              (groupId) =>
                 iam.groupMembership
-                  .listMembers(group.metadata!.id)
+                  .listMembers(groupId)
                   .pipe(Effect.map((members) => members.map((m) => toFriendlyAttributes(m)))),
-              ),
             ),
           ),
-          Effect.map((nested) => nested.flat()),
         ),
-      ),
     )
-    return rows.flat()
   }),
 
   diff: Effect.fn('Nebius.iam.v1.GroupMembership.diff')(function* ({ news, olds }) {

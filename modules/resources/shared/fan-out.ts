@@ -63,13 +63,62 @@ export const bestEffortList = <A>(
   )
 
 /**
+ * How many parents a fan-out enumerates at once (R-12's second half).
+ *
+ * Bounded rather than `'unbounded'`: `bestEffortList` answers `[]` **and warns** for a parent whose
+ * enumeration fails, so a rate-limited burst (`8 RESOURCE_EXHAUSTED`) would be reported as a partial
+ * enumeration — and a partial enumeration is what a destroy completes over, leaving the resources
+ * behind. Ten is overlap without a `41 families × M projects` thundering herd. The number is the one
+ * knob to lower if a live `alchemy unsafe nuke` ever logs `RESOURCE_EXHAUSTED`; it is not measured
+ * against the API's actual limit (nuke is the only caller and R-12 was fixed offline).
+ *
+ * Note that a two-level fan-out multiplies it: 10 projects × 10 children each is up to 100 in flight.
+ */
+export const FAN_OUT_CONCURRENCY = 10
+
+/**
+ * Enumerate one parent per entry, best-effort, {@link FAN_OUT_CONCURRENCY} at a time, and return the
+ * **already-flattened** results.
+ *
+ * This is the shape the tenant fan-out was hand-written as 23 times: a bare sequential
+ * `Effect.forEach(parents, (parent) => bestEffortList(`… in parent ${id}`, list(parent)))` followed by
+ * one `.flat()` per nesting level. Two things it centralises:
+ *
+ * - **Concurrency.** The fan-out was sequential, so nuke's `41 × M` list RPCs queued; they now
+ *   overlap. Result order still follows the input order (`Effect.forEach` preserves it), so a caller's
+ *   ordering is unchanged.
+ * - **The flattening.** `bestEffortList` answers `[]` per failed parent, so the caller has to flatten
+ *   one level per fan-out — including the *inner* fan-out of the two-level sites (projects → zones →
+ *   records), which used to be an explicit `Effect.map((nested) => nested.flat())`. Doing it here
+ *   means a nesting level cannot forget it.
+ *
+ * The subject is still a callback because the wording is per site (`"zones in project"`,
+ * `"node groups of cluster"`): it is the operator-facing half of a warning, and rewriting it would
+ * change what an existing log line says.
+ *
+ * The result is a **mutable** array, because a resource's `list` lifecycle is typed as returning one
+ * (`Effect<Attrs[], …>`) — a `ReadonlyArray` would have to be spread at every call site.
+ */
+export const forEachParent = <A>(
+  parentIds: ReadonlyArray<string>,
+  subject: (parentId: string) => FanOutSubject,
+  list: (
+    parentId: string,
+  ) => Effect.Effect<ReadonlyArray<A>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>,
+): Effect.Effect<Array<A>, never, never> =>
+  Effect.forEach(parentIds, (parentId) => bestEffortList(subject(parentId), list(parentId)), {
+    concurrency: FAN_OUT_CONCURRENCY,
+  }).pipe(Effect.map((perParent) => perParent.flat()))
+
+/**
  * The parents a tenant fan-out enumerates: with an explicit `parentId` that is the whole answer,
  * otherwise every project in the tenant.
  *
  * Extracted because the same expression — `parentId ? [parentId] : (yield* iam.project.list(tenantId))
  * .map((p) => p.metadata!.id)` — was hand-inlined at 7 call sites (the five `Nebius.vpc.actions.List*`,
  * `Nebius.quotas.actions.ListQuotas`, `Nebius.iam.actions.ListGroups`); it belongs next to
- * {@link bestEffortList}, which consumes its result.
+ * {@link bestEffortList} and {@link forEachParent}, which consume its result. The underlying
+ * `iam.project.list` is fetched once per session — see `project-list-cache.ts`.
  *
  * ## The tenant is resolved *only* when there is no `parentId`
  *

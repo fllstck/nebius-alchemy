@@ -8,7 +8,7 @@ import * as Subnet from './subnet.ts'
 import * as SecurityGroup from './security-group.ts'
 import * as RouteTable from './route-table.ts'
 import * as Pool from './pool.ts'
-import { bestEffortList, resolveParentIds } from '../../shared/fan-out.ts'
+import { forEachParent, resolveParentIds } from '../../shared/fan-out.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
 
@@ -45,13 +45,12 @@ export const ListNetworks = Alchemy.Action(
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = yield* resolveParentIds(parentId)
-        const results = yield* Effect.forEach(parentIds, (pid) =>
-          bestEffortList(
-            `networks in project ${pid}`,
+        return yield* forEachParent(
+          parentIds,
+          (pid) => `networks in project ${pid}`,
+          (pid) =>
             vpc.network.list(pid).pipe(Effect.map((items) => items.map((raw) => Network.toFriendlyAttributes(raw)))),
-          ),
         )
-        return results.flat()
       })
   }),
 )
@@ -89,13 +88,12 @@ export const ListSubnets = Alchemy.Action(
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = yield* resolveParentIds(parentId)
-        const results = yield* Effect.forEach(parentIds, (pid) =>
-          bestEffortList(
-            `subnets in project ${pid}`,
+        return yield* forEachParent(
+          parentIds,
+          (pid) => `subnets in project ${pid}`,
+          (pid) =>
             vpc.subnet.list(pid).pipe(Effect.map((items) => items.map((raw) => Subnet.toFriendlyAttributes(raw)))),
-          ),
         )
-        return results.flat()
       })
   }),
 )
@@ -133,15 +131,14 @@ export const ListSecurityGroups = Alchemy.Action(
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = yield* resolveParentIds(parentId)
-        const results = yield* Effect.forEach(parentIds, (pid) =>
-          bestEffortList(
-            `security groups in project ${pid}`,
+        return yield* forEachParent(
+          parentIds,
+          (pid) => `security groups in project ${pid}`,
+          (pid) =>
             vpc.securityGroup
               .list(pid)
               .pipe(Effect.map((items) => items.map((raw) => SecurityGroup.toFriendlyAttributes(raw)))),
-          ),
         )
-        return results.flat()
       })
   }),
 )
@@ -179,13 +176,14 @@ export const ListRouteTables = Alchemy.Action(
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = yield* resolveParentIds(parentId)
-        const results = yield* Effect.forEach(parentIds, (pid) =>
-          bestEffortList(
-            `route tables in project ${pid}`,
-            vpc.routeTable.list(pid).pipe(Effect.map((items) => items.map((raw) => RouteTable.toFriendlyAttributes(raw)))),
-          ),
+        return yield* forEachParent(
+          parentIds,
+          (pid) => `route tables in project ${pid}`,
+          (pid) =>
+            vpc.routeTable
+              .list(pid)
+              .pipe(Effect.map((items) => items.map((raw) => RouteTable.toFriendlyAttributes(raw)))),
         )
-        return results.flat()
       })
   }),
 )
@@ -223,13 +221,11 @@ export const ListPools = Alchemy.Action(
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
         const parentIds = yield* resolveParentIds(parentId)
-        const results = yield* Effect.forEach(parentIds, (pid) =>
-          bestEffortList(
-            `pools in project ${pid}`,
-            vpc.pool.list(pid).pipe(Effect.map((items) => items.map((raw) => Pool.toFriendlyAttributes(raw)))),
-          ),
+        return yield* forEachParent(
+          parentIds,
+          (pid) => `pools in project ${pid}`,
+          (pid) => vpc.pool.list(pid).pipe(Effect.map((items) => items.map((raw) => Pool.toFriendlyAttributes(raw)))),
         )
-        return results.flat()
       })
   }),
 )

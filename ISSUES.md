@@ -635,23 +635,64 @@ inside the process.
 
 ---
 
-### R-12 — Tenant fan-out: no memoization, no concurrency · `OPEN`
+### R-12 — Tenant fan-out: no memoization, no concurrency · `DONE (2026-09-27)`
 
-**File**: `modules/resources/factory.ts:386-395` (`makeTenantScopedList`)
+**Files (added)**: `modules/resources/shared/project-list-cache.ts` · `FAN_OUT_CONCURRENCY` +
+`forEachParent` in `modules/resources/shared/fan-out.ts` · the wiring in `modules/Provider.ts` · the 23
+fan-out sites (30 `makeTenantScopedList` configs are covered by `factory.ts` alone; the rest are the seven
+two-level bespoke lifecycles, the seven `List*` actions and `federation-certificate.ts`).
 
-**Evidence**: `config.projectList(iam, tenant)` (`:392`) runs inside every resource type's `list`,
-with no cache anywhere in `factory.ts` (`grep -n "cached\|Cache\|memo"` → none), and the fan-out uses
-`Effect.forEach(projects, …)` with no `concurrency` option, i.e. sequential.
+**Evidence (the original)**: `config.projectList(iam, tenant)` (`:392`) ran inside every resource type's
+`list`, with no cache anywhere in `factory.ts` (`grep -n "cached\|Cache\|memo"` → none), and the fan-out
+used `Effect.forEach(projects, …)` with no `concurrency` option, i.e. sequential.
 
-**Why it bites**: `alchemy unsafe nuke` across 40 families and *M* projects issues `40 × (1 + M)`
-sequential list RPCs, where `40 × M` are unavoidable but `40` are pure duplication.
+**Why it bit**: `alchemy unsafe nuke` across 40 families and *M* projects issued `40 × (1 + M)` sequential
+list RPCs, where `40 × M` are unavoidable but `40` are pure duplication. Counted at fix time rather than
+estimated: **41 `iam.project.list` call sites** under `modules/` (30 `makeTenantScopedList`, the seven
+two-level bespoke lifecycles, the seven `List*` actions, `iam/v2 Project.list` itself).
 
-**Fix**: `Effect.cached` the project list on the tenant/transport layer (it is stable for a deploy),
-and add `{ concurrency: 'unbounded' }` to the fan-out — with a bounded variant if the API rate-limits.
+**Fixed, in two halves.**
 
-**Acceptance**: a test asserting the project list is fetched **once** across two different resource
-types' `list` calls; a test asserting the per-project calls overlap (or that concurrency is
-explicitly configured).
+1. **The project list is fetched once per session** — a *layer decorator*, not a service of its own:
+   `providers()` provides `IamGrpcServiceWithProjectListCache` (which re-spreads the raw service and
+   overrides only `project.list`) *over* `IamGrpcServiceLive`. No call site and no requirement changed, so
+   every consumer written before the cache goes through it. `Cache.makeWith` keyed by `tenantId`,
+   `capacity: 8`, with **`Duration.infinity` on success and `Duration.zero` on failure**: a transient
+   `UNAVAILABLE` must not be cached for the session, because a cached failure means every later family
+   enumerates zero projects and the destroy completes over live resources. Single-flight comes with the
+   primitive — concurrent callers share the pending lookup, which is what makes the families arriving at
+   once issue **one** request.
+2. **The fan-out is concurrent and uniform.** `forEachParent(parentIds, subject, list)` replaces the 23
+   hand-written `Effect.forEach(parents, (p) => bestEffortList(…))` + per-level `.flat()` pairs, at
+   `FAN_OUT_CONCURRENCY = 10`. Bounded, **not** the `'unbounded'` this entry suggested: `bestEffortList`
+   answers `[]` *and warns* for a failed parent, so a rate-limited burst would read as a partial
+   enumeration — exactly what a destroy completes over. Ten is overlap without a 40-family thundering
+   herd; the constant is the single knob, and it is deliberately **not** claimed to be measured against
+   the API's limit (nuke is the only caller, and this was fixed offline). The subject stays a callback
+   because it is the operator-facing half of a warning, and the flattening moved into the helper so a
+   nesting level cannot forget it. Two-level sites multiply the bound (10 projects × 10 children = up to
+   100 in flight), which is recorded at the constant.
+
+**Acceptance — met** by `tests/resources/shared/project-list-cache.test.ts` (5 tests) and two
+`forEachParent` tests added to `tests/resources/shared/fan-out.test.ts`:
+
+- **two different resource types listing at once issue ONE project-list RPC**, through
+  `makeTenantScopedList` for two fake services over a *counting* IAM mock — the entry's own criterion,
+  asserted on the request count rather than on a cache object existing; plus a sequential variant (the
+  entry outlives the first call), a **failure is re-fetched** case, and an identity assertion that
+  `project.list` is the only memoized member (`iam.staticKey.list === raw`);
+- **concurrency bites**: parents are enumerated in parallel, proven by a parent that blocks on a
+  `Deferred` another parent completes — sequential execution cannot finish, so a 1 s timeout turns a lost
+  `concurrency` option into a failure instead of a hung suite (the flattening is pinned separately);
+- **all three properties were mutation-checked before committing**: `concurrency: 1` → the blocker test
+  fails (1010 ms); returning the raw `project.list` → three cache tests fail; `timeToLive: infinity` for
+  failures → the re-fetch test fails.
+
+**Gates**: `bun run check` exit 0 · **1771 tests / 1696 pass / 75 skip / 0 fail** (from 1764 / 1689 — the 7
+new tests). No live spend: the fix is offline, and no provider's behaviour changed — only when and how
+often the IAM list RPC is issued. One thing is deliberately left unmeasured: whether the API rate-limits a
+10-wide fan-out, which is what the constant's comment says to lower on the first live
+`RESOURCE_EXHAUSTED`.
 
 ---
 
@@ -1299,8 +1340,8 @@ the three impossible characters, not an env-name charset, or it becomes an unrel
 6. **R-10, R-12, R-15, R-16, R-18, R-20, R-21** — incremental cleanups, safe to interleave. R-15 + R-16 are
 done (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
 miss), R-18 + R-20 are done (2026-09-25), and R-21 was found by R-01's probe (2026-09-25) and is now
-done too (its measurement is `spikes/static-key-parent-probe.ts`). **R-10 is done 2026-09-27** (see step 9);
-R-12 remains open here.
+done too (its measurement is `spikes/static-key-parent-probe.ts`). **R-10 is done 2026-09-27** (see step 9),
+and **R-12 is done 2026-09-27** (see step 10).
    That session also filed **R-22** (the eight-provider cascade claim) and **R-23** (R-18's leak sweep
    reached `tests/` only).
 7. **R-22 — done 2026-09-25** — nine relations measured (`spikes/parent-delete-cascade-probe.ts`): the
@@ -1319,8 +1360,12 @@ R-12 remains open here.
    found (a live two-argument `getByName` on the hosted user-bucket path, six stale two-argument `getByName`
    declarations, four secondary lists declared as arrays while returning the RPC envelope, and
    `UnknownServiceError` missing from all 128 polled-method error unions). The survivors are registered in
-   AGENTS.md §No `any`. **R-12** remains open from step 6, and **R-08** stays last as originally ordered.
-9. **R-08** — last, because it is a large refactor over the file most likely to change for other
+   AGENTS.md §No `any`.
+10. **R-12 — done 2026-09-27** — the last of the incremental cleanups, and the only one whose win is a
+   *count*: 41 `iam.project.list` call sites now share one session-long fetch, and the 23 hand-written
+   fan-outs moved onto one bounded-concurrency helper. Offline (3 mutation checks replaced the live
+   reading; the API's rate limit is the one thing still unmeasured, and the constant says so).
+11. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 
 ## Do not "fix" these — they are approved exceptions

@@ -15,6 +15,7 @@ import * as BillingGrpc from './api-client/billing.ts'
 import * as CapacityGrpc from './api-client/capacity.ts'
 import * as AiGrpc from './api-client/ai.ts'
 import * as Mk8sGrpc from './api-client/mk8s.ts'
+import * as ProjectListCache from './resources/shared/project-list-cache.ts'
 import * as BucketResource from './resources/storage/v1/bucket.ts'
 import * as TransferResource from './resources/storage/v1/transfer.ts'
 import * as ProjectResource from './resources/iam/v2/project.ts'
@@ -164,7 +165,13 @@ export const providers = () =>
     Layer.provideMerge(JobResource.NebiusJobProvider),
     Layer.provideMerge(EndpointResource.NebiusEndpointProvider),
     Layer.provideMerge(StorageGrpc.StorageGrpcServiceLive),
-    Layer.provideMerge(IamGrpc.IamGrpcServiceLive),
+    // The IAM service the resource layers see is the *cached* one (R-12): every tenant fan-out — 30
+    // `makeTenantScopedList` lifecycles, the two-level bespoke ones, the `List*` actions — calls
+    // `project.list`, and `alchemy unsafe nuke` runs all of them in one process. The raw service is
+    // provided *to* the decorator, so no call site changed: `project-list-cache.ts`.
+    Layer.provideMerge(
+      ProjectListCache.IamGrpcServiceWithProjectListCache.pipe(Layer.provide(IamGrpc.IamGrpcServiceLive)),
+    ),
     Layer.provideMerge(VpcGrpc.VpcGrpcServiceLive),
     Layer.provideMerge(ComputeGrpc.ComputeGrpcServiceLive),
     Layer.provideMerge(DnsGrpc.DnsGrpcServiceLive),

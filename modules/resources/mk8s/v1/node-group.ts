@@ -10,7 +10,7 @@ import * as Mk8sGrpc from '../../../api-client/mk8s.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
 import * as ResourceUtils from '../../utilities.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { forEachParent } from '../../shared/fan-out.ts'
 
 import * as NodeGroupSchema from './node-group.schema.ts'
 import * as Factory from '../../factory.ts'
@@ -346,31 +346,23 @@ nodeGroupSpecDrifted(nodeGroup.spec, desired)
         const tenantId = yield* resolveTenantId()
 
         const projects = yield* iam.project.list(tenantId)
-        const rows = yield* Effect.forEach(projects, (project) =>
-          bestEffortList(
-            `clusters in project ${project.metadata!.id}`,
-            svc.cluster
-              .list(project.metadata!.id)
-              .pipe(
-                Effect.flatMap((clusters) =>
-                  Effect.forEach(clusters, (cluster) =>
-                    bestEffortList(
-                      `node groups of cluster ${cluster.metadata!.id}`,
-                      svc.nodeGroup
-                        .list(cluster.metadata!.id)
-                        .pipe(Effect.map((groups) => groups.map((raw) => toFriendlyAttributes(raw)))),
-                    ),
-                  ),
+        return yield* forEachParent(
+          projects.map((project) => project.metadata!.id),
+          (projectId) => `clusters in project ${projectId}`,
+          (projectId) =>
+            svc.cluster.list(projectId).pipe(
+              Effect.flatMap((clusters) =>
+                forEachParent(
+                  clusters.map((cluster) => cluster.metadata!.id),
+                  (clusterId) => `node groups of cluster ${clusterId}`,
+                  (clusterId) =>
+                    svc.nodeGroup
+                      .list(clusterId)
+                      .pipe(Effect.map((groups) => groups.map((raw) => toFriendlyAttributes(raw)))),
                 ),
-                // One level per project, so the outer `flat()` lands on a flat list — the
-                // two-level fan-out has to be flattened twice (the same shape `dns/v1 Record`
-                // uses for projects → zones → records).
-                Effect.map((nested) => nested.flat()),
               ),
-          ),
+            ),
         )
-
-        return rows.flat()
       }),
 
       diff: Effect.fn('Nebius.mk8s.v1.NodeGroup.diff')(function* ({ news, olds }) {

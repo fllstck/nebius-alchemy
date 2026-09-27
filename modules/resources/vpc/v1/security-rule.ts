@@ -13,7 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as SecurityRuleSchema from './security-rule.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { forEachParent } from '../../shared/fan-out.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
@@ -154,25 +154,23 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
-    const rows = yield* Effect.forEach(projects, (project) =>
-      bestEffortList(
-        `security groups in project ${project.metadata!.id}`,
-        vpc.securityGroup.list(project.metadata!.id).pipe(
+    return yield* forEachParent(
+      projects.map((project) => project.metadata!.id),
+      (projectId) => `security groups in project ${projectId}`,
+      (projectId) =>
+        vpc.securityGroup.list(projectId).pipe(
           Effect.flatMap((groups) =>
-            Effect.forEach(groups, (group) =>
-              bestEffortList(
-                `security rules in group ${group.metadata!.id}`,
+            forEachParent(
+              groups.map((group) => group.metadata!.id),
+              (groupId) => `security rules in group ${groupId}`,
+              (groupId) =>
                 vpc.securityRule
-                  .list(group.metadata!.id)
+                  .list(groupId)
                   .pipe(Effect.map((rules) => rules.map((r) => toFriendlyAttributes(r)))),
-              ),
             ),
           ),
-          Effect.map((nested) => nested.flat()),
         ),
-      ),
     )
-    return rows.flat()
   }),
 
   diff: Effect.fn('Nebius.vpc.v1.SecurityRule.diff')(function* ({ news, olds }) {

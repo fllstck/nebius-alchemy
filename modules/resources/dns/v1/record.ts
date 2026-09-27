@@ -13,7 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as RecordSchema from './record.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { forEachParent } from '../../shared/fan-out.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
@@ -127,25 +127,21 @@ export const NebiusRecordProvider: Layer.Layer<
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
     const projects = yield* iam.project.list(tenantId)
-    const rows = yield* Effect.forEach(projects, (project) =>
-      bestEffortList(
-        `zones in project ${project.metadata!.id}`,
-        dns.zone.list(project.metadata!.id).pipe(
+    return yield* forEachParent(
+      projects.map((project) => project.metadata!.id),
+      (projectId) => `zones in project ${projectId}`,
+      (projectId) =>
+        dns.zone.list(projectId).pipe(
           Effect.flatMap((zones) =>
-            Effect.forEach(zones, (zone) =>
-              bestEffortList(
-                `records in zone ${zone.metadata!.id}`,
-                dns.record
-                  .list(zone.metadata!.id)
-                  .pipe(Effect.map((records) => records.map((r) => toFriendlyAttributes(r)))),
-              ),
+            forEachParent(
+              zones.map((zone) => zone.metadata!.id),
+              (zoneId) => `records in zone ${zoneId}`,
+              (zoneId) =>
+                dns.record.list(zoneId).pipe(Effect.map((records) => records.map((r) => toFriendlyAttributes(r)))),
             ),
           ),
-          Effect.map((nested) => nested.flat()),
         ),
-      ),
     )
-    return rows.flat()
   }),
 
   diff: Effect.fn('Nebius.dns.v1.Record.diff')(function* ({ news, olds }) {

@@ -12,7 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as FedCertSchema from './federation-certificate.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { forEachParent } from '../../shared/fan-out.ts'
 import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
@@ -134,15 +134,14 @@ cert.spec && (cert.spec.description ?? '') !== (news.description ?? '')
     const iam = yield* IamGrpc.IamGrpcService
     const tenantId = yield* resolveTenantId()
     const federations = yield* iam.federation.list(tenantId)
-    const rows = yield* Effect.forEach(federations, (federation) =>
-      bestEffortList(
-        `certificates of federation ${federation.metadata!.id}`,
+    return yield* forEachParent(
+      federations.map((federation) => federation.metadata!.id),
+      (federationId) => `certificates of federation ${federationId}`,
+      (federationId) =>
         iam.federationCertificate
-          .listByFederation(federation.metadata!.id)
+          .listByFederation(federationId)
           .pipe(Effect.map((certs) => certs.map((c) => toFriendlyAttributes(c)))),
-      ),
     )
-    return rows.flat()
   }),
 
   diff: Effect.fn('Nebius.iam.v1.FederationCertificate.diff')(function* ({ news, olds }) {

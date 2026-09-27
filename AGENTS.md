@@ -344,7 +344,12 @@ shapes are allowed, chosen by what the caller can do with the answer:
   `parentId ? [parentId] : …project.list(tenantId)` copies): it reads the tenant **only when no `parentId`
   was given**, which is what `shared/tenant.ts` documents ("needed only where something genuinely lists
   across projects") — the call sites used to resolve it eagerly and fail a `parentId`-scoped call without
-  `NEBIUS_TENANT_ID`.
+  `NEBIUS_TENANT_ID`. The fan-out itself is `forEachParent`: bounded concurrency (`FAN_OUT_CONCURRENCY = 10`)
+  and one flattening step per nesting level, replacing 23 hand-written `Effect.forEach(…)`s — and the
+  project list it enumerates is fetched **once per session**, not once per resource family (the
+  `IamGrpcServiceWithProjectListCache` decorator, `shared/project-list-cache.ts`, R-12).
+  Keyed by tenant, and a *failed* lookup is not cached (TTL `Duration.zero`), because one transient
+  `UNAVAILABLE` cached for the session would turn a whole nuke into a partial enumeration.
 - **A best-effort pre-step in a destroy logs and continues** (`Effect.ignore({ log: 'Warn', message })`),
   because a blocked delete cascades into leaked parents while the cause is usually persistent.
 

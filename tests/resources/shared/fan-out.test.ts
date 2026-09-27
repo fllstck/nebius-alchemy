@@ -8,10 +8,11 @@
  */
 import { describe, expect, test } from 'bun:test'
 import * as ConfigProvider from 'effect/ConfigProvider'
+import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 
-import { bestEffortList, resolveParentIds } from '../../../modules/resources/shared/fan-out.ts'
+import { bestEffortList, forEachParent, resolveParentIds } from '../../../modules/resources/shared/fan-out.ts'
 import { GrpcError, GrpcDeadlineExceededError } from '../../../modules/api-client/grpc-utils.ts'
 import { mockIamLayer, recordingLogs, testConfigLayer } from '../../helpers/mocks.ts'
 
@@ -78,6 +79,51 @@ describe('bestEffortList', () => {
     const exit = await Effect.runPromiseExit(bestEffortList('networks in project-1', Effect.die(new Error('bug'))))
 
     expect(exit._tag).toBe('Failure')
+  })
+})
+
+/**
+ * `forEachParent` — the fan-out's shape (R-12's second half).
+ *
+ * It exists so the 23 hand-written fan-outs share one concurrency setting and one flattening step. The
+ * failures are `bestEffortList`'s (pinned above); what is pinned *here* is that the parents are
+ * enumerated concurrently and that each level's rows are flattened into one array.
+ */
+describe('forEachParent', () => {
+  test('enumerates parents concurrently — a parent blocked on another parent still finishes', async () => {
+    // `blocker` is enumerated FIRST and cannot finish until `releaser` has run. Sequentially, this
+    // never completes; the timeout turns that into an assertion failure instead of a hung suite.
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const released = yield* Deferred.make<void>()
+        return yield* forEachParent(
+          ['blocker', 'releaser'],
+          (parentId) => `resources in ${parentId}`,
+          (parentId) =>
+            parentId === 'blocker'
+              ? Effect.map(Deferred.await(released), () => [1])
+              : Effect.andThen(Deferred.succeed(released, undefined), Effect.succeed([2])),
+        )
+      }).pipe(
+        // `Effect.forEach` preserves input order, so the flattened result is stable.
+        Effect.timeoutOrElse({ duration: 1000, orElse: () => Effect.succeed('sequential' as const) }),
+      ),
+    )
+
+    expect(result).toEqual([1, 2])
+  })
+
+  test('flattens one level per parent, and a gone parent contributes nothing', async () => {
+    const result = await Effect.runPromise(
+      forEachParent(['parent-1', 'parent-gone', 'parent-2'], (parentId) => `resources in ${parentId}`, (parentId) =>
+        parentId === 'parent-gone'
+          // NOT_FOUND is the quiet arm — no warning to capture, no partial-result noise.
+          ? Effect.fail(grpcError(5))
+          : Effect.succeed([`${parentId}-a`, `${parentId}-b`]),
+      ),
+    )
+
+    expect(result).toEqual(['parent-1-a', 'parent-1-b', 'parent-2-a', 'parent-2-b'])
   })
 })
 
