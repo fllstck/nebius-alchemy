@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as SymmetricKeySchema from './symmetric-key.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -68,9 +69,7 @@ export const NebiusSymmetricKeyProvider: Layer.Layer<
     // 1. Observe
     let key: NebiusSymmetricKeySchema.SymmetricKey | undefined
     if (output?.id) {
-      key = yield* grpcService.symmetricKey
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      key = yield* getOrUndefined(grpcService.symmetricKey.get(output.id))
     }
 
     // 2. Ensure — create if missing

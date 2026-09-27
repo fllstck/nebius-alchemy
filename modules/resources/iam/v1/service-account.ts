@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as ServiceAccountSchema from './service-account.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -54,9 +55,7 @@ export const NebiusServiceAccountProvider: Layer.Layer<
     // 1. Observe
     let sa: NebiusServiceAccountSchema.ServiceAccount | undefined
     if (output?.id) {
-      sa = yield* iamGrpcService.serviceAccount
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      sa = yield* getOrUndefined(iamGrpcService.serviceAccount.get(output.id))
     }
 
     // 2. Ensure — create if missing

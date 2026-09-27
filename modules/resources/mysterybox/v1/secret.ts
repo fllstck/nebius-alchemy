@@ -15,6 +15,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecretSchema from './secret.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -57,9 +58,7 @@ export const NebiusSecretProvider: Layer.Layer<
     // 1. Observe
     let secret: NebiusSecretSchema.Secret | undefined
     if (output?.id) {
-      secret = yield* grpcService.secret
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      secret = yield* getOrUndefined(grpcService.secret.get(output.id))
     }
 
     // 2. Ensure — create if missing

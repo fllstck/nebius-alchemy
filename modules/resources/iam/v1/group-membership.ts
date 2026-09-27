@@ -15,6 +15,7 @@ import * as Factory from '../../factory.ts'
 import { GrpcError } from '../../../api-client/grpc-utils.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 import { bestEffortList } from '../../shared/fan-out.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -70,9 +71,7 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
     // Check if membership already exists by listing members and finding a match
     let membership: NebiusGroupMembershipSchema.GroupMembership | undefined
     if (output?.id) {
-      membership = yield* iam.groupMembership
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      membership = yield* getOrUndefined(iam.groupMembership.get(output.id))
     }
 
     if (!membership) {
@@ -141,9 +140,7 @@ export const NebiusGroupMembershipProvider: Layer.Layer<
       return undefined
     }
     const iam = yield* IamGrpc.IamGrpcService
-    const membership = yield* iam.groupMembership
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const membership = yield* getOrUndefined(iam.groupMembership.get(output.id))
     if (!membership) return undefined
     const attrs = toFriendlyAttributes(membership)
     if (yield* AlchemyTags.hasAlchemyTags(id, membership.metadata?.labels || {})) {

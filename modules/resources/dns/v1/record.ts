@@ -14,6 +14,7 @@ import * as RecordSchema from './record.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 import { bestEffortList } from '../../shared/fan-out.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -58,9 +59,7 @@ export const NebiusRecordProvider: Layer.Layer<
     // 1. Observe
     let record: NebiusRecordSchema.Record | undefined
     if (output?.id) {
-      record = yield* dnsGrpcService.record
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      record = yield* getOrUndefined(dnsGrpcService.record.get(output.id))
     }
 
     // 2. Ensure — parent is zone, not project; name is auto-generated from relativeName

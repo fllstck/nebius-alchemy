@@ -7,7 +7,8 @@ import * as ProjectModule from './v2/project.ts'
 import * as GroupModule from './v1/group.ts'
 import type * as Index from './index.ts'
 import { resolveTenantId } from '../shared/tenant.ts'
-import { bestEffortList } from '../shared/fan-out.ts'
+import { bestEffortList, resolveParentIds } from '../shared/fan-out.ts'
+import { getOrUndefined } from '../shared/not-found.ts'
 
 // ── Project ───────────────────────────────────────────────────────────────
 
@@ -18,9 +19,7 @@ export const GetProject = Alchemy.Action(
     const tenantId = yield* resolveTenantId()
     return ({ name }: { name: string }) =>
       Effect.gen(function* () {
-        const result = yield* iam.project
-          .getByName({ parentId: tenantId, name })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(iam.project.getByName({ parentId: tenantId, name }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -69,9 +68,7 @@ export const GetGroup = Alchemy.Action(
     return ({ name, parentId }: { name: string; parentId?: Index.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
-        const result = yield* iam.group
-          .getByName({ parentId: pid, name })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(iam.group.getByName({ parentId: pid, name }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -91,10 +88,9 @@ export const ListGroups = Alchemy.Action(
   'Nebius.iam.actions.ListGroups',
   Effect.gen(function* () {
     const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: Index.ProjectId } = {}) =>
       Effect.gen(function* () {
-        const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
+        const parentIds = yield* resolveParentIds(parentId)
         const results = yield* Effect.forEach(parentIds, (pid) =>
           bestEffortList(
             `groups in project ${pid}`,

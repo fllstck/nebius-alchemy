@@ -19,6 +19,7 @@ import * as InstanceSchema from './instance.schema.ts'
 import * as Ids from './ids.ts'
 import * as Factory from '../../factory.ts'
 import { tryPromiseRaw } from '../../../effect-utils.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 /**
  * Raised when a hosted instance would ship an UNWRAPPED bundle — `main` set
@@ -550,9 +551,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let instance: NebiusInstanceSchema.Instance | undefined
     if (output?.id) {
-      instance = yield* computeGrpcService.instance
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      instance = yield* getOrUndefined(computeGrpcService.instance.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

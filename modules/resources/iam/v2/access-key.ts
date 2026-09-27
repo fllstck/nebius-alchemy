@@ -14,6 +14,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as AccessKeySchema from './access-key.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 /** A deterministic-name access key already exists (orphan from an interrupted destroy). */
 export class AccessKeyCollisionError extends Schema.TaggedError<AccessKeyCollisionError>()(
@@ -173,10 +174,7 @@ export const NebiusAccessKeyProvider: Layer.Layer<
     const iamGrpcService = yield* IamGrpc.IamGrpcService
 
     // Observe — check if the key still exists
-    const key = yield* iamGrpcService.accessKeyV2
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
-
+    const key = yield* getOrUndefined(iamGrpcService.accessKeyV2.get(output.id))
     if (!key) {
       return yield* Effect.die(
         `Nebius.iam.v2.AccessKey.reconcile: key ${output.id} disappeared. ` +

@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as DiskSchema from './disk.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -56,9 +57,7 @@ export const NebiusDiskProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let disk: NebiusDiskSchema.Disk | undefined
     if (output?.id) {
-      disk = yield* computeGrpcService.disk
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      disk = yield* getOrUndefined(computeGrpcService.disk.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

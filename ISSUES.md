@@ -373,9 +373,14 @@ suite before and after the sweep, not assumed.
 
 **Findings recorded while sweeping** (not fixed here, none of them blocking):
 
-- **`modules/resources/actions/shared.ts`'s `listProjectIds` is dead** — zero references in `modules/`,
-  `tests/` or `examples/`; the three action files inline the same `parentId ? [parentId] : (yield*
-  iam.project.list(tenantId)).map(…)` expression instead. Either use it in those three places or delete it.
+- **`modules/resources/actions/shared.ts`'s `listProjectIds` was dead** — zero references in `modules/`,
+  `tests/` or `examples/`; the action files inline the same `parentId ? [parentId] : (yield*
+  iam.project.list(tenantId)).map(…)` expression instead. **Resolved 2026-09-25**: the file was deleted
+  rather than adopted, because the helper's shape is the *pre-R-06* one (it propagates on any failure and
+  bakes in `metadata!.id`), while the callers it would have absorbed have split into two deliberately
+  different treatments (`iam/actions.ts`'s `ListProjects` narrows and re-raises; the fan-out sites pass
+  parents to `bestEffortList`). The duplication was real though — **7 sites in 3 files**, not three — and
+  is now `resolveParentIds` in `shared/fan-out.ts`.
 - **The rule does not cover `catchIf` / `orElseSucceed` / `catchCause` handlers** — only `catch`/`catchTag`.
   There are zero such sites today (`grep` over `modules/`), so this is a coverage gap rather than a live hole;
   it belongs with the next rule change, with fixtures.

@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as QuotaAllowanceSchema from './quota-allowance.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -54,14 +55,12 @@ export const NebiusQuotaAllowanceProvider: Layer.Layer<
     // 1. Observe — identity is (parentId, name, region), not id
     let qa: NebiusQuotaAllowanceSchema.QuotaAllowance | undefined
     if (output?.id) {
-      qa = yield* grpcService.quotaAllowance
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      qa = yield* getOrUndefined(grpcService.quotaAllowance.get(output.id))
     }
     if (!qa) {
-      qa = yield* grpcService.quotaAllowance
-        .getByName({ parentId, name: news.name, region: news.region })
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      qa = yield* getOrUndefined(
+        grpcService.quotaAllowance.getByName({ parentId, name: news.name, region: news.region }),
+      )
     }
 
     // 2. Ensure — create if missing

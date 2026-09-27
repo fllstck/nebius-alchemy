@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as SecurityGroupSchema from './security-group.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -55,9 +56,7 @@ export const NebiusSecurityGroupProvider: Layer.Layer<
     // 1. Observe
     let sg: NebiusSecurityGroupSchema.SecurityGroup | undefined
     if (output?.id) {
-      sg = yield* vpcGrpcService.securityGroup
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      sg = yield* getOrUndefined(vpcGrpcService.securityGroup.get(output.id))
     }
 
     // 2. Ensure

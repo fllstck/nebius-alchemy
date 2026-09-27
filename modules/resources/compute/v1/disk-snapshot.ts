@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as DiskSnapshotSchema from './disk-snapshot.schema.ts'
 import * as Factory from '../../factory.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -53,9 +54,7 @@ export const NebiusDiskSnapshotProvider: Layer.Layer<
 
     let snap: NebiusDiskSnapshotSchema.DiskSnapshot | undefined
     if (output?.id) {
-      snap = yield* svc.diskSnapshot
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      snap = yield* getOrUndefined(svc.diskSnapshot.get(output.id))
     }
 
     const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))

@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as ProjectSchema from './project.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -68,9 +69,7 @@ export const NebiusProjectProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let project: NebiusProjectSchema.Project | undefined
     if (output?.id) {
-      project = yield* iamGrpcService.project
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      project = yield* getOrUndefined(iamGrpcService.project.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

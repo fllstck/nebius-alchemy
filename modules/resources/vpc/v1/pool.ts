@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as PoolSchema from './pool.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -93,9 +94,7 @@ export const NebiusPoolProvider: Layer.Layer<
 
     let pool: NebiusPoolSchema.Pool | undefined
     if (output?.id) {
-      pool = yield* vpcGrpcService.pool
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      pool = yield* getOrUndefined(vpcGrpcService.pool.get(output.id))
     }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

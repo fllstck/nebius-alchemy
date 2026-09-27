@@ -7,11 +7,13 @@
  * complete one), and a defect is not swallowed at all.
  */
 import { describe, expect, test } from 'bun:test'
+import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 
-import { bestEffortList } from '../../../modules/resources/shared/fan-out.ts'
+import { bestEffortList, resolveParentIds } from '../../../modules/resources/shared/fan-out.ts'
 import { GrpcError, GrpcDeadlineExceededError } from '../../../modules/api-client/grpc-utils.ts'
-import { recordingLogs } from '../../helpers/mocks.ts'
+import { mockIamLayer, recordingLogs, testConfigLayer } from '../../helpers/mocks.ts'
 
 const grpcError = (code: number, message = 'nope') => new GrpcError({ code, message, details: '' })
 
@@ -74,6 +76,68 @@ describe('bestEffortList', () => {
 
   test('a defect is NOT swallowed — a bug in the enumeration is not a missing parent', async () => {
     const exit = await Effect.runPromiseExit(bestEffortList('networks in project-1', Effect.die(new Error('bug'))))
+
+    expect(exit._tag).toBe('Failure')
+  })
+})
+
+/**
+ * `resolveParentIds` — the parents a tenant fan-out enumerates.
+ *
+ * The interesting property is *what it does not do*: with an explicit `parentId` it must not touch the
+ * tenant at all. Every call site used to resolve `NEBIUS_TENANT_ID` eagerly at action-construction
+ * time, so a `List*({ parentId })` call failed with `MissingTenantIdError` when the variable was unset
+ * — even though `tenant.ts` documents the tenant as needed "only where something genuinely lists
+ * across projects". That is why the first test runs with an **empty** config provider and a project
+ * list that dies if it is reached.
+ */
+describe('resolveParentIds', () => {
+  /** Config provider with no tenant, so any tenant resolution fails loudly. */
+  const noTenant = ConfigProvider.layer(ConfigProvider.fromUnknown({}))
+
+  test('an explicit parentId is the whole answer — the tenant is never read', async () => {
+    const result = await Effect.runPromise(
+      Effect.provide(
+        resolveParentIds('project-explicit'),
+        Layer.mergeAll(
+          noTenant,
+          mockIamLayer({
+            project: {
+              list: () => Effect.die('the project list must not be called when a parentId was given'),
+            },
+          }),
+        ),
+      ),
+    )
+
+    expect([...result]).toEqual(['project-explicit'])
+  })
+
+  test('without a parentId every project of the tenant is enumerated', async () => {
+    const result = await Effect.runPromise(
+      Effect.provide(
+        resolveParentIds(undefined),
+        Layer.mergeAll(
+          testConfigLayer,
+          mockIamLayer({
+            project: {
+              list: () => Effect.succeed([{ metadata: { id: 'project-a' } }, { metadata: { id: 'project-b' } }]),
+            },
+          }),
+        ),
+      ),
+    )
+
+    expect([...result]).toEqual(['project-a', 'project-b'])
+  })
+
+  test('a failing project list is NOT best-effort — it would read as "this tenant has no projects"', async () => {
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(
+        resolveParentIds(undefined),
+        Layer.mergeAll(testConfigLayer, mockIamLayer({ project: { list: () => Effect.fail(grpcError(5)) } })),
+      ),
+    )
 
     expect(exit._tag).toBe('Failure')
   })

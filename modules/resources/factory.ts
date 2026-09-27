@@ -12,6 +12,7 @@ import { GrpcError as GrpcErrorCtor } from '../api-client/grpc-utils.ts'
 import type { PropsValidationError } from './validation.ts'
 import { resolveTenantId } from './shared/tenant.ts'
 import { bestEffortList } from './shared/fan-out.ts'
+import { getOrUndefined } from './shared/not-found.ts'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,11 +124,7 @@ export const makeCrudRead = <STag extends Context.Service<any, any>, Raw extends
       return undefined
     }
     const svc = yield* config.service
-    const resource = yield* config.getById(svc, output.id).pipe(
-      Effect.catchTag('GrpcError', (e) =>
-        e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e),
-      ),
-    )
+    const resource = yield* getOrUndefined(config.getById(svc, output.id))
     if (!resource) return undefined
     const attrs = config.toAttrs(resource)
     if (yield* AlchemyTags.hasAlchemyTags(id, resource.metadata?.labels || {})) {

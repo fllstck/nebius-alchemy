@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as FedCredsSchema from './federated-credentials.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -58,9 +59,7 @@ export const NebiusFederatedCredentialsProvider: Layer.Layer<
 
     let creds: NebiusFedCredsSchema.FederatedCredentials | undefined
     if (output?.id) {
-      creds = yield* iam.federatedCredentials
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      creds = yield* getOrUndefined(iam.federatedCredentials.get(output.id))
     }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

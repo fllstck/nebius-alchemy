@@ -17,6 +17,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as EndpointSchema from './endpoint.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -198,9 +199,7 @@ export const NebiusEndpointProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let endpoint: NebiusEndpointSchema.Endpoint | undefined
     if (output?.id) {
-      endpoint = yield* aiGrpcService.endpoint
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      endpoint = yield* getOrUndefined(aiGrpcService.endpoint.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags). `isFresh` marks

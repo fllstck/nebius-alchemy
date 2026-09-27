@@ -15,6 +15,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as ZoneSchema from './zone.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -61,9 +62,7 @@ export const NebiusZoneProvider: Layer.Layer<
     // 1. Observe
     let zone: NebiusZoneSchema.Zone | undefined
     if (output?.id) {
-      zone = yield* dnsGrpcService.zone
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      zone = yield* getOrUndefined(dnsGrpcService.zone.get(output.id))
     }
 
     // 2. Ensure
@@ -135,9 +134,7 @@ export const NebiusZoneProvider: Layer.Layer<
     const dnsGrpcService = yield* DnsGrpc.DnsGrpcService
 
     // Idempotent: NOT_FOUND means it is already gone (a re-run destroy reaches here).
-    const current = yield* dnsGrpcService.zone
-      .get(output.id)
-      .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const current = yield* getOrUndefined(dnsGrpcService.zone.get(output.id))
     if (!current) return
 
     const records = (yield* dnsGrpcService.record.list(output.id)).filter(

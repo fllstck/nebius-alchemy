@@ -13,6 +13,7 @@ import * as AccessPermitSchema from './access-permit.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 import { bestEffortList } from '../../shared/fan-out.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -59,9 +60,7 @@ export const NebiusAccessPermitProvider: Layer.Layer<
 
     let permit: NebiusAccessPermitSchema.AccessPermit | undefined
     if (output?.id) {
-      permit = yield* iam.accessPermit
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      permit = yield* getOrUndefined(iam.accessPermit.get(output.id))
     }
 
     if (!permit) {
@@ -117,9 +116,7 @@ export const NebiusAccessPermitProvider: Layer.Layer<
       return undefined
     }
     const iam = yield* IamGrpc.IamGrpcService
-    const permit = yield* iam.accessPermit
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const permit = yield* getOrUndefined(iam.accessPermit.get(output.id))
     if (!permit) return undefined
     const attrs = toFriendlyAttributes(permit)
     if (yield* AlchemyTags.hasAlchemyTags(id, permit.metadata?.labels || {})) {

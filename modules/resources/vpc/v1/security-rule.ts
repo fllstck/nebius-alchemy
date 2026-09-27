@@ -14,6 +14,7 @@ import * as SecurityRuleSchema from './security-rule.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 import { bestEffortList } from '../../shared/fan-out.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -78,9 +79,7 @@ export const NebiusSecurityRuleProvider: Layer.Layer<
     // 1. Observe
     let rule: NebiusSecurityRuleSchema.SecurityRule | undefined
     if (output?.id) {
-      rule = yield* vpcGrpcService.securityRule
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      rule = yield* getOrUndefined(vpcGrpcService.securityRule.get(output.id))
     }
 
     // 2. Ensure — parent is the SecurityGroup, not the Project

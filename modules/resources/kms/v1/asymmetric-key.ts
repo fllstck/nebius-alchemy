@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as AsymmetricKeySchema from './asymmetric-key.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -55,9 +56,7 @@ export const NebiusAsymmetricKeyProvider: Layer.Layer<
     // 1. Observe
     let key: NebiusAsymmetricKeySchema.AsymmetricKey | undefined
     if (output?.id) {
-      key = yield* grpcService.asymmetricKey
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      key = yield* getOrUndefined(grpcService.asymmetricKey.get(output.id))
     }
 
     // 2. Ensure

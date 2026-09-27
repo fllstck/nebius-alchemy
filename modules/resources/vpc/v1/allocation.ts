@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as AllocationSchema from './allocation.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -52,9 +53,7 @@ export const NebiusAllocationProvider: Layer.Layer<
 
     let allocation: NebiusAllocationSchema.Allocation | undefined
     if (output?.id) {
-      allocation = yield* vpcGrpcService.allocation
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      allocation = yield* getOrUndefined(vpcGrpcService.allocation.get(output.id))
     }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

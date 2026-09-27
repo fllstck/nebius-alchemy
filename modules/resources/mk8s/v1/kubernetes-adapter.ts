@@ -40,6 +40,7 @@ import * as Mk8sGrpc from '../../../api-client/mk8s.ts'
 import * as NebiusCredentialsModule from '../../../Credentials.ts'
 import * as Ids from './ids.ts'
 import { ClusterNotReadyError } from './cluster.schema.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 import { ClusterStatus_State } from '../../../../schemas/nebius/mk8s/v1/cluster.ts'
 
 declare module 'alchemy/Kubernetes/Connection' {
@@ -151,9 +152,7 @@ export const Mk8sKubernetesAdapter = (): Layer.Layer<ClusterAdapterService, neve
       const describeLiveCluster = Effect.fn('Nebius.mk8s.ClusterAdapter.describeLiveCluster')(
         function* (auth: { clusterId: string }) {
           const mk8s = yield* Mk8sGrpc.Mk8sGrpcService
-          const cluster = yield* mk8s.cluster.get(auth.clusterId).pipe(
-            Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))),
-          )
+          const cluster = yield* getOrUndefined(mk8s.cluster.get(auth.clusterId))
           if (!cluster || cluster.status?.state === ClusterStatus_State.DELETING) {
             return yield* Effect.fail(
               new ClusterNotFoundError({ message: `mk8s cluster '${auth.clusterId}' no longer exists` }),

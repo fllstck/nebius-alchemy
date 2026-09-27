@@ -15,6 +15,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as JobSchema from './job.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -69,9 +70,7 @@ export const NebiusJobProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let job: NebiusJobSchema.Job | undefined
     if (output?.id) {
-      job = yield* aiGrpcService.job
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      job = yield* getOrUndefined(aiGrpcService.job.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

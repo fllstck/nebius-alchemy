@@ -16,6 +16,7 @@ import * as PricingPolicySchema from './pricing-policy.schema.ts'
 import * as Ids from './ids.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ---------------------------------------------------------------------------
 // Nebius.billing.v1.PricingPolicy
@@ -110,9 +111,7 @@ export const NebiusPricingPolicyProvider: Layer.Layer<
 
     let policy: NebiusPricingPolicySchema.PricingPolicy | undefined
     if (output?.id) {
-      policy = yield* svc.pricingPolicy
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      policy = yield* getOrUndefined(svc.pricingPolicy.get(output.id))
     }
 
     if (!policy) {
@@ -137,9 +136,7 @@ export const NebiusPricingPolicyProvider: Layer.Layer<
     // The API refuses to delete a policy that still prices running VMs, and its own error is a bare
     // FAILED_PRECONDITION. The count is in `status`, so the provider names the consequence instead —
     // the GpuClusterNotEmpty pattern (a provider cannot see its dependents; here the resource can).
-    const live = yield* svc.pricingPolicy
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const live = yield* getOrUndefined(svc.pricingPolicy.get(output.id))
     const running = live?.status?.runningVmCount
     if (running !== undefined && !running.isZero()) {
       return yield* new PricingPolicySchema.PricingPolicyHasRunningVms({

@@ -1,7 +1,6 @@
 import * as Alchemy from 'alchemy'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
-import * as IamGrpc from '../../../api-client/iam.ts'
 import * as VpcGrpc from '../../../api-client/vpc.ts'
 import * as Validation from '../../validation.ts'
 import * as Network from './network.ts'
@@ -9,9 +8,9 @@ import * as Subnet from './subnet.ts'
 import * as SecurityGroup from './security-group.ts'
 import * as RouteTable from './route-table.ts'
 import * as Pool from './pool.ts'
-import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { bestEffortList, resolveParentIds } from '../../shared/fan-out.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ── Network ───────────────────────────────────────────────────────────────
 
@@ -23,9 +22,7 @@ export const GetNetwork = Alchemy.Action(
     return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
-        const result = yield* vpc.network
-          .getByName({ parentId: pid, name })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(vpc.network.getByName({ parentId: pid, name }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -45,11 +42,9 @@ export const ListNetworks = Alchemy.Action(
   'Nebius.vpc.actions.ListNetworks',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
-        const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
+        const parentIds = yield* resolveParentIds(parentId)
         const results = yield* Effect.forEach(parentIds, (pid) =>
           bestEffortList(
             `networks in project ${pid}`,
@@ -71,9 +66,7 @@ export const GetSubnet = Alchemy.Action(
     return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
-        const result = yield* vpc.subnet
-          .getByName({ parentId: pid, name })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(vpc.subnet.getByName({ parentId: pid, name }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -93,11 +86,9 @@ export const ListSubnets = Alchemy.Action(
   'Nebius.vpc.actions.ListSubnets',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
-        const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
+        const parentIds = yield* resolveParentIds(parentId)
         const results = yield* Effect.forEach(parentIds, (pid) =>
           bestEffortList(
             `subnets in project ${pid}`,
@@ -119,9 +110,7 @@ export const GetSecurityGroup = Alchemy.Action(
     return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
-        const result = yield* vpc.securityGroup
-          .getByName({ parentId: pid, name })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(vpc.securityGroup.getByName({ parentId: pid, name }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -141,11 +130,9 @@ export const ListSecurityGroups = Alchemy.Action(
   'Nebius.vpc.actions.ListSecurityGroups',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
-        const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
+        const parentIds = yield* resolveParentIds(parentId)
         const results = yield* Effect.forEach(parentIds, (pid) =>
           bestEffortList(
             `security groups in project ${pid}`,
@@ -169,9 +156,7 @@ export const GetRouteTable = Alchemy.Action(
     return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
-        const result = yield* vpc.routeTable
-          .getByName({ parentId: pid, name })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(vpc.routeTable.getByName({ parentId: pid, name }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -191,11 +176,9 @@ export const ListRouteTables = Alchemy.Action(
   'Nebius.vpc.actions.ListRouteTables',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
-        const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
+        const parentIds = yield* resolveParentIds(parentId)
         const results = yield* Effect.forEach(parentIds, (pid) =>
           bestEffortList(
             `route tables in project ${pid}`,
@@ -217,9 +200,7 @@ export const GetPool = Alchemy.Action(
     return ({ name, parentId }: { name: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
-        const result = yield* vpc.pool
-          .getByName({ parentId: pid, name })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(vpc.pool.getByName({ parentId: pid, name }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -239,11 +220,9 @@ export const ListPools = Alchemy.Action(
   'Nebius.vpc.actions.ListPools',
   Effect.gen(function* () {
     const vpc = yield* VpcGrpc.VpcGrpcService
-    const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
-        const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
+        const parentIds = yield* resolveParentIds(parentId)
         const results = yield* Effect.forEach(parentIds, (pid) =>
           bestEffortList(
             `pools in project ${pid}`,

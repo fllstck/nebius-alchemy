@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as ImageSchema from './image.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -56,9 +57,7 @@ export const NebiusImageProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let image: NebiusImageSchema.Image | undefined
     if (output?.id) {
-      image = yield* computeGrpcService.image
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      image = yield* getOrUndefined(computeGrpcService.image.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

@@ -15,6 +15,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as GpuClusterSchema from './gpu-cluster.schema.ts'
 import * as Factory from '../../factory.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- ERRORS
 
@@ -72,9 +73,7 @@ export const NebiusGpuClusterProvider: Layer.Layer<
 
         let cluster: NebiusGpuClusterSchema.GpuCluster | undefined
         if (output?.id) {
-          cluster = yield* svc.gpuCluster
-            .get(output.id)
-            .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+          cluster = yield* getOrUndefined(svc.gpuCluster.get(output.id))
         }
 
         if (!cluster) {
@@ -104,9 +103,7 @@ export const NebiusGpuClusterProvider: Layer.Layer<
         // Pre-flight: the API refuses to delete a cluster that still has
         // members, and a raw rejection would not say which instances to look at.
         // A missing cluster means there is nothing to guard (idempotent delete).
-        const current = yield* svc.gpuCluster
-          .get(output.id)
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const current = yield* getOrUndefined(svc.gpuCluster.get(output.id))
         if (!current) return
 
         const members = current.status?.instances ?? []

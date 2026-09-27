@@ -14,6 +14,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as StaticKeySchema from './static-key.schema.ts'
 import * as Factory from '../../factory.ts'
 import * as Ids from './ids.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -157,10 +158,7 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     const iamGrpcService = yield* IamGrpc.IamGrpcService
 
     // Observe — check if the key still exists
-    const key = yield* iamGrpcService.staticKey
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
-
+    const key = yield* getOrUndefined(iamGrpcService.staticKey.get(output.id))
     if (!key) {
       return yield* Effect.die(
         `Nebius.iam.v1.StaticKey.reconcile: key ${output.id} disappeared. ` +
@@ -193,9 +191,7 @@ export const NebiusStaticKeyProvider: Layer.Layer<
     }
     const iamGrpcService = yield* IamGrpc.IamGrpcService
 
-    const key = yield* iamGrpcService.staticKey
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const key = yield* getOrUndefined(iamGrpcService.staticKey.get(output.id))
     if (!key) return undefined
 
     const attrs = toFriendlyAttributes(key, output.secretKey)

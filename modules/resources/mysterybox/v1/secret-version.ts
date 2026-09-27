@@ -16,6 +16,7 @@ import * as SecretVersionSchema from './secret-version.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 import { bestEffortList } from '../../shared/fan-out.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -61,9 +62,7 @@ export const NebiusSecretVersionProvider: Layer.Layer<
 
     let version: NebiusSecretVersionSchema.SecretVersion | undefined
     if (output?.id) {
-      version = yield* svc.secretVersion
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      version = yield* getOrUndefined(svc.secretVersion.get(output.id))
     }
 
     if (!version) {
@@ -113,9 +112,7 @@ export const NebiusSecretVersionProvider: Layer.Layer<
       return undefined
     }
     const svc = yield* MysteryBoxGrpc.MysteryBoxGrpcService
-    const version = yield* svc.secretVersion
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const version = yield* getOrUndefined(svc.secretVersion.get(output.id))
     if (!version) return undefined
     const attrs = toFriendlyAttributes(version)
     if (yield* AlchemyTags.hasAlchemyTags(id, version.metadata?.labels || {})) {

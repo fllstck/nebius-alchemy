@@ -1,13 +1,12 @@
 import * as Alchemy from 'alchemy'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
-import * as IamGrpc from '../../../api-client/iam.ts'
 import * as QuotasGrpc from '../../../api-client/quotas.ts'
 import * as Validation from '../../validation.ts'
 import * as QuotaAllowanceModule from './quota-allowance.ts'
-import { resolveTenantId } from '../../shared/tenant.ts'
-import { bestEffortList } from '../../shared/fan-out.ts'
+import { bestEffortList, resolveParentIds } from '../../shared/fan-out.ts'
 import * as IamV2Ids from '../../iam/v2/ids.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ── Quota ─────────────────────────────────────────────────────────────────
 
@@ -19,9 +18,7 @@ export const GetQuota = Alchemy.Action(
     return ({ name, region, parentId }: { name: string; region: string; parentId?: IamV2Ids.ProjectId }) =>
       Effect.gen(function* () {
         const pid = parentId ?? defaultProjectId
-        const result = yield* quotas.quotaAllowance
-          .getByName({ parentId: pid, name, region })
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const result = yield* getOrUndefined(quotas.quotaAllowance.getByName({ parentId: pid, name, region }))
         if (!result) {
           return yield* Effect.fail(
             new Validation.ResourceNotFoundError({
@@ -41,11 +38,9 @@ export const ListQuotas = Alchemy.Action(
   'Nebius.quotas.actions.ListQuotas',
   Effect.gen(function* () {
     const quotas = yield* QuotasGrpc.QuotasGrpcService
-    const iam = yield* IamGrpc.IamGrpcService
-    const tenantId = yield* resolveTenantId()
     return ({ parentId }: { parentId?: IamV2Ids.ProjectId } = {}) =>
       Effect.gen(function* () {
-        const parentIds = parentId ? [parentId] : (yield* iam.project.list(tenantId)).map((p) => p.metadata!.id)
+        const parentIds = yield* resolveParentIds(parentId)
         const results = yield* Effect.forEach(parentIds, (pid) =>
           bestEffortList(
             `quota allowances in project ${pid}`,

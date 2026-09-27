@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as FederationSchema from './federation.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -52,9 +53,7 @@ export const NebiusFederationProvider: Layer.Layer<
 
     let federation: NebiusFederationSchema.Federation | undefined
     if (output?.id) {
-      federation = yield* iam.federation
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      federation = yield* getOrUndefined(iam.federation.get(output.id))
     }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

@@ -13,6 +13,7 @@ import * as FedCertSchema from './federation-certificate.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 import { bestEffortList } from '../../shared/fan-out.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -59,9 +60,7 @@ export const NebiusFederationCertificateProvider: Layer.Layer<
 
     let cert: NebiusFederationCertSchema.FederationCertificate | undefined
     if (output?.id) {
-      cert = yield* iam.federationCertificate
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      cert = yield* getOrUndefined(iam.federationCertificate.get(output.id))
     }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as NetworkSchema from './network.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -86,9 +87,7 @@ export const NebiusNetworkProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let network: NebiusNetworkSchema.Network | undefined
     if (output?.id) {
-      network = yield* vpcGrpcService.network
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      network = yield* getOrUndefined(vpcGrpcService.network.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

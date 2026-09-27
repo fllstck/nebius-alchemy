@@ -1,0 +1,89 @@
+// Fallow config — codebase intelligence on top of oxlint/tsc, **not a gate**.
+//
+// `bun run check` stays the gate; fallow is run ad hoc because its findings are heuristic
+// (see the throughput note at the bottom). Without this file fallow reports ~8300 issues, ~99.9%
+// of them from `repos/effect` (vendored read-only reference) and `schemas/` (generated protobuf) —
+// with it, 16, every class of which is named in the comments on `rules` below.
+//
+// Usage:  npx fallow dead-code      # unused files/exports/deps + unlisted imports + cycles
+//         npx fallow dupes          # clone groups; found the two real ones, both now extracted:
+//                                   #   the 7x parent-fan-out (`shared/fan-out.ts`)
+//                                   #   the 62-site NOT_FOUND idiom (`shared/not-found.ts`)
+//         npx fallow health         # complexity / churn ranking
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+
+  // Everything that is not reached by one of these is reported as an unused file. `modules/index.ts`
+  // is the package entry (also picked up from `package.json#main`); the rest are hand-run, so nothing
+  // imports them and every one of them would otherwise read as dead.
+  "entry": [
+    "modules/index.ts",
+    // The api-client barrel: nothing inside the repo imports it (every consumer imports the
+    // per-service module directly, e.g. `api-client/grpc-utils.ts`), but `package.json#exports`
+    // exposes `./*` → `./modules/*`, so it is reachable as a public subpath. Listed as an entry so
+    // it is not reported dead; **open question**: if it is not meant to be public, delete it.
+    "modules/api-client/index.ts",
+    "examples/**/*.ts",
+    "tests/**/*.ts",
+    "tools/**/*.ts",
+    "spikes/**/*.{ts,mjs,js}",
+    ".github/**/*.ts"
+  ],
+
+  // `repos/` is the vendored (read-only) Effect monorepo — `tsconfig.json` excludes it for the same
+  // reason. `schemas/` is buf-generated and carries ~5000 exports nothing imports by name.
+  "ignorePatterns": ["repos/**", "schemas/**", "dist/**", "reports/**"],
+
+  // An export used inside its own file is not public API and is not dead — it is just an unnecessary
+  // `export` keyword. Without this, 64 of the 84 `unused-exports` findings fallow reports for `modules/`
+  // are that non-issue (measured 2026-09-25).
+  "ignoreExportsUsedInFile": true,
+
+  "ignoreDependencies": [
+    // Imported by 225 files under the generated `schemas/**`, which `ignorePatterns` takes out of the
+    // graph above — so it looks unused. It is a runtime dependency and must not be removed.
+    "@bufbuild/protobuf",
+    // Not a real import: it appears inside the bootstrap script *string* that
+    // `compute/v1/hosted.ts` renders and ships to the VM, and is declared as a peerDependency for
+    // the same reason. Static analysis can only ever see the template literal.
+    "@effect/platform-bun"
+  ],
+
+  "rules": {
+    "unused-files": "error",
+    // 4 findings, all references that static analysis cannot follow: `hosted.ts`'s
+    // `transformInstanceProps`/`resolveHostedRuntime` are reached through the deliberate dynamic
+    // `loadHosted()` import (`instance.ts:97`), and the two `PricingModelSchema` re-exports sit on a
+    // deliberate public-API line.
+    "unused-exports": "warn",
+    // 5 findings, none of them a live bug and all of them a judgement call on API surface:
+    // `AuthProvider`'s `NebiusStoredCredentials`/`NebiusOAuthCredentials`/`NebiusSaKeyCredentials`
+    // (aliases nothing outside the file references) and the paired `PricingModel` re-exports.
+    "unused-types": "warn",
+    // `circular-dependencies` and `unlisted-dependencies` default to error and both currently have
+    // real, known findings, which are left visible here rather than whitelisted:
+    //   * 2 cycles — `AuthProvider → sa-bootstrap → grpc-utils → GrpcTransport → Credentials`, and
+    //     `mk8s/v1 cluster.schema.ts ↔ kubernetes-adapter.ts` (the schema→adapter edge is the one
+    //     worth fixing).
+    //   * 3 unlisted imports — `rolldown` (type-only, `compute/v1/hosted.ts:22`), `eslint`
+    //     (JSDoc-only, `tools/oxlint-nebius-plugin/index.js:16`) and `@alchemy.run/cloudflare-runtime`
+    //     (spike-only, `spikes/ai-bindings-bundle.ts:46`); all three resolve by hoisting only.
+    // Keep them at `warn` until fixed, then promote to `error` (fallow's own adoption advice).
+    "circular-dependencies": "warn",
+    "unlisted-dependencies": "warn",
+    // Same symbol exported from several files: the `action` namespace barrels and the per-resource
+    // `toFriendlyAttributes` are deliberate, and slop here is not actionable.
+    "duplicate-exports": "warn",
+    // Both findings are `override get message()` on a `Schema.TaggedError`. Fallow cannot see that
+    // Error rendering reads it, so the rule is off rather than the findings whitelisted.
+    "unused-class-members": "off"
+  },
+
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 15,
+    // Tests and spike scripts are long by construction (one `describe` per behaviour, one probe per
+    // reading); counting them would bury the production hotspots.
+    "ignore": ["tests/**", "spikes/**"]
+  }
+}

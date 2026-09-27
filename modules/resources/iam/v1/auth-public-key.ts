@@ -14,6 +14,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as AuthPublicKeySchema from './auth-public-key.schema.ts'
 import * as Factory from '../../factory.ts'
 import * as Ids from './ids.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -64,9 +65,7 @@ export const NebiusAuthPublicKeyProvider: Layer.Layer<
 
     let key: NebiusAuthPublicKeySchema.AuthPublicKey | undefined
     if (output?.id) {
-      key = yield* iam.authPublicKey
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      key = yield* getOrUndefined(iam.authPublicKey.get(output.id))
     }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

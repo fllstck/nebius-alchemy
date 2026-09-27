@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as SubnetSchema from './subnet.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -85,9 +86,7 @@ export const NebiusSubnetProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let subnet: NebiusSubnetSchema.Subnet | undefined
     if (output?.id) {
-      subnet = yield* vpcGrpcService.subnet
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      subnet = yield* getOrUndefined(vpcGrpcService.subnet.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

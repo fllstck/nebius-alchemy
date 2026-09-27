@@ -14,6 +14,7 @@ import * as RouteSchema from './route.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
 import { bestEffortList } from '../../shared/fan-out.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -63,9 +64,7 @@ export const NebiusRouteProvider: Layer.Layer<
     // 1. Observe
     let route: NebiusRouteSchema.Route | undefined
     if (output?.id) {
-      route = yield* vpcGrpcService.route
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      route = yield* getOrUndefined(vpcGrpcService.route.get(output.id))
     }
 
     // 2. Ensure — parent is the RouteTable, not the Project

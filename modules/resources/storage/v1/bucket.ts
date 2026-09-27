@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as BucketSchema from './bucket.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -91,9 +92,7 @@ export const NebiusBucketProvider: Layer.Layer<
     // 1. Observe — fetch live state if we have a cached physical ID
     let bucket: NebiusBucketSchema.Bucket | undefined
     if (output?.id) {
-      bucket = yield* storageGrpcService.bucket
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      bucket = yield* getOrUndefined(storageGrpcService.bucket.get(output.id))
     }
 
     // 2. Ensure — create if missing (with ownership tags)

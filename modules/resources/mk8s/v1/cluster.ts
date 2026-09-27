@@ -13,6 +13,7 @@ import * as IamGrpc from '../../../api-client/iam.ts'
 
 import * as ClusterSchema from './cluster.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -141,9 +142,7 @@ export const NebiusClusterProvider: Layer.Layer<
 
         let cluster: NebiusClusterSchema.Cluster | undefined
         if (output?.id) {
-          cluster = yield* svc.cluster
-            .get(output.id)
-            .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+          cluster = yield* getOrUndefined(svc.cluster.get(output.id))
         }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

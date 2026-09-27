@@ -292,14 +292,23 @@ could not be enumerated" were the same answer. The rule (`nebius/no-silent-error
 bans a *constant* handler — `Effect.void` or `Effect.succeed([] | undefined | null)` — and exactly three
 shapes are allowed, chosen by what the caller can do with the answer:
 
-- **A create-path lookup narrows to `NOT_FOUND`**: `Effect.catchTag('GrpcError', (e) => e.code === 5 ? … :
-  Effect.fail(e))`. An unverified lookup that decides whether to *create* something can otherwise produce a
-  duplicate (`iam/v1 AccessPermit`'s adopt-by-identity path). No partial result is worth preserving here.
-- **A tenant fan-out logs and continues** (`modules/resources/shared/fan-out.ts`, `bestEffortList`):
-  `NOT_FOUND` quiet, anything else `[]` **plus a warning naming the parent and saying the result is
+- **A create-path lookup narrows to `NOT_FOUND`** — and that rule now lives in **one** function rather than
+  at each call site: `modules/resources/shared/not-found.ts`'s `getOrUndefined(svc.x.get(id))` answers
+  `undefined` for code 5 and re-raises everything else (62 hand-inlined copies of it were the largest
+  clone family in `modules/`, extracted 2026-09-25). An unverified lookup that decides whether to
+  *create* something can otherwise produce a duplicate (`iam/v1 AccessPermit`'s adopt-by-identity path).
+  No partial result is worth preserving here. The predicate is **tag-based** (`_tag === 'GrpcError'`),
+  matching `catchTag` — `instanceof` would stop catching the structural `{_tag: 'GrpcError', code: 5}`
+  mocks in `tests/helpers/mocks.ts`.
+- **A tenant fan-out logs and continues** (`modules/resources/shared/fan-out.ts`, `bestEffortList` and
+  `resolveParentIds`): `NOT_FOUND` quiet, anything else `[]` **plus a warning naming the parent and saying the result is
   PARTIAL**, defects propagating. This fan-out is `alchemy unsafe nuke`'s enumeration — its only caller —
   and aborting over one inaccessible project leaves more behind; but a partial list must never read as a
-  complete one.
+  complete one. `resolveParentIds` is the fan-out's input side (the 7 hand-inlined
+  `parentId ? [parentId] : …project.list(tenantId)` copies): it reads the tenant **only when no `parentId`
+  was given**, which is what `shared/tenant.ts` documents ("needed only where something genuinely lists
+  across projects") — the call sites used to resolve it eagerly and fail a `parentId`-scoped call without
+  `NEBIUS_TENANT_ID`.
 - **A best-effort pre-step in a destroy logs and continues** (`Effect.ignore({ log: 'Warn', message })`),
   because a blocked delete cascades into leaked parents while the cause is usually persistent.
 

@@ -14,6 +14,7 @@ import { bestEffortList } from '../../shared/fan-out.ts'
 
 import * as NodeGroupSchema from './node-group.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -268,9 +269,7 @@ export const NebiusNodeGroupProvider: Layer.Layer<
 
         let nodeGroup: NebiusNodeGroupSchema.NodeGroup | undefined
         if (output?.id) {
-          nodeGroup = yield* svc.nodeGroup
-            .get(output.id)
-            .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+          nodeGroup = yield* getOrUndefined(svc.nodeGroup.get(output.id))
         }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update

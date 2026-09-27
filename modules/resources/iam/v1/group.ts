@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as GroupSchema from './group.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -52,9 +53,7 @@ export const NebiusGroupProvider: Layer.Layer<
 
     let group: NebiusGroupSchema.Group | undefined
     if (output?.id) {
-      group = yield* iam.group
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      group = yield* getOrUndefined(iam.group.get(output.id))
     }
 
     if (!group) {

@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as TransferSchema from './transfer.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -137,9 +138,7 @@ export const NebiusTransferProvider: Layer.Layer<
 
     let transfer: NebiusTransferSchema.Transfer | undefined
     if (output?.id) {
-      transfer = yield* svc.transfer
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      transfer = yield* getOrUndefined(svc.transfer.get(output.id))
     }
 
     // The merged labels are computed **once** and sent on the update as well as the create: an update
@@ -226,9 +225,7 @@ transfer.spec && transferSpecDrifted(transfer.spec, desired)
     const svc = yield* StorageGrpc.StorageGrpcService
     yield* session.note(`Deleting Transfer (${output.id})`)
     // Fetch current state to check if transfer is active
-    const transfer = yield* svc.transfer
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const transfer = yield* getOrUndefined(svc.transfer.get(output.id))
     // If active, stop before deleting
     if (transfer && transfer.status?.state === 1 /* ACTIVE */) {
       yield* svc.transfer.stop(output.id).pipe(

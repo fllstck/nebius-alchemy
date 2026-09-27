@@ -13,6 +13,7 @@ import * as ResourceUtils from '../../utilities.ts'
 
 import * as RouteTableSchema from './route-table.schema.ts'
 import * as Factory from '../../factory.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -53,9 +54,7 @@ export const NebiusRouteTableProvider: Layer.Layer<
     // 1. Observe
     let rt: NebiusRouteTableSchema.RouteTable | undefined
     if (output?.id) {
-      rt = yield* vpcGrpcService.routeTable
-        .get(output.id)
-        .pipe(Effect.catchTag(['GrpcError'], (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      rt = yield* getOrUndefined(vpcGrpcService.routeTable.get(output.id))
     }
 
     // 2. Ensure

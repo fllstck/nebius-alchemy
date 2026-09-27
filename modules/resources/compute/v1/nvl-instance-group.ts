@@ -14,6 +14,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as NVLInstanceGroupSchema from './nvl-instance-group.schema.ts'
 import * as Factory from '../../factory.ts'
 import * as IamGrpc from '../../../api-client/iam.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- ERRORS
 
@@ -80,9 +81,7 @@ export const NebiusNVLInstanceGroupProvider: Layer.Layer<
 
         let group: NebiusNVLInstanceGroupSchema.NVLInstanceGroup | undefined
         if (output?.id) {
-          group = yield* svc.nvlInstanceGroup
-            .get(output.id)
-            .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+          group = yield* getOrUndefined(svc.nvlInstanceGroup.get(output.id))
         }
 
         const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
@@ -133,9 +132,7 @@ group.spec && !ResourceUtils.specDeepEqual(group.spec, desired)
       delete: Effect.fn('Nebius.compute.v1.NVLInstanceGroup.delete')(function* ({ output, session }) {
         const svc = yield* ComputeGrpc.ComputeGrpcService
 
-        const current = yield* svc.nvlInstanceGroup
-          .get(output.id)
-          .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+        const current = yield* getOrUndefined(svc.nvlInstanceGroup.get(output.id))
         if (!current) return
 
         const members = Object.keys(current.status?.instances ?? {})

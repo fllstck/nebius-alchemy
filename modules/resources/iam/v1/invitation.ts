@@ -12,6 +12,7 @@ import * as ResourceUtils from '../../utilities.ts'
 import * as InvitationSchema from './invitation.schema.ts'
 import * as Factory from '../../factory.ts'
 import { resolveTenantId } from '../../shared/tenant.ts'
+import { getOrUndefined } from '../../shared/not-found.ts'
 
 // ----- RESOURCE TYPES
 
@@ -57,9 +58,7 @@ export const NebiusInvitationProvider: Layer.Layer<
 
     let invitation: NebiusInvitationSchema.Invitation | undefined
     if (output?.id) {
-      invitation = yield* iam.invitation
-        .get(output.id)
-        .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+      invitation = yield* getOrUndefined(iam.invitation.get(output.id))
       if (!invitation) {
         return yield* Effect.die(
           `Nebius.iam.v1.Invitation.reconcile: invitation ${output.id} disappeared. ` +
@@ -126,9 +125,7 @@ invitation.spec && !ResourceUtils.specDeepEqual(invitation.spec, desired)
       return undefined
     }
     const iam = yield* IamGrpc.IamGrpcService
-    const invitation = yield* iam.invitation
-      .get(output.id)
-      .pipe(Effect.catchTag('GrpcError', (e) => (e.code === 5 ? Effect.succeed(undefined) : Effect.fail(e))))
+    const invitation = yield* getOrUndefined(iam.invitation.get(output.id))
     if (!invitation) return undefined
     const attrs = toFriendlyAttributes(invitation)
     if (yield* AlchemyTags.hasAlchemyTags(id, invitation.metadata?.labels || {})) {
