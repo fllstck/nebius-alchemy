@@ -33,6 +33,7 @@ import {
   wrapWithOperationPolling,
   GrpcError,
 } from '../../modules/api-client/grpc-utils.ts'
+import type { InputBuilders, WithOperationPolling } from '../../modules/api-client/grpc-utils.ts'
 import { OperationServiceService } from '../../schemas/nebius/common/v1/operation_service.ts'
 import { Operation } from '../../schemas/nebius/common/v1/operation.ts'
 import { Warnings as WarningsProto, Warning_Code } from '../../schemas/nebius/common/v1/warning.ts'
@@ -1105,5 +1106,55 @@ describe('wrapWithOperationPolling', () => {
 
     await Effect.runPromise(wrapped.list({ limit: 5 }))
     expect(calls.at(-1)).toBe('list:{"mappedLimit":5}')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The builder edge (R-10)
+// ---------------------------------------------------------------------------
+
+/**
+ * R-10: `mapInput` is no longer `(req: any) => any`.
+ *
+ * Two contracts, both *type*-level, so they are asserted with the compiler rather than a runtime probe:
+ * a builder must return **that method's** request message, and the wrapped method's **parameter** becomes
+ * the builder's input. `@ts-expect-error` is the mechanism — it fails the build (`bun run check`) when the
+ * annotated line stops erroring, which is R-04's "a rule never observed failing is a comment" applied to a
+ * type check. The runtime `expect`s below only keep the file honest under `bun test`; the assertions that
+ * matter are the unused-directive errors.
+ */
+describe('the builder edge (R-10) — the two compile-time contracts', () => {
+  /** A stand-in for a ts-proto client: one method, one request message. */
+  type Raw = {
+    update: (req: { id: string; spec: unknown }) => Effect.Effect<{ id: string }>
+  }
+
+  test('a builder returning the wrong request message is a type error', () => {
+    const ok: InputBuilders<Raw> = {
+      update: (req: { id: string }) => ({ id: req.id, spec: {} }),
+    }
+    // @ts-expect-error — a builder must return THAT method's request; `{ nope: true }` is not one.
+    const wrong: InputBuilders<Raw> = { update: () => ({ nope: true }) }
+
+    expect(ok.update?.({ id: 'a' })).toEqual({ id: 'a', spec: {} })
+    expect(wrong).toBeDefined()
+  })
+
+  test('the wrapped method takes the builder input, which is what makes `satisfies XService` possible', () => {
+    type Wrapped = WithOperationPolling<
+      Raw,
+      never,
+      never,
+      never,
+      { id: string },
+      { update: (id: string) => { id: string; spec: unknown } }
+    >
+
+    const takesId = (w: Wrapped) => w.update('quota-1')
+    // @ts-expect-error — the raw request object is no longer the parameter (the old, cast-away shape).
+    const takesRequest = (w: Wrapped) => w.update({ id: 'quota-1', spec: {} })
+
+    expect(takesId).toBeFunction()
+    expect(takesRequest).toBeFunction()
   })
 })

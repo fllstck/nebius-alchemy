@@ -48,25 +48,25 @@ export interface NetworkService {
     req: CreateNetworkInput,
   ) => Effect.Effect.Effect<
     Network,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly createDefault: (
     req: CreateDefaultNetworkInput,
   ) => Effect.Effect.Effect<
     Network,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateNetworkInput,
   ) => Effect.Effect.Effect<
     Network,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -99,19 +99,19 @@ export interface SubnetService {
     req: CreateSubnetInput,
   ) => Effect.Effect.Effect<
     Subnet,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateSubnetInput,
   ) => Effect.Effect.Effect<
     Subnet,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -146,19 +146,19 @@ export interface SecurityGroupService {
     req: CreateSecurityGroupInput,
   ) => Effect.Effect.Effect<
     SecurityGroup,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateSecurityGroupInput,
   ) => Effect.Effect.Effect<
     SecurityGroup,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -194,19 +194,19 @@ export interface SecurityRuleService {
     req: CreateSecurityRuleInput,
   ) => Effect.Effect.Effect<
     SecurityRule,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateSecurityRuleInput,
   ) => Effect.Effect.Effect<
     SecurityRule,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -241,19 +241,19 @@ export interface RouteTableService {
     req: CreateRouteTableInput,
   ) => Effect.Effect.Effect<
     RouteTable,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateRouteTableInput,
   ) => Effect.Effect.Effect<
     RouteTable,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -287,19 +287,19 @@ export interface RouteService {
     req: CreateRouteInput,
   ) => Effect.Effect.Effect<
     Route,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateRouteInput,
   ) => Effect.Effect.Effect<
     Route,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -328,19 +328,19 @@ export interface PoolService {
     req: CreatePoolInput,
   ) => Effect.Effect.Effect<
     Pool,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdatePoolInput,
   ) => Effect.Effect.Effect<
     Pool,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -374,19 +374,19 @@ export interface AllocationService {
     req: CreateAllocationInput,
   ) => Effect.Effect.Effect<
     Allocation,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateAllocationInput,
   ) => Effect.Effect.Effect<
     Allocation,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -436,11 +436,9 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateNetworkInput) => NebiusNetworkServiceSchema.UpdateNetworkRequest.fromPartial(req),
         delete: (id: string) => NebiusNetworkServiceSchema.DeleteNetworkRequest.fromPartial({ id }),
       },
-      // Cast: wrapWithOperationPolling returns WithOperationPolling which has
-      // protobuf request types, but NetworkService uses simplified inputs
-      // (CreateNetworkInput, etc.). The mapInput transforms above bridge the
-      // gap at runtime; the cast acknowledges the type-level mismatch.
-    }) as unknown as NetworkService
+      // `satisfies`, not a cast (R-10): the builders above ARE the method inputs, so the wrapper is
+      // checked against `NetworkService` — minus `list`, replaced by the paginating override below.
+    }) satisfies Omit<NetworkService, 'list'>
 
     // Wrap list with pagination
     const listNetworks = (parentId: string) =>
@@ -451,7 +449,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    const network = { ...polledNetwork, list: listNetworks }
+    const network = { ...polledNetwork, list: listNetworks } satisfies NetworkService
 
     // --- Subnet service ---
 
@@ -474,11 +472,9 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateSubnetInput) => NebiusSubnetServiceSchema.UpdateSubnetRequest.fromPartial(req),
         delete: (id: string) => NebiusSubnetServiceSchema.DeleteSubnetRequest.fromPartial({ id }),
       },
-      // Cast: wrapWithOperationPolling returns WithOperationPolling which has
-      // protobuf request types, but SubnetService uses simplified inputs
-      // (CreateSubnetInput, etc.). The mapInput transforms above bridge the
-      // gap at runtime; the cast acknowledges the type-level mismatch.
-    }) as unknown as SubnetService
+      // `satisfies`, not a cast (R-10). `list`/`listByNetwork` are excluded because the paginating
+      // overrides below replace the wrapper's raw-request passthroughs.
+    }) satisfies Omit<SubnetService, 'list' | 'listByNetwork'>
 
     // Wrap list with pagination
     const listSubnets = (parentId: string) =>
@@ -498,14 +494,13 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         networkId,
       )
 
-    // Cast: the spread merges WithOperationPolling (protobuf inputs) with
-    // list/listByNetwork (which have simpler string-based inputs).
-    // SubnetService uses simplified inputs throughout; verified manually.
+    // Asserts the composed object against the full interface — the wrappers below are the ones the
+    // `Omit` above excluded, with pagination and string-based inputs.
     const subnet = {
       ...polledSubnet,
       list: listSubnets,
       listByNetwork: listSubnetsByNetwork,
-    }
+    } satisfies SubnetService
 
     // --- SecurityGroup service ---
 
@@ -533,7 +528,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
           NebiusSecurityGroupServiceSchema.UpdateSecurityGroupRequest.fromPartial(req),
         delete: (id: string) => NebiusSecurityGroupServiceSchema.DeleteSecurityGroupRequest.fromPartial({ id }),
       },
-    }) as unknown as SecurityGroupService
+    }) satisfies Omit<SecurityGroupService, 'list' | 'listByNetwork'>
 
     const listSecurityGroups = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -563,7 +558,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
       ...polledSecurityGroup,
       list: listSecurityGroups,
       listByNetwork: listSecurityGroupsByNetwork,
-    }
+    } satisfies SecurityGroupService
 
     // --- SecurityRule service ---
 
@@ -586,7 +581,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
           NebiusSecurityRuleServiceSchema.UpdateSecurityRuleRequest.fromPartial(req),
         delete: (id: string) => NebiusSecurityRuleServiceSchema.DeleteSecurityRuleRequest.fromPartial({ id }),
       },
-    }) as unknown as SecurityRuleService
+    }) satisfies Omit<SecurityRuleService, 'list'>
 
     const listSecurityRules = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -596,7 +591,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    const securityRule = { ...polledSecurityRule, list: listSecurityRules }
+    const securityRule = { ...polledSecurityRule, list: listSecurityRules } satisfies SecurityRuleService
 
     // --- RouteTable service ---
 
@@ -619,7 +614,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateRouteTableInput) => NebiusRouteTableServiceSchema.UpdateRouteTableRequest.fromPartial(req),
         delete: (id: string) => NebiusRouteTableServiceSchema.DeleteRouteTableRequest.fromPartial({ id }),
       },
-    }) as unknown as RouteTableService
+    }) satisfies Omit<RouteTableService, 'list' | 'listByNetwork'>
 
     const listRouteTables = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -649,7 +644,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
       ...polledRouteTable,
       list: listRouteTables,
       listByNetwork: listRouteTablesByNetwork,
-    }
+    } satisfies RouteTableService
 
     // --- Route service ---
 
@@ -670,7 +665,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateRouteInput) => NebiusRouteServiceSchema.UpdateRouteRequest.fromPartial(req),
         delete: (id: string) => NebiusRouteServiceSchema.DeleteRouteRequest.fromPartial({ id }),
       },
-    }) as unknown as RouteService
+    }) satisfies Omit<RouteService, 'list'>
 
     const listRoutes = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -680,7 +675,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    const route = { ...polledRoute, list: listRoutes }
+    const route = { ...polledRoute, list: listRoutes } satisfies RouteService
 
     // --- Pool service ---
 
@@ -703,7 +698,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdatePoolInput) => NebiusPoolServiceSchema.UpdatePoolRequest.fromPartial(req),
         delete: (id: string) => NebiusPoolServiceSchema.DeletePoolRequest.fromPartial({ id }),
       },
-    }) as unknown as PoolService
+    }) satisfies Omit<PoolService, 'list' | 'listBySourcePool'>
 
     const listPools = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -713,7 +708,20 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    const pool = { ...polledPool, list: listPools }
+    // Paginated like `list` — the interface has always promised `ReadonlyArray<Pool>`, and the request
+    // carries `pageSize`/`pageToken`, but the method used to be the wrapper's plain passthrough: callers
+    // would have received a `ListPoolsResponse` from something typed as an array. R-10 found it by making
+    // the interface checkable (`satisfies`); nothing called it before, so this is a shape fix, not a
+    // behaviour change for any existing caller.
+    const listPoolsBySourcePool = (poolId: string) =>
+      GrpcUtils.paginateAll(
+        (req) => rawPool.listBySourcePool(req),
+        (poolId, pageToken) =>
+          NebiusPoolServiceSchema.ListPoolsBySourcePoolRequest.fromPartial({ poolId, pageSize: 100, pageToken }),
+        poolId,
+      )
+
+    const pool = { ...polledPool, list: listPools, listBySourcePool: listPoolsBySourcePool } satisfies PoolService
 
     // --- Allocation service ---
 
@@ -738,7 +746,7 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateAllocationInput) => NebiusAllocationServiceSchema.UpdateAllocationRequest.fromPartial(req),
         delete: (id: string) => NebiusAllocationServiceSchema.DeleteAllocationRequest.fromPartial({ id }),
       },
-    }) as unknown as AllocationService
+    }) satisfies Omit<AllocationService, 'list' | 'listByPool' | 'listBySubnet'>
 
     const listAllocations = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -752,7 +760,37 @@ export const VpcGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    const allocation = { ...polledAllocation, list: listAllocations }
+    // The two secondary lists, paginated like `list` — and like `SubnetService.listByNetwork` /
+    // `SecurityGroupService.listByNetwork` just above. All four were declared `ReadonlyArray<…>` since the
+    // reshape while the wrapper handed back the RPC's response envelope; no caller existed, so nothing
+    // broke, and a blind cast kept the two shapes apart. R-10's `satisfies` is what made the
+    // declarations checkable, and these are the offenders it found.
+    const listAllocationsByPool = (poolId: string) =>
+      GrpcUtils.paginateAll(
+        (req) => rawAllocation.listByPool(req),
+        (poolId, pageToken) =>
+          NebiusAllocationServiceSchema.ListAllocationsByPoolRequest.fromPartial({ poolId, pageSize: 100, pageToken }),
+        poolId,
+      )
+
+    const listAllocationsBySubnet = (subnetId: string) =>
+      GrpcUtils.paginateAll(
+        (req) => rawAllocation.listBySubnet(req),
+        (subnetId, pageToken) =>
+          NebiusAllocationServiceSchema.ListAllocationsBySubnetRequest.fromPartial({
+            subnetId,
+            pageSize: 100,
+            pageToken,
+          }),
+        subnetId,
+      )
+
+    const allocation = {
+      ...polledAllocation,
+      list: listAllocations,
+      listByPool: listAllocationsByPool,
+      listBySubnet: listAllocationsBySubnet,
+    } satisfies AllocationService
 
     return { network, subnet, securityGroup, securityRule, routeTable, route, pool, allocation }
   }),

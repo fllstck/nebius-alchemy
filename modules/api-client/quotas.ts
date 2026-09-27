@@ -20,13 +20,30 @@ export type CreateQuotaAllowanceInput = CreateInput
 
 export type UpdateQuotaAllowanceInput = UpdateInput
 
+/**
+ * The error channel of a **polled** method: the raw call's errors plus the polling path's.
+ *
+ * `UnknownServiceError` is the addition R-10 surfaced — `pollOperation` resolves the operation service's
+ * endpoint through the registry, and a service missing from it fails there. The interface under-declared
+ * this until the blind cast was replaced by `satisfies`.
+ */
+export type QuotaAllowanceOperationError =
+  | GrpcUtils.GrpcError
+  | GrpcUtils.OperationFailedError
+  | GrpcUtils.GrpcDeadlineExceededError
+  | GrpcUtils.UnknownServiceError
+
 export interface QuotaAllowanceService {
   readonly get: (id: string) => Effect.Effect.Effect<QuotaAllowance, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string; region: string }) => Effect.Effect.Effect<QuotaAllowance, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<QuotaAllowance>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateQuotaAllowanceInput) => Effect.Effect.Effect<QuotaAllowance, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateQuotaAllowanceInput) => Effect.Effect.Effect<QuotaAllowance, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (
+    req: CreateQuotaAllowanceInput,
+  ) => Effect.Effect.Effect<QuotaAllowance, QuotaAllowanceOperationError>
+  readonly update: (
+    req: UpdateQuotaAllowanceInput,
+  ) => Effect.Effect.Effect<QuotaAllowance, QuotaAllowanceOperationError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, QuotaAllowanceOperationError>
 }
 
 // ---------------------------------------------------------------------------
@@ -63,7 +80,7 @@ export const QuotasGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateQuotaAllowanceInput) => UpdateQuotaAllowanceRequest.fromPartial(req),
         delete: (id: string) => DeleteQuotaAllowanceRequest.fromPartial({ id }),
       },
-    }) as unknown as QuotaAllowanceService
+    }) satisfies Omit<QuotaAllowanceService, 'list'>
 
     const list = (parentId: string) =>
       GrpcUtils.paginateAll(

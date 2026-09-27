@@ -55,19 +55,19 @@ export interface ProjectService {
     req: CreateProjectInput,
   ) => Effect.Effect.Effect<
     Project,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateProjectInput,
   ) => Effect.Effect.Effect<
     Project,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -83,10 +83,7 @@ export interface ServiceAccountService {
   readonly get: (
     id: string,
   ) => Effect.Effect.Effect<ServiceAccount, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly getByName: (
-    parentId: string,
-    name: string,
-  ) => Effect.Effect.Effect<ServiceAccount, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<ServiceAccount, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   /** List all service accounts in a project (paginates automatically). */
   readonly list: (
     parentId: string,
@@ -96,19 +93,19 @@ export interface ServiceAccountService {
     req: CreateServiceAccountInput,
   ) => Effect.Effect.Effect<
     ServiceAccount,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateServiceAccountInput,
   ) => Effect.Effect.Effect<
     ServiceAccount,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -133,7 +130,7 @@ export interface StaticKeyService {
     req: IssueStaticKeyInput,
   ) => Effect.Effect.Effect<
     StaticKeyWithToken,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly get: (
     id: string,
@@ -146,7 +143,7 @@ export interface StaticKeyService {
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -176,19 +173,19 @@ export interface AccessKeyV1Service {
     req: CreateAccessKeyInput,
   ) => Effect.Effect.Effect<
     AccessKey,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateAccessKeyInput,
   ) => Effect.Effect.Effect<
     AccessKey,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -223,19 +220,19 @@ export interface AccessKeyV2Service {
     req: CreateAccessKeyV2Input,
   ) => Effect.Effect.Effect<
     NebiusAccessKeyV2Schema.AccessKey,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateAccessKeyV2Input,
   ) => Effect.Effect.Effect<
     NebiusAccessKeyV2Schema.AccessKey,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -251,13 +248,13 @@ export interface FederationService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusFederationSchema.Federation>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateFederationInput) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateFederationInput) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateFederationInput) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateFederationInput) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.PolledMethodError>
   /** Deactivate a federation — required before it can be deleted. */
-  readonly deactivate: (id: string) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly deactivate: (id: string) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.PolledMethodError>
   /** Re-activate a deactivated federation. */
-  readonly activate: (id: string) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly activate: (id: string) => Effect.Effect.Effect<NebiusFederationSchema.Federation, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -270,9 +267,9 @@ export type UpdateFederationCertInput = UpdateInput
 export interface FederationCertificateService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusFederationCertSchema.FederationCertificate, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly listByFederation: (federationId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusFederationCertSchema.FederationCertificate>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateFederationCertInput) => Effect.Effect.Effect<NebiusFederationCertSchema.FederationCertificate, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateFederationCertInput) => Effect.Effect.Effect<NebiusFederationCertSchema.FederationCertificate, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateFederationCertInput) => Effect.Effect.Effect<NebiusFederationCertSchema.FederationCertificate, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateFederationCertInput) => Effect.Effect.Effect<NebiusFederationCertSchema.FederationCertificate, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -286,9 +283,9 @@ export interface GroupService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusGroupSchema.Group, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<NebiusGroupSchema.Group, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusGroupSchema.Group>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateGroupInput) => Effect.Effect.Effect<NebiusGroupSchema.Group, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateGroupInput) => Effect.Effect.Effect<NebiusGroupSchema.Group, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateGroupInput) => Effect.Effect.Effect<NebiusGroupSchema.Group, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateGroupInput) => Effect.Effect.Effect<NebiusGroupSchema.Group, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -301,9 +298,9 @@ export type UpdateAuthPublicKeyInput = UpdateInput
 export interface AuthPublicKeyService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusAuthPublicKeySchema.AuthPublicKey, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusAuthPublicKeySchema.AuthPublicKey>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateAuthPublicKeyInput) => Effect.Effect.Effect<NebiusAuthPublicKeySchema.AuthPublicKey, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateAuthPublicKeyInput) => Effect.Effect.Effect<NebiusAuthPublicKeySchema.AuthPublicKey, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateAuthPublicKeyInput) => Effect.Effect.Effect<NebiusAuthPublicKeySchema.AuthPublicKey, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateAuthPublicKeyInput) => Effect.Effect.Effect<NebiusAuthPublicKeySchema.AuthPublicKey, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -317,9 +314,9 @@ export interface FederatedCredentialsService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusFedCredsSchema.FederatedCredentials, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<NebiusFedCredsSchema.FederatedCredentials, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusFedCredsSchema.FederatedCredentials>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateFedCredsInput) => Effect.Effect.Effect<NebiusFedCredsSchema.FederatedCredentials, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateFedCredsInput) => Effect.Effect.Effect<NebiusFedCredsSchema.FederatedCredentials, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateFedCredsInput) => Effect.Effect.Effect<NebiusFedCredsSchema.FederatedCredentials, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateFedCredsInput) => Effect.Effect.Effect<NebiusFedCredsSchema.FederatedCredentials, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -336,8 +333,8 @@ export interface CreateGroupMembershipInput {
 export interface GroupMembershipService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusGroupMembershipSchema.GroupMembership, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly listMembers: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusGroupMembershipSchema.GroupMembership>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateGroupMembershipInput) => Effect.Effect.Effect<NebiusGroupMembershipSchema.GroupMembership, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateGroupMembershipInput) => Effect.Effect.Effect<NebiusGroupMembershipSchema.GroupMembership, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -353,8 +350,8 @@ export interface CreateAccessPermitInput {
 export interface AccessPermitService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusAccessPermitSchema.AccessPermit, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusAccessPermitSchema.AccessPermit>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateAccessPermitInput) => Effect.Effect.Effect<NebiusAccessPermitSchema.AccessPermit, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateAccessPermitInput) => Effect.Effect.Effect<NebiusAccessPermitSchema.AccessPermit, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -379,10 +376,10 @@ export interface UpdateInvitationInput {
 export interface InvitationService {
   readonly get: (id: string) => Effect.Effect.Effect<NebiusInvitationSchema.Invitation, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<NebiusInvitationSchema.Invitation>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateInvitationInput) => Effect.Effect.Effect<NebiusInvitationSchema.Invitation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateInvitationInput) => Effect.Effect.Effect<NebiusInvitationSchema.Invitation, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly resend: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateInvitationInput) => Effect.Effect.Effect<NebiusInvitationSchema.Invitation, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateInvitationInput) => Effect.Effect.Effect<NebiusInvitationSchema.Invitation, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
+  readonly resend: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -431,7 +428,7 @@ const makeProjectService = Effect.Effect.gen(function* () {
       update: (req: UpdateProjectInput) => NebiusProjectServiceSchema.UpdateProjectRequest.fromPartial(req),
       delete: (id: string) => NebiusProjectServiceSchema.DeleteProjectRequest.fromPartial({ id, dryRun: false }),
     },
-  }) as unknown as ProjectService
+  }) satisfies Omit<ProjectService, 'list'>
 
   const list = (
     parentId: string,
@@ -468,7 +465,7 @@ const makeServiceAccountService = Effect.Effect.gen(function* () {
         NebiusServiceAccountServiceSchema.UpdateServiceAccountRequest.fromPartial(req),
       delete: (id: string) => NebiusServiceAccountServiceSchema.DeleteServiceAccountRequest.fromPartial({ id }),
     },
-  }) as unknown as ServiceAccountService
+  }) satisfies Omit<ServiceAccountService, 'list'>
 
   const list = (
     parentId: string,
@@ -504,14 +501,14 @@ const makeStaticKeyService = Effect.Effect.gen(function* () {
       get: (id: string) => NebiusStaticKeyServiceSchema.GetStaticKeyRequest.fromPartial({ id }),
       delete: (id: string) => NebiusStaticKeyServiceSchema.DeleteStaticKeyRequest.fromPartial({ id }),
     },
-  }) as unknown as Pick<StaticKeyService, 'get' | 'delete'>
+  }) satisfies Pick<StaticKeyService, 'get' | 'delete'>
 
   // issue is handled manually — it returns IssueStaticKeyResponse (not Operation)
   const issue = (
     req: IssueStaticKeyInput,
   ): Effect.Effect.Effect<
     StaticKeyWithToken,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   > =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Effect.Effect.gen(function* () {
@@ -567,7 +564,7 @@ const makeStaticKeyService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...withOperationPolling, issue, list } as unknown as StaticKeyService
+  return { ...withOperationPolling, issue, list } satisfies StaticKeyService
 })
 
 // -- AccessKey v1 ----------------------------------------------------------
@@ -597,7 +594,7 @@ const makeAccessKeyV1Service = Effect.Effect.gen(function* () {
           id: { id },
         }),
     },
-  }) as unknown as Pick<AccessKeyV1Service, 'getById' | 'create' | 'update' | 'delete'>
+  }) satisfies Pick<AccessKeyV1Service, 'getById' | 'create' | 'update' | 'delete'>
 
   // getSecretOnce for fetching the one-time secret
   const getSecretOnce = (
@@ -610,7 +607,7 @@ const makeAccessKeyV1Service = Effect.Effect.gen(function* () {
       return response.secret
     })
 
-  return { ...withOperationPolling, getSecretOnce } as unknown as AccessKeyV1Service
+  return { ...withOperationPolling, getSecretOnce } satisfies AccessKeyV1Service
 })
 
 // -- AccessKey v2 ----------------------------------------------------------
@@ -669,7 +666,7 @@ const makeAccessKeyV2Service = Effect.Effect.gen(function* () {
     ...withOperationPolling,
     getSecret,
     list,
-  } as unknown as AccessKeyV2Service
+  } satisfies AccessKeyV2Service
 })
 
 // -- Federation ------------------------------------------------------------
@@ -713,7 +710,7 @@ const makeFederationService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as FederationService
+  return { ...polled, list } satisfies FederationService
 })
 
 // -- FederationCertificate -------------------------------------------------
@@ -754,7 +751,7 @@ const makeFederationCertService = Effect.Effect.gen(function* () {
       federationId,
     )
 
-  return { ...polled, listByFederation } as unknown as FederationCertificateService
+  return { ...polled, listByFederation } satisfies FederationCertificateService
 })
 
 // -- Group -----------------------------------------------------------------
@@ -792,7 +789,7 @@ const makeGroupService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as GroupService
+  return { ...polled, list } satisfies GroupService
 })
 
 // -- AuthPublicKey ---------------------------------------------------------
@@ -832,7 +829,7 @@ const makeAuthPublicKeyService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as AuthPublicKeyService
+  return { ...polled, list } satisfies AuthPublicKeyService
 })
 
 // -- FederatedCredentials --------------------------------------------------
@@ -875,7 +872,7 @@ const makeFedCredsService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as FederatedCredentialsService
+  return { ...polled, list } satisfies FederatedCredentialsService
 })
 
 // -- GroupMembership -------------------------------------------------------
@@ -915,7 +912,7 @@ const makeGroupMembershipService = Effect.Effect.gen(function* () {
       return (response as { memberships: NebiusGroupMembershipSchema.GroupMembership[] }).memberships || []
     })
 
-  return { ...polled, listMembers } as unknown as GroupMembershipService
+  return { ...polled, listMembers } satisfies GroupMembershipService
 })
 
 // -- AccessPermit ----------------------------------------------------------
@@ -954,7 +951,7 @@ const makeAccessPermitService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as AccessPermitService
+  return { ...polled, list } satisfies AccessPermitService
 })
 
 // -- Invitation ------------------------------------------------------------
@@ -995,7 +992,7 @@ const makeInvitationService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as InvitationService
+  return { ...polled, list } satisfies InvitationService
 })
 
 // -- Live layer ------------------------------------------------------------

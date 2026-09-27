@@ -12,7 +12,7 @@ export {
   makeGrpcService,
   paginateAll,
 } from './grpc-utils.ts'
-export type { EffectService, WithOperationPolling, GrpcRetryOptions } from './grpc-utils.ts'
+export type { EffectService, WithOperationPolling, InputBuilders, PolledMethodError, GrpcRetryOptions } from './grpc-utils.ts'
 export { NebiusGrpcTransport, NebiusGrpcTransportLive } from './GrpcTransport.ts'
 export * as Storage from './storage.ts'
 export * as Iam from './iam.ts'

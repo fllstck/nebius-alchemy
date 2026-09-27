@@ -25,6 +25,42 @@ These rules are hard requirements. Violations must be corrected immediately.
 - Encapsulate `any` casts inside helper functions with typed generics at the call site
 - The `grpcClient.call()` and `callMethod<T>()` patterns are approved exceptions — they hide `any` internally
 
+**The service boundary is asserted, not cast (R-10).** `wrapWithOperationPolling` used to end in
+`as unknown as XService` at 42 call sites, so nothing compared the wrapper against the interface it was
+installed as: a rename or a wrong request message compiled and failed at runtime. Three changes make the
+comparison happen:
+
+1. `mapInput` is typed `InputBuilders<Raw>` — every builder must return **that method's** request message —
+   instead of `Partial<Record<keyof Raw, (req: any) => any>>`.
+2. Each builder's **input** is preserved into the wrapped method's parameter, so the wrapper's type carries
+   the friendly shapes (`(id: string)`, `{ parentId, name }`, `CreateInput`) rather than the raw requests.
+3. Each service file ends with `satisfies Omit<XService, …>` on the wrapper and `satisfies XService` on the
+   composed object. The `Omit` names exactly the members the service layer adds afterwards — the paginating
+   `list`/`listByNetwork`/`listByPool`/`listBySubnet`/`listBySourcePool`/`listMembers`/`listByFederation`,
+   and `listControlPlaneVersions` — so a *new* member the wrapper happens to expose cannot silently stand in
+   for one the interface promises.
+
+Turning that comparison on found five latent mismatches, each recorded in ISSUES.md §R-10: a **live**
+two-argument `bucket.getByName(parentId, bucketName)` (the wrapper is unary, so it passed a bare string
+into `fromPartial` and the API saw an empty request), six interface declarations promising a two-argument
+`getByName` that no caller used, four secondary list methods declared as arrays while returning the RPC's
+response envelope, and `UnknownServiceError` **missing from all 128 hand-written polled-method error
+unions** — now one `GrpcUtils.PolledMethodError` alias, because polling resolves the operation service's
+endpoint and a service absent from the catalog fails there.
+
+**Survivor register** — every remaining `as unknown as` under `modules/`, with the reason it is still there.
+A new cast belongs on this list in the same commit that adds it; `git grep -c "as unknown as" -- modules/`
+is the inventory.
+
+| site | count | why it stays |
+| ---- | ----- | ------------ |
+| `modules/api-client/grpc-utils.ts` — `wrapWithOperationPolling`'s return | 1 | The map is built by iterating `Object.keys(raw)`, so TS cannot track the dynamic construction against the mapped `WithOperationPolling`. The remaining claim is only "every raw key is present and dispatched to the right arm" — the *inputs* are derived from `mapInput` and checked at each call site. |
+| `modules/api-client/GrpcTransport.ts` — `channel.waitForReady` | 1 | grpc-js's generated channel type omits `waitForReady`; the cast is local to the readiness probe. |
+| `modules/resources/**` — `undefined as unknown as Layer<…>` | 41 | The `__ALCHEMY_RUNTIME__` DCE guard: the bundler folds the flag, and the falsy arm must still type as the provider layer. `storage/v1/bucket.ts` is the reference copy. |
+| `modules/resources/iam/v1/{auth-public-key,static-key}.ts` · `iam/v2/access-key.ts` — `accountId` | 3 | Reads `spec.account.serviceAccount.id` into an attribute. The house form is `Ids.ServiceAccountId.make(…)`, but that brand's `isResourceId('serviceaccount-')` filter **throws** on an absent field — and this runs inside `toAttrs`, i.e. inside both `read` and the `list` that `alchemy unsafe nuke` enumerates, so a server that omitted the field would block a destroy. |
+| `modules/resources/factory.ts` — the delete stall-warning wrapper | 1 | `Effect.raceFirst(reissuingStalls, progressTicker)` infers `Effect<undefined, unknown, unknown>` — the ticker never returns, so its generator's success type is `undefined`, and the `session` requirement is only visible through `note`. The cast restores the `Effect<void, E | DeleteStalledError, R>` the delete lifecycle declares; removing it fails the build with exactly that assignment. |
+| `modules/resources/shared/bind-host.ts` — `envToWorkerBindings` | 1 | The binding record carries unresolved `Output` text; the wire `WorkerBinding[]` shape is only reached after `Output.evaluate` at apply time (documented at the site). |
+
 ### Resource provider patterns
 
 - **MUST** use `*.fromPartial()` to construct protobuf request objects — never plain objects

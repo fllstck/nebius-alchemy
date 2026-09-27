@@ -111,13 +111,13 @@ export interface ClusterService {
     req: CreateClusterInput,
   ) => Effect.Effect.Effect<
     Cluster,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateClusterInput,
   ) => Effect.Effect.Effect<
     Cluster,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   /**
    * Delete a cluster. **This cascades**: measured 2026-09-23, deleting a cluster
@@ -129,7 +129,7 @@ export interface ClusterService {
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 
   // --- Read-only extras ---
@@ -152,7 +152,7 @@ export interface ClusterService {
    * is a plain passthrough it would otherwise hand back the whole response
    * message. {@link clusterControlPlaneVersions} is exported so that unwrapping is
    * unit-testable: on 2026-09-23 the first version of this member declared an
-   * array while returning `{ items }`, and the `as unknown as` cast hid it until a
+   * array while returning `{ items }`, and a blind cast hid it until a
    * live call failed with `versions.map is not a function`.
    */
   readonly listControlPlaneVersions: Effect.Effect.Effect<
@@ -194,19 +194,19 @@ export interface NodeGroupService {
     req: CreateNodeGroupInput,
   ) => Effect.Effect.Effect<
     NodeGroup,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateNodeGroupInput,
   ) => Effect.Effect.Effect<
     NodeGroup,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 
   // --- Read-only, but load-bearing ---
@@ -323,7 +323,7 @@ const makeClusterService = Effect.Effect.gen(function* () {
       update: (req: UpdateClusterInput) => UpdateClusterRequest.fromPartial(req),
       delete: (id: string) => DeleteClusterRequest.fromPartial({ id }),
     },
-  }) as unknown as ClusterService
+  }) satisfies Omit<ClusterService, 'list' | 'listControlPlaneVersions'>
 
   const list = (parentId: string) =>
     GrpcUtils.paginateAll((req) => raw.list(req), clusterListRequest, parentId)
@@ -362,7 +362,7 @@ const makeNodeGroupService = Effect.Effect.gen(function* () {
       getCompatibilityMatrix: (req: NodeGroupCompatibilityMatrixInput) =>
         GetNodeGroupCompatibilityMatrixRequest.fromPartial(req),
     },
-  }) as unknown as NodeGroupService
+  }) satisfies Omit<NodeGroupService, 'list'>
 
   const list = (clusterId: string) =>
     GrpcUtils.paginateAll((req) => raw.list(req), nodeGroupListRequest, clusterId)

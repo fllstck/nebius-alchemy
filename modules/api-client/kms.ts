@@ -39,18 +39,18 @@ export interface SymmetricKeyService {
   readonly get: (id: string) => Effect.Effect.Effect<SymmetricKey, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<SymmetricKey, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<SymmetricKey>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateSymmetricKeyInput) => Effect.Effect.Effect<SymmetricKey, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateSymmetricKeyInput) => Effect.Effect.Effect<SymmetricKey, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateSymmetricKeyInput) => Effect.Effect.Effect<SymmetricKey, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateSymmetricKeyInput) => Effect.Effect.Effect<SymmetricKey, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 export interface AsymmetricKeyService {
   readonly get: (id: string) => Effect.Effect.Effect<AsymmetricKey, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<AsymmetricKey, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<AsymmetricKey>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateAsymmetricKeyInput) => Effect.Effect.Effect<AsymmetricKey, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateAsymmetricKeyInput) => Effect.Effect.Effect<AsymmetricKey, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateAsymmetricKeyInput) => Effect.Effect.Effect<AsymmetricKey, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateAsymmetricKeyInput) => Effect.Effect.Effect<AsymmetricKey, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ export const KmsGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateSymmetricKeyInput) => UpdateSymmetricKeyRequest.fromPartial(req),
         delete: (id: string) => DeleteSymmetricKeyRequest.fromPartial({ id }),
       },
-    }) as unknown as SymmetricKeyService
+    }) satisfies Omit<SymmetricKeyService, 'list'>
 
     const listSymmetricKeys = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -100,7 +100,7 @@ export const KmsGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    const symmetricKey = { ...symmetricPolled, list: listSymmetricKeys }
+    const symmetricKey = { ...symmetricPolled, list: listSymmetricKeys } satisfies SymmetricKeyService
 
     // -- AsymmetricKey --
 
@@ -119,7 +119,7 @@ export const KmsGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateAsymmetricKeyInput) => UpdateAsymmetricKeyRequest.fromPartial(req),
         delete: (id: string) => DeleteAsymmetricKeyRequest.fromPartial({ id }),
       },
-    }) as unknown as AsymmetricKeyService
+    }) satisfies Omit<AsymmetricKeyService, 'list'>
 
     const listAsymmetricKeys = (parentId: string) =>
       GrpcUtils.paginateAll(
@@ -129,7 +129,7 @@ export const KmsGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    const asymmetricKey = { ...asymmetricPolled, list: listAsymmetricKeys }
+    const asymmetricKey = { ...asymmetricPolled, list: listAsymmetricKeys } satisfies AsymmetricKeyService
 
     return { symmetricKey, asymmetricKey }
   }),

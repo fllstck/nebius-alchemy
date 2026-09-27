@@ -21,11 +21,11 @@ export interface TransferService {
   readonly get: (id: string) => Effect.Effect.Effect<Transfer, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<Transfer, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<Transfer>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateTransferInput) => Effect.Effect.Effect<Transfer, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateTransferInput) => Effect.Effect.Effect<Transfer, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly stop: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly resume: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateTransferInput) => Effect.Effect.Effect<Transfer, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateTransferInput) => Effect.Effect.Effect<Transfer, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
+  readonly stop: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
+  readonly resume: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
   readonly getIterationHistory: (transferId: string) => Effect.Effect.Effect<ReadonlyArray<TransferIteration>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
 }
 
@@ -41,10 +41,7 @@ export type UpdateBucketInput = UpdateInput
 
 export interface BucketService {
   readonly get: (id: string) => Effect.Effect.Effect<Bucket, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly getByName: (
-    parentId: string,
-    name: string,
-  ) => Effect.Effect.Effect<Bucket, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<Bucket, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   /** List all buckets in a project (paginates automatically). */
   readonly list: (
     parentId: string,
@@ -62,19 +59,19 @@ export interface BucketService {
     req: CreateBucketInput,
   ) => Effect.Effect.Effect<
     Bucket,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateBucketInput,
   ) => Effect.Effect.Effect<
     Bucket,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -108,12 +105,12 @@ export const StorageGrpcServiceLive = Effect.Layer.effect(
       transport,
       getRequest: (id) => NebiusBucketServiceSchema.GetBucketRequest.fromPartial({ id }),
       mapInput: {
-        get: (id) => NebiusBucketServiceSchema.GetBucketRequest.fromPartial({ id }),
+        get: (id: string) => NebiusBucketServiceSchema.GetBucketRequest.fromPartial({ id }),
         getByName: (req: { parentId: string; name: string }) =>
           NebiusBucketServiceSchema.GetBucketByNameRequest.fromPartial(req),
-        create: (req) => NebiusBucketServiceSchema.CreateBucketRequest.fromPartial(req),
-        update: (req) => NebiusBucketServiceSchema.UpdateBucketRequest.fromPartial(req),
-        delete: (id) =>
+        create: (req: CreateBucketInput) => NebiusBucketServiceSchema.CreateBucketRequest.fromPartial(req),
+        update: (req: UpdateBucketInput) => NebiusBucketServiceSchema.UpdateBucketRequest.fromPartial(req),
+        delete: (id: string) =>
           NebiusBucketServiceSchema.DeleteBucketRequest.fromPartial({
             id,
             // Zero ttl = delete an Active bucket instantly (the API default is a
@@ -122,11 +119,10 @@ export const StorageGrpcServiceLive = Effect.Layer.effect(
             ttl: Duration.fromPartial({}),
           }),
       },
-      // Cast: wrapWithOperationPolling returns WithOperationPolling which has
-      // protobuf request types, but BucketService uses simplified inputs
-      // (CreateBucketInput, etc.). The mapInput transforms above bridge the
-      // gap at runtime; the cast acknowledges the type-level mismatch.
-    }) as unknown as BucketService
+      // `satisfies`, not a cast (R-10): the builders above ARE the method inputs, so the wrapper's
+      // type is checked against `BucketService` — minus `list`, which the paginating override below
+      // replaces. `mapInput` used to be typed `(req: any) => any` and the mismatch was cast away.
+    }) satisfies Omit<BucketService, 'list'>
 
     // Merge polled operations with the paginating list override.
     const list = (parentId: string) =>
@@ -137,10 +133,9 @@ export const StorageGrpcServiceLive = Effect.Layer.effect(
         parentId,
       )
 
-    // Cast: same rationale as ProjectService — the spread merges
-    // WithOperationPolling with list, and BucketService uses simplified
-    // inputs. Verified manually against the interface definition.
-    const bucket: BucketService = { ...polled, list }
+    // The composed object is asserted against the full interface: `list` closes the only gap the
+    // wrapper left (`Omit<…, 'list'>` above).
+    const bucket = { ...polled, list } satisfies BucketService
 
     // -- Transfer
     const transferRaw = yield* GrpcUtils.makeGrpcService(NebiusTransferServiceSchema.TransferServiceClient)

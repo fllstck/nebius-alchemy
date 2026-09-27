@@ -5,6 +5,16 @@ import { NebiusGrpcTransport } from './GrpcTransport.ts'
 import { OperationServiceClient, GetOperationRequest } from '../../schemas/nebius/common/v1/operation_service.ts'
 import type { Operation } from '../../schemas/nebius/common/v1/operation.ts'
 import type { UnknownServiceError } from '../endpoints.ts'
+
+/**
+ * Re-exported so service files can write `GrpcUtils.UnknownServiceError` alongside the other errors.
+ *
+ * It is part of every **polled** method's declared channel (`WithOperationPolling`): polling resolves the
+ * operation service's endpoint with a second call, and the registry may not have it. Before R-10 that
+ * failure was invisible in the hand-written service interfaces: a blind cast hid it, and
+ * every `create`/`update`/`delete` under-declared its error channel.
+ */
+export type { UnknownServiceError } from '../endpoints.ts'
 import { Warnings as WarningsProto, warning_CodeToJSON } from '../../schemas/nebius/common/v1/warning.ts'
 
 // ---------------------------------------------------------------------------
@@ -380,6 +390,22 @@ export class OperationFailedError extends Schema.TaggedError<OperationFailedErro
 }) {}
 
 /**
+ * The error channel of a **polled** method (`create`/`update`/`delete`) — the shared name for the union every
+ * service interface used to spell out by hand.
+ *
+ * `UnknownServiceError` is the arm that was *missing* from all 128 hand-written unions until R-10: polling
+ * resolves the operation service's endpoint through the registry (`pollOperation` → `transport.channelFor`),
+ * so a service the catalog does not know fails there — and the service interfaces could not see it because
+ * a blind cast erased the wrapper's real type before anyone compared the two. With `satisfies` the
+ * mismatch became a compile error, which is how the omission was found.
+ */
+export type PolledMethodError =
+  | GrpcError
+  | OperationFailedError
+  | GrpcDeadlineExceededError
+  | UnknownServiceError
+
+/**
  * Poll a Nebius long-running operation until it completes successfully.
  *
  * Uses exponential backoff starting at 500ms, jittered, with a maximum of
@@ -515,6 +541,12 @@ export const pollOperation = (
  * {@link Resource} defaults to the return type of `raw.get` when `Raw` has a
  * `get` method. Override it explicitly only when inference fails.
  *
+ * {@link Builders} is the {@link config.mapInput `mapInput`} object that was actually passed. It is what
+ * makes the **input** of a wrapped method the builder's input (R-10): a service layer that reshapes
+ * `get(req) → get(id)` declares a builder `(id: string) => GetRequest`, and the wrapped method is typed
+ * `(id: string) => …` from it rather than `(req: GetRequest) => …`. Without this the friendly interfaces in
+ * the service files could never be *checked* — they had to be asserted with a blind cast.
+ *
  * @typeParam Raw - Raw {@link EffectService} from a ts-proto service descriptor
  * @typeParam FetchKeys - Method names that return an `Operation` and should
  *   fetch the resource after polling (e.g. `"create" | "update"`)
@@ -522,6 +554,7 @@ export const pollOperation = (
  *   return `void` after polling (e.g. `"delete"`)
  * @typeParam Resource - The resource type returned by FetchKeys methods.
  *   Defaults to {@link ResourceOf `ResourceOf<Raw>`}.
+ * @typeParam Builders - The `mapInput` builders, verbatim (`{}` when there is no `mapInput`).
  */
 export type WithOperationPolling<
   Raw,
@@ -529,20 +562,65 @@ export type WithOperationPolling<
   ForgetKeys extends keyof Raw,
   FireForgetKeys extends keyof Raw = never,
   Resource = ResourceOf<Raw>,
+  Builders = {},
 > = {
-  [K in keyof Raw]: K extends FetchKeys
-    ? Raw[K] extends (req: infer Req) => Effect.Effect<infer _Res, infer E, infer C>
-      ? (
-          req: Req,
-        ) => Effect.Effect<Resource, E | OperationFailedError | UnknownServiceError | GrpcDeadlineExceededError, C>
-      : Raw[K]
+  [K in keyof Raw]: WrappedMethod<Raw, K, FetchKeys, ForgetKeys, FireForgetKeys, Resource, Builders>
+}
+
+/** The first parameter of a raw service method — the protobuf request message it takes. */
+type RequestOf<F> = F extends (req: infer Req, ...rest: any[]) => any ? Req : never
+
+/**
+ * The input a builder accepts, falling back to the raw request when the method has no builder.
+ *
+ * The builder's input is the *friendly* shape (`string` ids, `{ parentId, name }` pairs, the shared
+ * `CreateInput`/`UpdateInput`) and cannot be derived from `Raw` — preserving it from the call site is the
+ * whole point, and it is what lets `satisfies` check a hand-written service interface against the wrapper.
+ */
+type BuilderInput<B, Fallback> = B extends (req: infer P, ...rest: any[]) => any ? P : Fallback
+
+/** The input of a wrapped method: the builder's input when there is one, the raw request otherwise. */
+type InputOf<Raw, K extends keyof Raw, Builders> = BuilderInput<
+  K extends keyof Builders ? Builders[K] : never,
+  RequestOf<Raw[K]>
+>
+
+/**
+ * One wrapped method: poll-and-fetch, poll-and-forget, or passthrough (with the builder's input when the
+ * call site gave one — the runtime forwards `transform(req)` for every mapped key, whatever the arm).
+ */
+type WrappedMethod<
+  Raw,
+  K extends keyof Raw,
+  FetchKeys,
+  ForgetKeys,
+  FireForgetKeys,
+  Resource,
+  Builders,
+> = Raw[K] extends (req: any, ...rest: any[]) => Effect.Effect<infer Res, infer E, infer C>
+  ? K extends FetchKeys
+    ? (
+        req: InputOf<Raw, K, Builders>,
+      ) => Effect.Effect<Resource, E | OperationFailedError | UnknownServiceError | GrpcDeadlineExceededError, C>
     : K extends ForgetKeys | FireForgetKeys
-      ? Raw[K] extends (req: infer Req) => Effect.Effect<infer _Res, infer E, infer C>
-        ? (
-            req: Req,
-          ) => Effect.Effect<void, E | OperationFailedError | UnknownServiceError | GrpcDeadlineExceededError, C>
+      ? (
+          req: InputOf<Raw, K, Builders>,
+        ) => Effect.Effect<void, E | OperationFailedError | UnknownServiceError | GrpcDeadlineExceededError, C>
+      : K extends keyof Builders
+        ? (req: InputOf<Raw, K, Builders>) => Effect.Effect<Res, E, C>
         : Raw[K]
-      : Raw[K]
+  : Raw[K]
+
+/**
+ * One optional `mapInput` entry per raw method, each returning **that method's** request message.
+ *
+ * This is the boundary R-10 closes: a builder that returns the wrong message (a copy-paste from the
+ * neighbouring service, a rename the schema no longer has) used to compile, because the entry was typed
+ * `(req: any) => any`. The input stays `any` here on purpose — it is the friendly shape, and the call site's
+ * `satisfies` is what checks it against the interface it promises.
+ */
+export type InputBuilders<Raw> = {
+  [K in keyof Raw]?: (req: any, ...rest: any[]) => RequestOf<Raw[K]>
 }
 
 /** Extract the resource type from a service that has a `get` method. */
@@ -566,13 +644,16 @@ type ResourceOf<Raw> = Raw extends {
  *   the gRPC call is fired and returns immediately (returns `void`)
  * @param config.getRequest - Given a resource ID (from `operation.resourceId`),
  *   returns the request object for the service's `get` method
- * @returns A service object typed as {@link WithOperationPolling} — no cast needed
+ * @returns A service object typed as {@link WithOperationPolling} — the method **inputs** come from
+ *   `mapInput`, so a hand-written service interface can be asserted against it with `satisfies`
+ *   rather than cast away with a blind cast (R-10).
  */
 export const wrapWithOperationPolling = <
   Raw extends Record<string, (req: any) => Effect.Effect<any, GrpcError | GrpcDeadlineExceededError>>,
   const FPoll extends keyof Raw & string,
   const FForget extends keyof Raw & string,
   const FFireForget extends keyof Raw & string = never,
+  Builders extends InputBuilders<Raw> = {},
 >(
   raw: Raw,
   config: {
@@ -592,11 +673,13 @@ export const wrapWithOperationPolling = <
     /**
      * Optional input transformation per method. Called before the raw gRPC
      * call, allowing the service layer to convert simplified inputs into
-     * protobuf request objects (via {@code fromPartial}).
+     * protobuf request objects (via {@code fromPartial}). Each entry must return
+     * *that method's* request message ({@link InputBuilders}), and its input is
+     * kept verbatim — that is what types the wrapped method's parameter.
      */
-    mapInput?: Partial<Record<keyof Raw, (req: any) => any>>
+    mapInput?: Builders
   },
-): WithOperationPolling<Raw, FPoll, FForget, FFireForget> => {
+): WithOperationPolling<Raw, FPoll, FForget, FFireForget, ResourceOf<Raw>, Builders> => {
   const forgetSet = new Set<string>(config.forget)
   const pollingSet = new Set<string>(config.polling)
   const fireAndForgetSet = new Set<string>(config.fireAndForget ?? [])
@@ -631,10 +714,11 @@ export const wrapWithOperationPolling = <
 
   // The wrapped map is built dynamically by iterating Object.keys(raw).
   // TypeScript cannot track this dynamic construction against the mapped
-  // type WithOperationPolling<Raw, FPoll, FForget>. The cast upholds the
-  // invariant that every key in `raw` has a corresponding entry in `wrapped`
-  // with the correct Effect shape (polling, forget, or passthrough).
-  return wrapped as unknown as WithOperationPolling<Raw, FPoll, FForget, FFireForget>
+  // type WithOperationPolling<Raw, FPoll, FForget, Builders>. The cast upholds the
+  // invariant that every key in `raw` has a corresponding entry in `wrapped` and is dispatched to the
+  // right arm (polling, forget, fire-and-forget, or passthrough) — the method *inputs* are no longer
+  // part of that claim, because they are derived from `mapInput`.
+  return wrapped as unknown as WithOperationPolling<Raw, FPoll, FForget, FFireForget, ResourceOf<Raw>, Builders>
 }
 
 // ---------------------------------------------------------------------------

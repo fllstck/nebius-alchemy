@@ -50,13 +50,13 @@ export interface PricingPolicyService {
     req: CreatePricingPolicyInput,
   ) => Effect.Effect.Effect<
     PricingPolicy,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -103,7 +103,7 @@ export const BillingGrpcServiceLive = Effect.Layer.effect(
         create: (req: CreatePricingPolicyInput) => CreatePricingPolicyRequest.fromPartial(req),
         delete: (id: string) => DeletePricingPolicyRequest.fromPartial({ id }),
       },
-    }) as unknown as PricingPolicyService
+    }) satisfies Omit<PricingPolicyService, 'list'>
 
     const list = (parentId: string) =>
       GrpcUtils.paginateAll((req) => raw.list(req), pricingPolicyListRequest, parentId)

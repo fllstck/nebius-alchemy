@@ -24,12 +24,19 @@ const mockStorage = (region: string, existingRules: any[] = []) => {
     StorageGrpc.StorageGrpcService,
     {
       bucket: {
-        getByName: () =>
-          Effect.succeed({
+        // The wrapper is UNARY and hands the builder's single input straight through, so this mock
+        // asserts the shape it receives instead of ignoring it: a two-argument call
+        // (`getByName(parentId, bucketName)`, which is what this call site used to be) arrives here as a
+        // bare string and fails the assertion. R-10; the empty-request call it produced reached the API
+        // as `{}`.
+        getByName: (req: { parentId: string; name: string }) => {
+          expect(req).toEqual({ parentId: 'project-1', name: 'shared-bucket' })
+          return Effect.succeed({
             metadata: { id: 'bucket-1', name: 'shared-bucket', resourceVersion: 1 },
             spec: { bucketPolicy: { rules: existingRules } },
             status: { region },
-          }),
+          })
+        },
         update: (request: { metadata: unknown; spec: unknown }) => {
           updates.push({ metadata: request.metadata, spec: request.spec })
           return Effect.succeed({ metadata: { id: 'bucket-1' } })

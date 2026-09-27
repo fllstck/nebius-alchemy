@@ -25,10 +25,7 @@ export type UpdateSecretInput = UpdateInput
 
 export interface SecretService {
   readonly get: (id: string) => Effect.Effect.Effect<Secret, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly getByName: (
-    parentId: string,
-    name: string,
-  ) => Effect.Effect.Effect<Secret, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<Secret, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (
     parentId: string,
   ) => Effect.Effect.Effect<ReadonlyArray<Secret>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
@@ -37,19 +34,19 @@ export interface SecretService {
     req: CreateSecretInput,
   ) => Effect.Effect.Effect<
     Secret,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateSecretInput,
   ) => Effect.Effect.Effect<
     Secret,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -62,8 +59,8 @@ export type CreateSecretVersionInput = CreateInput
 export interface SecretVersionService {
   readonly get: (id: string) => Effect.Effect.Effect<SecretVersion, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<SecretVersion>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateSecretVersionInput) => Effect.Effect.Effect<SecretVersion, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateSecretVersionInput) => Effect.Effect.Effect<SecretVersion, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +99,7 @@ export const MysteryBoxGrpcServiceLive = Effect.Layer.effect(
         update: (req: UpdateSecretInput) => UpdateSecretRequest.fromPartial(req),
         delete: (id: string) => DeleteSecretRequest.fromPartial({ id }),
       },
-    }) as unknown as SecretService
+    }) satisfies Omit<SecretService, 'list'>
 
     const list = (parentId: string) =>
       GrpcUtils.paginateAll(

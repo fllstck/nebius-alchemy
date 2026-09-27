@@ -972,16 +972,19 @@ export const ensureUserBucketGrants = Effect.fn('ensureUserBucketGrants')(functi
   void,
   | BucketRegionMismatch
   | Config.ConfigError
-  | GrpcUtils.GrpcError
-  | GrpcUtils.GrpcDeadlineExceededError
-  | GrpcUtils.OperationFailedError,
+  | GrpcUtils.PolledMethodError,
   StorageGrpc.StorageGrpcService
 > {
   const storageGrpcService = yield* StorageGrpc.StorageGrpcService
   const parentId = yield* Config.String('NEBIUS_PROJECT_ID')
 
   // Read the bucket (re-read on resourceVersion-conflict retry).
-  const readBucket = () => storageGrpcService.bucket.getByName(parentId, bucketName)
+  //
+  // ONE object argument, not `(parentId, bucketName)`: the wrapper forwards a single value to the
+  // builder (`(req) => GetBucketByNameRequest.fromPartial(req)`), so the two-argument form this call
+  // used to pass — which the old declaration allowed — sent a *string* into `fromPartial` and reached
+  // the API as an empty request. Found by R-10 when the service interfaces became `satisfies`-checked.
+  const readBucket = () => storageGrpcService.bucket.getByName({ parentId, name: bucketName })
 
   const bucket = yield* readBucket()
   const bucketRegion = bucket.status?.region
@@ -1001,7 +1004,7 @@ export const ensureUserBucketGrants = Effect.fn('ensureUserBucketGrants')(functi
 
   const applyRules = Effect.gen(function* (): Effect.fn.Return<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError | GrpcUtils.OperationFailedError,
+    GrpcUtils.PolledMethodError,
     StorageGrpc.StorageGrpcService
   > {
     const current = yield* readBucket()
@@ -1068,9 +1071,7 @@ export const resolveHostedRuntime = Effect.fn('resolveHostedRuntime')(function* 
   | Bundle.BundleError
   | PlatformError.PlatformError
   | Config.ConfigError
-  | GrpcUtils.GrpcError
-  | GrpcUtils.GrpcDeadlineExceededError
-  | GrpcUtils.OperationFailedError,
+  | GrpcUtils.PolledMethodError,
   | Alchemy.Stack
   | Alchemy.Stage
   | Alchemy.InstanceId

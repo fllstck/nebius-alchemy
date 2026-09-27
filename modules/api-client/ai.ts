@@ -31,19 +31,19 @@ export interface JobService {
     req: CreateJobInput,
   ) => Effect.Effect.Effect<
     Job,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly cancel: (
     id: string,
   ) => Effect.Effect.Effect<
     Job,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -72,25 +72,25 @@ export interface EndpointService {
     req: CreateEndpointInput,
   ) => Effect.Effect.Effect<
     Endpoint,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly start: (
     id: string,
   ) => Effect.Effect.Effect<
     Endpoint,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly stop: (
     id: string,
   ) => Effect.Effect.Effect<
     Endpoint,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -132,7 +132,7 @@ const makeJobService = Effect.Effect.gen(function* () {
       delete: (id: string) => NebiusJobServiceSchema.DeleteJobRequest.fromPartial({ id }),
       cancel: (id: string) => NebiusJobServiceSchema.CancelJobRequest.fromPartial({ id }),
     },
-  }) as unknown as JobService
+  }) satisfies Omit<JobService, 'list'>
 
   // Wrap list with pagination
   const list = (parentId: string) =>
@@ -170,7 +170,7 @@ const makeEndpointService = Effect.Effect.gen(function* () {
       start: (id: string) => NebiusEndpointServiceSchema.StartEndpointRequest.fromPartial({ id }),
       stop: (id: string) => NebiusEndpointServiceSchema.StopEndpointRequest.fromPartial({ id }),
     },
-  }) as unknown as EndpointService
+  }) satisfies Omit<EndpointService, 'list'>
 
   // Wrap list with pagination
   const list = (parentId: string) =>

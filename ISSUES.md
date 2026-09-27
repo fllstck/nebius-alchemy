@@ -515,7 +515,63 @@ narrow check this issue exists to distrust.
 
 ---
 
-### R-10 — 91 `as unknown as` casts leave every service boundary unchecked · `OPEN`
+### R-10 — 91 `as unknown as` casts leave every service boundary unchecked · `DONE (2026-09-27)`
+
+**Fixed, in the three steps the entry prescribed** — and step 3's register is now in AGENTS.md §No `any`:
+
+1. **The builder map is typed.** `wrapWithOperationPolling`'s `mapInput` went from
+   `Partial<Record<keyof Raw, (req: any) => any>>` to `InputBuilders<Raw>`, whose every entry must return
+   **that method's** request message. The input side stays `any` on purpose — it is the friendly shape, and
+   what checks it is step 2.
+2. **The builder's input becomes the wrapped method's parameter** (new `Builders` type parameter on
+   `WithOperationPolling`). This is what makes the hand-written interfaces comparable at all: the wrapper
+   now says `get: (id: string) => …` because the builder does, so `satisfies` can replace the cast.
+3. **All 42 service-layer casts became `satisfies`** — `satisfies Omit<XService, …>` on the wrapper (the
+   `Omit` names the members the service layer adds afterwards) and `satisfies XService` on the composed
+   object. The two survivors in `modules/api-client/` are registered in AGENTS.md with their reasons.
+
+**What the first real comparison found** — five mismatches, none of which any test could see, because the
+cast erased the wrapper's type before anyone compared it:
+
+- **A live bug.** `hosted.ts`'s `ensureUserBucketGrants` called `bucket.getByName(parentId, bucketName)`.
+  The wrapper is **unary**: it forwards one value to the builder
+  (`(req) => GetBucketByNameRequest.fromPartial(req)`), so the call passed a *string* into `fromPartial` and
+  the API received an **empty request** — on the user-supplied-bucket path of every hosted instance. The
+  interface's two-argument declaration is what made it compile; every other caller in the repo already
+  passed `{ parentId, name }`. Fixed, with the mock in `hosted-bucket.test.ts` now asserting the object it
+  receives (it ignored its arguments before, which is *why* the test passed while production did not).
+- **Six interface declarations promised that same two-argument `getByName(parentId, name)`** —
+  `compute Disk`, `dns {Zone,Record}`, `iam ServiceAccount`, `storage Bucket`, `mysterybox Secret`. All six
+  were stale (no caller used the form, and the wrapper cannot serve it); all six now take the single object
+  the builder and the call sites use.
+- **Four "secondary list" methods were declared `ReadonlyArray<…>` while the wrapper handed back the RPC's
+  response envelope**: `vpc Pool.listBySourcePool`, `Subnet.listByNetwork`, `SecurityGroup.listByNetwork`,
+  `Allocation.{listByPool,listBySubnet}`. None had a caller, so nothing broke — and the byte-for-byte
+  equivalent sibling (`vpc RouteTable.listByNetwork`, `iam GroupMembership.listMembers`,
+  `FederationCertificate.listByFederation`, `kms list*Keys`) *was* paginated, which is what made these look
+  consistent. Each now has the paginating override its declaration promised.
+- **`UnknownServiceError` was missing from all 128 hand-written polled-method error unions.** `pollOperation`
+  resolves the operation service's endpoint through the registry (`transport.channelFor`), so every
+  `create`/`update`/`delete` can fail with it — the interfaces under-declared the channel, and the cast hid
+  the difference. They are one alias now, `GrpcUtils.PolledMethodError`, with the four arms named once.
+
+**A note on `mk8s ClusterService.listControlPlaneVersions`**: it deliberately stays an `Effect` *property*
+(unwrapping the no-paging response), so it is excluded from the wrapper assertion exactly like `list` — its
+own doc comment records the 2026-09-23 incident where the cast hid an envelope-vs-array mismatch until a
+live call failed with `versions.map is not a function`. Same class, found the same way, already fixed once.
+
+**Acceptance (run)**: `git grep -c "as unknown as" -- modules/api-client/ | sum` → **2** (was **45**), and both
+survivors are registered in AGENTS.md §No `any`. The same inventory over the whole of `modules/` reads **48**
+(was 91): 2 in `api-client` and 46 under `resources/` — the 41 DCE guards plus five single sites (the three
+branded-id reads, the delete stall wrapper and the binding marshaller), each registered with its reason.
+`bun run check` clean · `bun test` **1689 pass / 75 skip / 0 fail**.
+
+**Self-test for the new edge** (R-04's rule applied to a type check): `tests/api-client/grpc-utils.test.ts`
+carries two `@ts-expect-error` contracts — a builder returning the wrong message, and a wrapped method still
+accepting the raw request. `tsc` fails if either stops erroring, and the *unused-directive* error is the
+proof. Positive control run: removing one directive produces
+`error TS2322: Type '() => { nope: boolean; }' is not assignable to type '(req: any, ...rest: any[]) => { id: string; spec: unknown; }'`;
+restoring it returns the build to 0 errors.
 
 **Files**: `modules/api-client/iam.ts` (15), `vpc.ts` (8), `compute.ts` (7), `mk8s.ts` (3),
 `kms.ts`/`dns.ts`/`ai.ts` (2 each), plus `resources/**` for the DCE-guard pattern.
@@ -1243,7 +1299,8 @@ the three impossible characters, not an env-name charset, or it becomes an unrel
 6. **R-10, R-12, R-15, R-16, R-18, R-20, R-21** — incremental cleanups, safe to interleave. R-15 + R-16 are
 done (2026-09-25; R-16 turned out to be two sites — an error schema in `billing/v1` had the same
 miss), R-18 + R-20 are done (2026-09-25), and R-21 was found by R-01's probe (2026-09-25) and is now
-done too (its measurement is `spikes/static-key-parent-probe.ts`). R-10 and R-12 remain open here.
+done too (its measurement is `spikes/static-key-parent-probe.ts`). **R-10 is done 2026-09-27** (see step 9);
+R-12 remains open here.
    That session also filed **R-22** (the eight-provider cascade claim) and **R-23** (R-18's leak sweep
    reached `tests/` only).
 7. **R-22 — done 2026-09-25** — nine relations measured (`spikes/parent-delete-cascade-probe.ts`): the
@@ -1258,7 +1315,11 @@ done too (its measurement is `spikes/static-key-parent-probe.ts`). R-10 and R-12
    become the probes' variable. R-24's env-key guard landed in a new pure `hosted-env.ts` with three call
    sites, and its two deliberate *non*-sites (`transformProps`, `read`) are recorded in its entry — the
    first because a props failure there would block a destroy.
-9. **R-10, R-12** remain open from step 6, then **R-08** last as originally ordered.
+9. **R-10 — done 2026-09-27** — the entry's three steps, plus the five mismatches the first real comparison
+   found (a live two-argument `getByName` on the hosted user-bucket path, six stale two-argument `getByName`
+   declarations, four secondary lists declared as arrays while returning the RPC envelope, and
+   `UnknownServiceError` missing from all 128 polled-method error unions). The survivors are registered in
+   AGENTS.md §No `any`. **R-12** remains open from step 6, and **R-08** stays last as originally ordered.
 9. **R-08** — last, because it is a large refactor over the file most likely to change for other
    reasons. Do it when the rest is quiet.
 

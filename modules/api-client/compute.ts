@@ -28,10 +28,7 @@ export type UpdateDiskInput = UpdateInput
 
 export interface DiskService {
   readonly get: (id: string) => Effect.Effect.Effect<Disk, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly getByName: (
-    parentId: string,
-    name: string,
-  ) => Effect.Effect.Effect<Disk, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<Disk, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   /** List all disks in a project (paginates automatically). */
   readonly list: (
     parentId: string,
@@ -43,19 +40,19 @@ export interface DiskService {
     req: CreateDiskInput,
   ) => Effect.Effect.Effect<
     Disk,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateDiskInput,
   ) => Effect.Effect.Effect<
     Disk,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -83,19 +80,19 @@ export interface ImageService {
     req: CreateImageInput,
   ) => Effect.Effect.Effect<
     Image,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateImageInput,
   ) => Effect.Effect.Effect<
     Image,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -126,31 +123,31 @@ export interface InstanceService {
     req: CreateInstanceInput,
   ) => Effect.Effect.Effect<
     Instance,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateInstanceInput,
   ) => Effect.Effect.Effect<
     Instance,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly start: (
     id: string,
   ) => Effect.Effect.Effect<
     Instance,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly stop: (
     id: string,
   ) => Effect.Effect.Effect<
     Instance,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -165,9 +162,9 @@ export interface FilesystemService {
   readonly get: (id: string) => Effect.Effect.Effect<Filesystem, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<Filesystem, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<Filesystem>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateFilesystemInput) => Effect.Effect.Effect<Filesystem, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateFilesystemInput) => Effect.Effect.Effect<Filesystem, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateFilesystemInput) => Effect.Effect.Effect<Filesystem, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateFilesystemInput) => Effect.Effect.Effect<Filesystem, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -181,9 +178,9 @@ export interface DiskSnapshotService {
   readonly get: (id: string) => Effect.Effect.Effect<DiskSnapshot, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<DiskSnapshot, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   readonly list: (parentId: string) => Effect.Effect.Effect<ReadonlyArray<DiskSnapshot>, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly create: (req: CreateDiskSnapshotInput) => Effect.Effect.Effect<DiskSnapshot, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly update: (req: UpdateDiskSnapshotInput) => Effect.Effect.Effect<DiskSnapshot, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly create: (req: CreateDiskSnapshotInput) => Effect.Effect.Effect<DiskSnapshot, GrpcUtils.PolledMethodError>
+  readonly update: (req: UpdateDiskSnapshotInput) => Effect.Effect.Effect<DiskSnapshot, GrpcUtils.PolledMethodError>
+  readonly delete: (id: string) => Effect.Effect.Effect<void, GrpcUtils.PolledMethodError>
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +204,7 @@ export interface GpuClusterService {
     req: CreateGpuClusterInput,
   ) => Effect.Effect.Effect<
     GpuCluster,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   /**
    * The RPC exists (and is wrapped), but `GpuClusterSpec` currently carries a
@@ -217,13 +214,13 @@ export interface GpuClusterService {
     req: UpdateGpuClusterInput,
   ) => Effect.Effect.Effect<
     GpuCluster,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -250,19 +247,19 @@ export interface NVLInstanceGroupService {
     req: CreateNVLInstanceGroupInput,
   ) => Effect.Effect.Effect<
     NVLInstanceGroup,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateNVLInstanceGroupInput,
   ) => Effect.Effect.Effect<
     NVLInstanceGroup,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -305,7 +302,7 @@ const makeDiskService = Effect.Effect.gen(function* () {
       update: (req: UpdateDiskInput) => NebiusDiskServiceSchema.UpdateDiskRequest.fromPartial(req),
       delete: (id: string) => NebiusDiskServiceSchema.DeleteDiskRequest.fromPartial({ id }),
     },
-  }) as unknown as DiskService
+  }) satisfies Omit<DiskService, 'list'>
 
   // Wrap list with pagination
   const list = (parentId: string) =>
@@ -337,7 +334,7 @@ const makeImageService = Effect.Effect.gen(function* () {
       update: (req: UpdateImageInput) => NebiusImageServiceSchema.UpdateImageRequest.fromPartial(req),
       delete: (id: string) => NebiusImageServiceSchema.DeleteImageRequest.fromPartial({ id }),
     },
-  }) as unknown as ImageService
+  }) satisfies Omit<ImageService, 'list'>
 
   // Wrap list with pagination
   const list = (parentId: string) =>
@@ -370,7 +367,7 @@ const makeInstanceService = Effect.Effect.gen(function* () {
       start: (id: string) => NebiusInstanceServiceSchema.StartInstanceRequest.fromPartial({ id }),
       stop: (id: string) => NebiusInstanceServiceSchema.StopInstanceRequest.fromPartial({ id }),
     },
-  }) as unknown as InstanceService
+  }) satisfies Omit<InstanceService, 'list'>
 
   // Wrap list with pagination
   const list = (parentId: string) =>
@@ -420,7 +417,7 @@ const makeFilesystemService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as FilesystemService
+  return { ...polled, list } satisfies FilesystemService
 })
 
 // -- DiskSnapshot ----------------------------------------------------------
@@ -460,7 +457,7 @@ const makeDiskSnapshotService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as DiskSnapshotService
+  return { ...polled, list } satisfies DiskSnapshotService
 })
 
 const makeGpuClusterService = Effect.Effect.gen(function* () {
@@ -494,7 +491,7 @@ const makeGpuClusterService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as GpuClusterService
+  return { ...polled, list } satisfies GpuClusterService
 })
 
 /**
@@ -541,7 +538,7 @@ const makeNVLInstanceGroupService = Effect.Effect.gen(function* () {
       parentId,
     )
 
-  return { ...polled, list } as unknown as NVLInstanceGroupService
+  return { ...polled, list } satisfies NVLInstanceGroupService
 })
 
 export const ComputeGrpcServiceLive = Effect.Layer.effect(

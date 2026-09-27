@@ -32,10 +32,7 @@ export type UpdateZoneInput = UpdateInput
 
 export interface ZoneService {
   readonly get: (id: string) => Effect.Effect.Effect<Zone, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly getByName: (
-    parentId: string,
-    name: string,
-  ) => Effect.Effect.Effect<Zone, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<Zone, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   /** List all zones in a project (paginates automatically). */
   readonly list: (
     parentId: string,
@@ -45,19 +42,19 @@ export interface ZoneService {
     req: CreateZoneInput,
   ) => Effect.Effect.Effect<
     Zone,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateZoneInput,
   ) => Effect.Effect.Effect<
     Zone,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -76,10 +73,7 @@ export interface RecordService {
   readonly get: (
     id: string,
   ) => Effect.Effect.Effect<DnsRecord, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
-  readonly getByName: (
-    parentId: string,
-    name: string,
-  ) => Effect.Effect.Effect<DnsRecord, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
+  readonly getByName: (req: { parentId: string; name: string }) => Effect.Effect.Effect<DnsRecord, GrpcUtils.GrpcError | GrpcUtils.GrpcDeadlineExceededError>
   /** List all records in a zone (paginates automatically). Uses zone ID as parent. */
   readonly list: (
     zoneId: string,
@@ -89,19 +83,19 @@ export interface RecordService {
     req: CreateRecordInput,
   ) => Effect.Effect.Effect<
     DnsRecord,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly update: (
     req: UpdateRecordInput,
   ) => Effect.Effect.Effect<
     DnsRecord,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
   readonly delete: (
     id: string,
   ) => Effect.Effect.Effect<
     void,
-    GrpcUtils.GrpcError | GrpcUtils.OperationFailedError | GrpcUtils.GrpcDeadlineExceededError
+    GrpcUtils.PolledMethodError
   >
 }
 
@@ -137,7 +131,7 @@ const makeZoneService = Effect.Effect.gen(function* () {
       update: (req: UpdateZoneInput) => UpdateZoneRequest.fromPartial(req),
       delete: (id: string) => DeleteZoneRequest.fromPartial({ id }),
     },
-  }) as unknown as ZoneService
+  }) satisfies Omit<ZoneService, 'list'>
 
   const list = (
     parentId: string,
@@ -168,7 +162,7 @@ const makeRecordService = Effect.Effect.gen(function* () {
       update: (req: UpdateRecordInput) => UpdateRecordRequest.fromPartial(req),
       delete: (id: string) => DeleteRecordRequest.fromPartial({ id }),
     },
-  }) as unknown as RecordService
+  }) satisfies Omit<RecordService, 'list'>
 
   const list = (
     zoneId: string,
