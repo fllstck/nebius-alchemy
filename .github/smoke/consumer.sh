@@ -53,6 +53,12 @@ PIN="$(pinOf "require('$ROOT/package.json').peerDependencies.effect" 'effect')"
 ALCHEMY_PIN="$(pinOf "require('$ROOT/package.json').peerDependencies.alchemy" 'alchemy (peer)')"
 BUN_PEER="$(pinOf "require('$ROOT/package.json').peerDependencies['@effect/platform-bun']" '@effect/platform-bun')"
 NODE_PEER="$(pinOf "require('$ROOT/package.json').peerDependencies['@effect/platform-node']" '@effect/platform-node')"
+# The fourth member of the family, and the one bun floats when it is not named: `@effect/platform-node`
+# declares it as a *caret*, and bun ignores peer ranges — so a line that omits it resolves it to the newest
+# `rc` while `effect` stays pinned, which at rc.118 was fatal (`Cannot find module
+# 'effect/process/ChildProcess'`). The README's install line names it for exactly that reason, and this job
+# must test the documented line, so it is derived and passed here too (0.11.0 CI failure, 2026-09-28).
+SHARED_PEER="$(pinOf "require('$ROOT/package.json').peerDependencies['@effect/platform-node-shared']" '@effect/platform-node-shared')"
 # 0.9.1 dropped the `typescript` peer: a compiler *range* as a peer makes npm fail against alchemy's
 # optional TypeScript-5 chains (`octane`, `@xata.io`) — the 0.8.0 failure mode, re-triggered by alchemy
 # becoming a root peer. The compiler is consumer-provided, so pin the documented line for this check.
@@ -71,13 +77,15 @@ if [ "$INSTALLER" = "npm" ]; then
   # a root pin satisfies the tooling peer and masks the ERESOLVE against
   # alchemy's optional `typescript@^6` chain.
   npm install "$TARBALL" "alchemy@$ALCHEMY_PIN" "effect@$PIN" \
-    "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER"
+    "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER" \
+    "@effect/platform-node-shared@$SHARED_PEER"
 else
   # bun does not enforce peer ranges, so the peers the README's `bun add` line
   # lists explicitly are what actually put them in the tree. No `overrides`:
   # if a drift ever returns, that is exactly what this assertion must catch.
   bun add "$TARBALL" "alchemy@$ALCHEMY_PIN" "effect@$PIN" \
-    "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER"
+    "@effect/platform-bun@$BUN_PEER" "@effect/platform-node@$NODE_PEER" \
+    "@effect/platform-node-shared@$SHARED_PEER"
 fi
 echo "::endgroup::"
 

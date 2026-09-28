@@ -80,7 +80,7 @@ suite unchanged at 717 tests. Verified after the bump: one copy of each, no
 nesting. Expect to repeat this after every new `rc`; check
 `npm view effect dist-tags` → `rc` first.
 
-### ⛔ It resumed a THIRD time — 2026-09-28 (rc.118) — and this time it is FATAL, with no override-free fix
+### ⚠️ It resumed a THIRD time — 2026-09-28 (rc.118) — the mix is FATAL, and the fix is to NAME the floating package
 
 rc.118 **graduates the whole `unstable/` tree to top level** and deletes the aliases:
 
@@ -102,22 +102,38 @@ Both directions are now closed:
 | rc.117 + a **consumer-root** `overrides` block | ✓ the only working bun combination — `overrides: { "@effect/platform-node-shared": "4.0.0-rc.117" }` → one copy, both imports OK |
 | rc.117 + **npm** | ✓ unchanged (npm enforces the exact peer and dedupes to rc.117) |
 
-**There is therefore no override-free combination, so the release is held** — the same call as 0.7.0, and
-for the same reason: a note the consumer must act on is not a fix. Reopen when **either** alchemy publishes
-a beta that runs on rc.118 **or** a newer effect restores the aliases.
+**The fix is to name the package on the documented install line — which is NOT the forbidden "workaround".**
+bun anchors a *named root dependency* and dedupes the transitive caret **down** to it — measured:
+`bun add … @effect/platform-node-shared@4.0.0-rc.117` → exactly **one** copy, both runtime imports OK, no
+`overrides`. The forbidden shape is a different one: an `overrides` block applies only from the consuming
+root, so a library cannot ship it. An install line *is* inherited — the README's line is the contract, its
+dependency table already listed this package as required, and `.github/smoke/consumer.sh` copies the line
+verbatim, so completing it makes CI test the documented install rather than a variant of it.
 
-Three corollaries worth keeping:
+**A first draft of this entry concluded "hold the release" and was wrong.** The reasoning error is worth
+naming because it will recur: *"there is no override-free combination"* was checked only against
+*declaration-in-the-library* candidates (exact peer → bun ignores it; exact `dependency` → nested duplicate;
+`overrides` → not inheritable). None of those is the install line, which is the one place a consumer
+actually reads — and it had been incomplete for exactly one package since 0.11.0's predecessor.
+
+Four corollaries worth keeping:
 
 - **"A newer rc drifts but still imports" was true at rc.116 and is not a general rule.** Whether a float is a
   pre-failure state or fatal depends on whether the newer rc *moves module paths* — check that first (diff
   the file list + the `exports` map), not the peer warnings.
+- **Verify a root pin by counting copies, not by reading the assertion.** The older warning above ("the
+  tempting local fix is a trap") was about a root pin that left *nested newer copies* behind while the
+  assertion went green. The two cases are distinguishable in one command: `find node_modules -path
+  '*@effect/platform-node-shared/package.json'` must print **one** path. Two paths means the pin is hiding
+  the drift.
 - **A local smoke pass can precede the drift.** On 2026-09-28 `consumer.sh` printed `✓` for both installers
   minutes before CI failed on the same tarball, because resolution picked rc.117 while rc.118 was already
   published. Re-run both arms in **fresh** directories, and treat `npm view effect dist-tags` → `rc` as part
   of the check: if `rc` is newer than our pin, the bun arm is about to go red.
-- **The release artifact is not what makes this visible.** Any *new* install of an already-published version
-  breaks the same way the moment a newer rc exists — a consumer whose lockfile already pins rc.117 is
-  unaffected, which is why this is invisible to everyone who is not installing fresh.
+- **The published artifact is not what makes this visible.** Any *new* install of an already-published
+  version breaks the same way the moment a newer rc exists — a consumer whose lockfile already pins rc.117 is
+  unaffected, which is why this is invisible to everyone who is not installing fresh. It also means only a
+  **new release** can fix the README a consumer reads, not a re-publish of the old one.
 
 ### ⚠️ `overrides` do NOT propagate to consumers
 

@@ -19,7 +19,7 @@ mkdir my-app && cd my-app && bun init -y
 ### Install Dependencies
 
 ```bash
-bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.117 @effect/platform-bun@4.0.0-rc.117 @effect/platform-node@4.0.0-rc.117 @fllstck/nebius-alchemy
+bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.117 @effect/platform-bun@4.0.0-rc.117 @effect/platform-node@4.0.0-rc.117 @effect/platform-node-shared@4.0.0-rc.117 @fllstck/nebius-alchemy
 ```
 
 > **Versions are pinned exactly, and that is deliberate.** Alchemy and Effect must
@@ -27,16 +27,14 @@ bun add alchemy@2.0.0-beta.79 effect@4.0.0-rc.117 @effect/platform-bun@4.0.0-rc.
 > mismatch fails at import. `alchemy@2.0.0-beta.79` requires
 > `effect@4.0.0-rc.117`.
 >
-> **Why `rc.117` and not `rc.115`:** `@effect/platform-node@rc.115` declares
-> `@effect/platform-node-shared: ^4.0.0-rc.115` — a range that resolves _upward_ to
-> the newest prerelease. Once rc.117 existed, bun (which ignores peer ranges)
-> resolved the shared package to rc.117 while `effect` stayed rc.115: a mixed
-> family. Pinning the whole constellation to the newest release is what keeps one
-> `@effect/*` version in the tree — verify it after any dependency change:
-> `npm ls @effect/*` (or `bun pm ls`) must print one line per package. Three
-> `@effect/sql-*` packages shipped on the Effect 3 line until 0.9.1, so every install
-> carried two versions of each. A newer `rc` will reintroduce the drift, so
-> re-audit after every bump — see `agent-patterns/effect-versioning.md`.
+> **Why every `@effect/*` package is named on the line above — including `@effect/platform-node-shared`.** `@effect/platform-node` declares it as a **caret** (`^4.0.0-rc.N`), and a caret on a prerelease resolves _upward_ to the newest `rc`. npm enforces the exact peer this package declares and dedupes to it; **bun ignores peer ranges** and floats whatever is not named, which mixes the family. Measured twice: at rc.115 → rc.117, and again at **rc.118**, where the mix is not cosmetic but **fatal** — rc.118 moves its `unstable/*` modules to the top level, and a floated `platform-node-shared` then asks for `effect/process/ChildProcess`, which rc.117 does not have:
+>
+> ```
+> error: Cannot find module 'effect/process/ChildProcess' from
+>   node_modules/@effect/platform-node-shared/dist/NodeChildProcessSpawner.js
+> ```
+>
+> Naming it here puts it in your own tree, where the caret dedupes **down** to it instead of floating up — one copy, no `overrides` block required. Verify after any dependency change: `npm ls @effect/*` (or `bun pm ls`) must print one line per package for `effect` and the platform family. The three optional `@effect/sql-*` / `@effect/vitest` peers alchemy also declares float independently of this line and are not on this package's path (both runtime imports succeed with them present). A newer `rc` will try the same drift again — re-audit after every bump, see `agent-patterns/effect-versioning.md`.
 >
 > **Avoid `alchemy@next`.** The `next` dist-tag currently points at an _older_
 > beta (`2.0.0-beta.72`) than `latest` (`2.0.0-beta.79`). Since 0.9.1 `alchemy` is a **peer** of this
