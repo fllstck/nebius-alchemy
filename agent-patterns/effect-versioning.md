@@ -80,6 +80,45 @@ suite unchanged at 717 tests. Verified after the bump: one copy of each, no
 nesting. Expect to repeat this after every new `rc`; check
 `npm view effect dist-tags` → `rc` first.
 
+### ⛔ It resumed a THIRD time — 2026-09-28 (rc.118) — and this time it is FATAL, with no override-free fix
+
+rc.118 **graduates the whole `unstable/` tree to top level** and deletes the aliases:
+
+| | rc.117 | rc.118 |
+| `unstable/` | files under `dist/unstable/`, **22** `./unstable/*` keys in `exports` | **moved up one level** — `./http`, `./ai`, `./cli`, `./schema`, `./rpc`, … ; `./unstable/*` keys: **0**; `./encoding` is new |
+| `dist/**/*.d.ts` | 493 files | 496 files — **295 added / 295 removed**, i.e. a move, not an addition |
+
+Measured, not read from a changelog (`npm pack effect@4.0.0-rc.117 effect@4.0.0-rc.118`, then diff
+`dist/**/*.d.ts` and the `exports` map). The `"./*": "./dist/*.js"` wildcard still *maps*
+`effect/unstable/http` — to a file that no longer exists, which is why the failure is a module-not-found and
+not a resolution error.
+
+Both directions are now closed:
+
+| combination | result |
+| rc.117 (as documented) + **bun** | node-shared floats to **rc.118** → `error: Cannot find module 'effect/process/ChildProcess' from @effect/platform-node-shared/dist/NodeChildProcessSpawner.js` — **fatal**, unlike the rc.116 shape, because rc.118's files import the *new* top-level paths while `effect` is pinned to the one release that only has `unstable/` |
+| the **whole constellation** at rc.118 | `alchemy@2.0.0-beta.79` cannot load: `error: Cannot find module 'effect/unstable/http/FetchHttpClient' from alchemy/src/Stack.ts`. beta.79 *is* `latest` and there is no newer beta. Its peer range (`effect: >=4.0.0-rc.115 \|\| >=4.0.0`) **claims** rc.118 is fine — do not trust a declared range: alchemy imports `effect/unstable/*` in **225 files / 431 occurrences** |
+| exact `dependency` on node-shared rc.117 (the "make bun dedupe" attempt) | **two copies** — rc.118 hoisted (still the crashing one) + rc.117 nested under our package. Re-verified 2026-09-28; same verdict as at rc.112 |
+| rc.117 + a **consumer-root** `overrides` block | ✓ the only working bun combination — `overrides: { "@effect/platform-node-shared": "4.0.0-rc.117" }` → one copy, both imports OK |
+| rc.117 + **npm** | ✓ unchanged (npm enforces the exact peer and dedupes to rc.117) |
+
+**There is therefore no override-free combination, so the release is held** — the same call as 0.7.0, and
+for the same reason: a note the consumer must act on is not a fix. Reopen when **either** alchemy publishes
+a beta that runs on rc.118 **or** a newer effect restores the aliases.
+
+Three corollaries worth keeping:
+
+- **"A newer rc drifts but still imports" was true at rc.116 and is not a general rule.** Whether a float is a
+  pre-failure state or fatal depends on whether the newer rc *moves module paths* — check that first (diff
+  the file list + the `exports` map), not the peer warnings.
+- **A local smoke pass can precede the drift.** On 2026-09-28 `consumer.sh` printed `✓` for both installers
+  minutes before CI failed on the same tarball, because resolution picked rc.117 while rc.118 was already
+  published. Re-run both arms in **fresh** directories, and treat `npm view effect dist-tags` → `rc` as part
+  of the check: if `rc` is newer than our pin, the bun arm is about to go red.
+- **The release artifact is not what makes this visible.** Any *new* install of an already-published version
+  breaks the same way the moment a newer rc exists — a consumer whose lockfile already pins rc.117 is
+  unaffected, which is why this is invisible to everyone who is not installing fresh.
+
 ### ⚠️ `overrides` do NOT propagate to consumers
 
 This is the part that ships and bites. **`overrides` apply only from the ROOT
