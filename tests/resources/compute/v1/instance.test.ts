@@ -10,6 +10,7 @@ import * as VpcIds from '../../../../modules/resources/vpc/v1/ids.ts'
 import * as BillingIds from '../../../../modules/resources/billing/v1/ids.ts'
 import { GpuClusterId, InstanceId } from '../../../../modules/resources/compute/v1/ids.ts'
 import * as NebiusInstanceSchema from '../../../../schemas/nebius/compute/v1/instance.ts'
+import { GrpcError } from '../../../../modules/api-client/grpc-utils.ts'
 import {
   readInput,
   resolveProvider,
@@ -19,7 +20,16 @@ import {
   runEffect,
   diffInput,
 } from '../../../helpers/provider.ts'
-import { mockComputeLayer } from '../../../helpers/mocks.ts'
+import {
+  instanceIdLayer,
+  mockComputeLayer,
+  protoMetadata,
+  recordingLogs,
+  recordingSession,
+  stackLayer,
+} from '../../../helpers/mocks.ts'
+import * as Layer from 'effect/Layer'
+import * as Schema from 'effect/Schema'
 
 const { describe, expect, test } = BunTest
 
@@ -60,6 +70,512 @@ describe('Nebius.compute.v1.Instance waitForInstanceState failures (R-09)', () =
     )
 
     expect(recovered).toBe('unhealthy: ERROR')
+  })
+})
+
+/**
+ * R-08 — the reconcile phases, unit-tested directly.
+ *
+ * `reconcile` used to be one 341-line generator, so every behaviour below was only observable through the
+ * provider's front door. These tests drive the extracted phases (`ensureCreated`, `applyUpdate`,
+ * `ensureRunning`; `waitForInstanceState` has its own block above) against `mockComputeLayer`, so the
+ * request each phase sends and the call order it sends them in are the assertion.
+ */
+describe('Nebius.compute.v1.Instance reconcile phases (R-08)', () => {
+  /** A raw proto instance with only the fields the phases read. */
+  const protoInstance = (overrides: Record<string, unknown> = {}) => ({
+    metadata: protoMetadata('computeinstance-abc123', 'vm-1', 'project-1'),
+    spec: { stopped: false, serviceAccountId: 'serviceaccount-abc123' },
+    status: {},
+    ...overrides,
+  })
+
+  const desiredFrom = (overrides: Record<string, unknown> = {}) =>
+    NebiusInstanceSchema.InstanceSpec.fromJSON({
+      resources: { platform: 'cpu-d3', preset: '4vcpu-16gb' },
+      serviceAccountId: 'serviceaccount-abc123',
+      bootDisk: { attachMode: 'READ_WRITE', managedDisk: { name: 'boot-disk', spec: { type: 'NETWORK_SSD', sizeGibibytes: 64 } } },
+      ...overrides,
+    })
+
+  /**
+   * The phases receive **validated** props — `reconcile` runs `validateInstanceProps` before calling any of
+   * them — so the fixtures go through the same schema once instead of being cast around its brands.
+   */
+  const phaseProps = (overrides: Record<string, unknown> = {}) =>
+    Schema.decodeUnknownSync(SchemaModule.InstancePropsSchema)({ ...validInstanceProps, ...overrides })
+
+  /** The layers `ensureCreated` needs: the service, plus the naming context (`createPhysicalName`). */
+  const createLayers = (compute: unknown) => Layer.mergeAll(mockComputeLayer(compute), instanceIdLayer, stackLayer)
+
+  describe('ensureCreated', () => {
+    test('creates with a generated physical name and the merged ownership labels', async () => {
+      const requests: Array<unknown> = []
+      const session = recordingSession()
+      const created = protoInstance()
+
+      const result = await runEffect(
+        Module.ensureCreated({
+          id: 'test-id',
+          news: phaseProps({ labels: { team: 'platform' } }),
+          desired: desiredFrom(),
+          parentId: 'project-1',
+          labels: { 'alchemy::id': 'test-id', 'alchemy::stack': 'test-stack', team: 'platform' },
+          session: session.session,
+        }).pipe(
+          Effect.provide(
+            createLayers({
+              instance: {
+                create: (req: unknown) => {
+                  requests.push(req)
+                  return Effect.succeed(created)
+                },
+              },
+            }),
+          ),
+        ),
+      )
+
+      expect(result).toBe(created)
+      const request = requests[0] as { metadata: { name: string; parentId: string; labels: Record<string, string> } }
+      expect(request.metadata.parentId).toBe('project-1')
+      // A generated name: non-empty, and the engine's instance id seeds it, so it is stable per deploy.
+      expect(request.metadata.name.length).toBeGreaterThan(0)
+      expect(request.metadata.labels).toEqual({
+        'alchemy::id': 'test-id',
+        'alchemy::stack': 'test-stack',
+        team: 'platform',
+      })
+      expect(session.messages().some((m) => m.includes('Creating Nebius.compute.v1.Instance'))).toBe(true)
+    })
+
+    test('a pinned name is sent verbatim', async () => {
+      const requests: Array<unknown> = []
+      await runEffect(
+        Module.ensureCreated({
+          id: 'test-id',
+          news: phaseProps({ name: 'vm-pinned' }),
+          desired: desiredFrom(),
+          parentId: 'project-1',
+          labels: {},
+          session: recordingSession().session,
+        }).pipe(
+          Effect.provide(
+            createLayers({
+              instance: {
+                create: (req: unknown) => {
+                  requests.push(req)
+                  return Effect.succeed(protoInstance())
+                },
+              },
+            }),
+          ),
+        ),
+      )
+
+      expect((requests[0] as { metadata: { name: string } }).metadata.name).toBe('vm-pinned')
+    })
+
+    test('a create failure that can hide a success ADOPTS the instance found by name', async () => {
+      const session = recordingSession()
+      const recovered = protoInstance()
+
+      const result = await runEffect(
+        Module.ensureCreated({
+          id: 'test-id',
+          news: phaseProps({ name: 'vm-pinned' }),
+          desired: desiredFrom(),
+          parentId: 'project-1',
+          labels: {},
+          session: session.session,
+        }).pipe(
+          Effect.provide(
+            createLayers({
+              instance: {
+                // ABORTED (10) is in `CREATE_RECOVERY_CODES`: the operation may have been applied.
+                create: () => Effect.fail(new GrpcError({ code: 10, message: 'aborted', details: '' })),
+                getByName: () => Effect.succeed(recovered),
+              },
+            }),
+          ),
+        ),
+      )
+
+      expect(result).toBe(recovered)
+      // The adoption is narrated: without this line an operator cannot tell a recovered create from a
+      // create that simply worked.
+      expect(session.messages().some((m) => m.includes('Recovered Nebius.compute.v1.Instance'))).toBe(true)
+    })
+
+    test('a NOT_FOUND recovery lookup re-raises the ORIGINAL create error', async () => {
+      const error = await runEffect(
+        Effect.flip(
+          Module.ensureCreated({
+            id: 'test-id',
+            news: phaseProps({ name: 'vm-pinned' }),
+            desired: desiredFrom(),
+            parentId: 'project-1',
+            labels: {},
+            session: recordingSession().session,
+          }).pipe(
+            Effect.provide(
+              createLayers({
+                instance: {
+                  create: () => Effect.fail(new GrpcError({ code: 10, message: 'aborted', details: '' })),
+                  // The resource is genuinely absent — the create failure is the useful report.
+                  getByName: () => Effect.fail(new GrpcError({ code: 5, message: 'not found', details: '' })),
+                },
+              }),
+            ),
+          ),
+        ),
+      )
+
+      expect((error as { code: number }).code).toBe(10)
+    })
+
+    test('a failure that CANNOT hide a success never triggers the lookup', async () => {
+      let lookups = 0
+      const error = await runEffect(
+        Effect.flip(
+          Module.ensureCreated({
+            id: 'test-id',
+            news: phaseProps({ name: 'vm-pinned' }),
+            desired: desiredFrom(),
+            parentId: 'project-1',
+            labels: {},
+            session: recordingSession().session,
+          }).pipe(
+            Effect.provide(
+              createLayers({
+                instance: {
+                  // INVALID_ARGUMENT (3): the create provably did not land, so a lookup can only produce a
+                  // wrong diagnosis (R-20).
+                  create: () => Effect.fail(new GrpcError({ code: 3, message: 'invalid argument', details: '' })),
+                  getByName: () => {
+                    lookups += 1
+                    return Effect.succeed(protoInstance())
+                  },
+                },
+              }),
+            ),
+          ),
+        ),
+      )
+
+      expect((error as { code: number }).code).toBe(3)
+      expect(lookups).toBe(0)
+    })
+
+    test('a lookup that fails for another reason warns and reports the original create failure', async () => {
+      const logs = recordingLogs()
+      const error = await runEffect(
+        Effect.flip(
+          Module.ensureCreated({
+            id: 'test-id',
+            news: phaseProps({ name: 'vm-pinned' }),
+            desired: desiredFrom(),
+            parentId: 'project-1',
+            labels: {},
+            session: recordingSession().session,
+          }).pipe(
+            Effect.provide(
+              createLayers({
+                instance: {
+                  create: () => Effect.fail(new GrpcError({ code: 10, message: 'aborted', details: '' })),
+                  // A rotated/expired credential: the lookup could not answer, which must be audible rather
+                  // than read as "no instance there" (R-02's class).
+                  getByName: () => Effect.fail(new GrpcError({ code: 7, message: 'PermissionDenied', details: '' })),
+                },
+              }),
+            ),
+          ),
+        ).pipe(Effect.provide(logs.layer)),
+      )
+
+      expect((error as { code: number }).code).toBe(10)
+      expect(logs.messages().some((m) => m.includes('7 PermissionDenied') && m.includes('vm-pinned'))).toBe(true)
+    })
+  })
+
+  describe('applyUpdate', () => {
+    test('no drift and no label change writes nothing, and returns the observed instance', async () => {
+      let updates = 0
+      // The live spec IS the desired spec (the same object), which is what "no drift" means — a fixture
+      // with a thinner spec would legitimately drift on the fields the props pin.
+      const live = protoInstance({ spec: desiredFrom() })
+
+      const result = await runEffect(
+        Module.applyUpdate({
+          instance: live as never,
+          news: phaseProps(),
+          olds: undefined,
+          desired: desiredFrom(),
+          parentId: 'project-1',
+          labels: {},
+          session: recordingSession().session,
+        }).pipe(
+          Effect.provide(
+            mockComputeLayer({
+              instance: {
+                update: () => {
+                  updates += 1
+                  return Effect.succeed(live)
+                },
+              },
+            }),
+          ),
+        ),
+      )
+
+      expect(result).toBe(live)
+      expect(updates).toBe(0)
+    })
+
+    test('a spec drift updates with parentId, resourceVersion and the merged labels', async () => {
+      const requests: Array<unknown> = []
+      const updated = protoInstance({ spec: { serviceAccountId: 'serviceaccount-new' } })
+
+      const result = await runEffect(
+        Module.applyUpdate({
+          instance: protoInstance() as never,
+          news: phaseProps(),
+          olds: undefined,
+          desired: desiredFrom({ serviceAccountId: 'serviceaccount-new' }),
+          parentId: 'project-9',
+          labels: { 'alchemy::id': 'test-id' },
+          session: recordingSession().session,
+        }).pipe(
+          Effect.provide(
+            mockComputeLayer({
+              instance: {
+                update: (req: unknown) => {
+                  requests.push(req)
+                  return Effect.succeed(updated)
+                },
+              },
+            }),
+          ),
+        ),
+      )
+
+      expect(result).toBe(updated)
+      const request = requests[0] as {
+        metadata: { parentId: string; resourceVersion: string; labels: Record<string, string> }
+        spec: unknown
+      }
+      // The compute API requires `metadata.parentId` on an update (unlike VPC resources):
+      // omitting it answers `INVALID_ARGUMENT: ParentID is invalid`.
+      expect(request.metadata.parentId).toBe('project-9')
+      expect(request.metadata.resourceVersion).toBe('0')
+      expect(request.metadata.labels).toEqual({ 'alchemy::id': 'test-id' })
+    })
+
+    test('a LABELS-ONLY change still updates, and carries the full merged map', async () => {
+      const requests: Array<unknown> = []
+      // The live spec IS the desired spec and the live labels are empty, so `instanceSpecDrifted` is false
+      // and `labelsDrifted` is the only reason an update happens at all (AGENTS.md §Convergence). A thinner
+      // live spec would drift on its own and make this test pass for the wrong reason.
+      const live = protoInstance({
+        metadata: { ...protoMetadata('computeinstance-abc123', 'vm-1', 'project-1'), labels: {} },
+        spec: desiredFrom(),
+      })
+
+      await runEffect(
+        Module.applyUpdate({
+          instance: live as never,
+          news: phaseProps({ labels: { team: 'platform' } }),
+          olds: undefined,
+          desired: desiredFrom(),
+          parentId: 'project-1',
+          labels: { 'alchemy::id': 'test-id', team: 'platform' },
+          session: recordingSession().session,
+        }).pipe(
+          Effect.provide(
+            mockComputeLayer({
+              instance: {
+                update: (req: unknown) => {
+                  requests.push(req)
+                  return Effect.succeed(live)
+                },
+              },
+            }),
+          ),
+        ),
+      )
+
+      expect(requests).toHaveLength(1)
+      expect((requests[0] as { metadata: { labels: Record<string, string> } }).metadata.labels).toEqual({
+        'alchemy::id': 'test-id',
+        team: 'platform',
+      })
+    })
+  })
+
+  describe('ensureRunning', () => {
+    /**
+     * A compute mock that records the **call order** and answers `instance.get` with the states the waits
+     * expect. Asserting on the order is what pins the restart protocol: stop → wait STOPPED → `Start` →
+     * wait RUNNING. Every state is answered as a string, which `friendlyState` passes through.
+     */
+    const recordingCompute = (states: ReadonlyArray<string>, live: unknown) => {
+      const calls: Array<string> = []
+      const requests: Array<unknown> = []
+      let poll = 0
+      let started: unknown
+      const layer = mockComputeLayer({
+        instance: {
+          get: () => {
+            calls.push('get')
+            const state = states[Math.min(poll, states.length - 1)]
+            poll += 1
+            return Effect.succeed({ status: { state } })
+          },
+          update: (req: unknown) => {
+            calls.push('update')
+            requests.push(req)
+            return Effect.succeed(live)
+          },
+          start: () => {
+            calls.push('start')
+            started = live
+            return Effect.succeed(live)
+          },
+        },
+      })
+      return { layer, calls, requests, started: () => started }
+    }
+
+    test('an unchanged hash does not restart', async () => {
+      const compute = recordingCompute(['RUNNING'], protoInstance())
+      const result = await runEffect(
+        Module.ensureRunning({
+          instance: protoInstance() as never,
+          news: phaseProps({ main: '/app/entry.ts' }),
+          desiredStopped: false,
+          specNews: {},
+          parentId: 'project-1',
+          labels: {},
+          shippedHash: 'hash-a',
+          previousHash: 'hash-a',
+          session: recordingSession().session,
+        }).pipe(Effect.provide(compute.layer)),
+      )
+
+      expect(result.restarted).toBe(false)
+      expect(compute.calls).toEqual([])
+    })
+
+    test('the first deploy (no previous hash) does not restart', async () => {
+      const compute = recordingCompute(['RUNNING'], protoInstance())
+      const result = await runEffect(
+        Module.ensureRunning({
+          instance: protoInstance() as never,
+          news: phaseProps({ main: '/app/entry.ts' }),
+          desiredStopped: false,
+          specNews: {},
+          parentId: 'project-1',
+          labels: {},
+          shippedHash: 'hash-a',
+          previousHash: undefined,
+          session: recordingSession().session,
+        }).pipe(Effect.provide(compute.layer)),
+      )
+
+      expect(result.restarted).toBe(false)
+      expect(compute.calls).toEqual([])
+    })
+
+    test('a changed hash restarts through stop → wait STOPPED → Start → wait RUNNING', async () => {
+      const session = recordingSession()
+      const compute = recordingCompute(['STOPPED', 'RUNNING'], protoInstance())
+
+      const result = await runEffect(
+        Module.ensureRunning({
+          instance: protoInstance() as never,
+          news: phaseProps({ main: '/app/entry.ts' }),
+          desiredStopped: false,
+          specNews: {},
+          parentId: 'project-1',
+          labels: {},
+          shippedHash: 'hash-b',
+          previousHash: 'hash-a',
+          session: session.session,
+        }).pipe(Effect.provide(compute.layer)),
+      )
+
+      expect(compute.calls).toEqual(['update', 'get', 'start', 'get'])
+      // The stop is transmitted as a spec write, because `stopped: false` (the start half) cannot be:
+      // proto3 bool defaults encode as absent, which the API reads as "leave unchanged".
+      expect((compute.requests[0] as { spec: { stopped: boolean } }).spec.stopped).toBe(true)
+      expect(result.restarted).toBe(true)
+      expect(session.messages().some((m) => m.includes('Restarting'))).toBe(true)
+    })
+
+    test('asking for `stopped: true` never restarts, even when the hash changed', async () => {
+      const compute = recordingCompute(['STOPPED'], protoInstance())
+      const result = await runEffect(
+        Module.ensureRunning({
+          instance: protoInstance() as never,
+          news: phaseProps({ main: '/app/entry.ts', stopped: true }),
+          desiredStopped: true,
+          specNews: { stopped: true },
+          parentId: 'project-1',
+          labels: {},
+          shippedHash: 'hash-b',
+          previousHash: 'hash-a',
+          session: recordingSession().session,
+        }).pipe(Effect.provide(compute.layer)),
+      )
+
+      expect(result.restarted).toBe(false)
+      expect(compute.calls).toEqual([])
+    })
+
+    test('a `stopped` prop that was removed starts a stopped VM', async () => {
+      const session = recordingSession()
+      const compute = recordingCompute(['RUNNING'], protoInstance({ spec: { stopped: true } }))
+
+      const result = await runEffect(
+        Module.ensureRunning({
+          instance: protoInstance({ spec: { stopped: true } }) as never,
+          news: phaseProps(),
+          desiredStopped: false,
+          specNews: {},
+          parentId: 'project-1',
+          labels: {},
+          shippedHash: undefined,
+          previousHash: undefined,
+          session: session.session,
+        }).pipe(Effect.provide(compute.layer)),
+      )
+
+      expect(compute.calls).toEqual(['start', 'get'])
+      // Not a restart: the witness drives the caller's read-back, and nothing about the code changed.
+      expect(result.restarted).toBe(false)
+      expect(session.messages().some((m) => m.includes('no longer set'))).toBe(true)
+    })
+
+    test('a low-level instance (no `main`) is never restarted or started', async () => {
+      const compute = recordingCompute(['STOPPED'], protoInstance({ spec: { stopped: true } }))
+      const result = await runEffect(
+        Module.ensureRunning({
+          instance: protoInstance({ spec: { stopped: true } }) as never,
+          // No `main` and `stopped` is still true: nothing to start for.
+          news: phaseProps({ stopped: true }),
+          desiredStopped: true,
+          specNews: { stopped: true },
+          parentId: 'project-1',
+          labels: {},
+          shippedHash: 'hash-b',
+          previousHash: 'hash-a',
+          session: recordingSession().session,
+        }).pipe(Effect.provide(compute.layer)),
+      )
+
+      expect(result.restarted).toBe(false)
+      expect(compute.calls).toEqual([])
+    })
   })
 })
 

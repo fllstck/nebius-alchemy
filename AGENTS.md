@@ -378,7 +378,12 @@ silent no-op.
 
 Extract the drift list into a module-level, exported function (as `instanceSpecDrifted` does)
 when the reconcile body is too heavy to test through, so the convergence contract is
-directly unit-testable.
+directly unit-testable. **The same goes for the lifecycle phases**: `compute/v1 Instance`'s is the
+reference — `ensureCreated`, `applyUpdate`, `ensureRunning` and `waitForInstanceState` are exported
+`Effect.fn`s that yield their own services, leaving `reconcile` as ~95 lines of sequencing (it was 341).
+Each carries `@__PURE__` for the D8 bundler reason documented at `waitForInstanceState`, and each has
+direct unit tests in `tests/resources/compute/v1/instance.test.ts` — a phase is only extracted when a test
+can assert the request it sends and the order it sends it in (R-08).
 
 ### Naming — schema casing, verbatim
 

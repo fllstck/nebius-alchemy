@@ -433,29 +433,56 @@ statically reachable.
 
 ## EYE ROLL COLLECTION
 
-### R-08 — `Instance.reconcile` is a 341-line god function · `OPEN`
+### R-08 — `Instance.reconcile` is a 341-line god function · `DONE (2026-09-27)`
 
-**File**: `modules/resources/compute/v1/instance.ts:511-852`
+**File**: `modules/resources/compute/v1/instance.ts` — the phases are exported next to the provider, and
+their tests live in `tests/resources/compute/v1/instance.test.ts`.
 
-**Evidence**: one generator performs hosted-runtime resolution, create (+ get-by-name recovery),
-update, stop, restart-on-hash-divergence, start, wait-for-state polling, and drift evaluation. The
-repo's own doctrine (`AGENTS.md` §Resource provider patterns, last paragraph) says to extract a
-testable seam "when the reconcile body is too heavy to test through" — the drift list was extracted
-(`instanceSpecDrifted`), the lifecycle phases were not.
+**Evidence (the original)**: one generator performed hosted-runtime resolution, create (+ get-by-name
+recovery), update, stop, restart-on-hash-divergence, start, wait-for-state polling, and drift evaluation.
+The repo's own doctrine (`AGENTS.md` §Resource provider patterns) says to extract a testable seam "when
+the reconcile body is too heavy to test through" — the drift list had been extracted
+(`instanceSpecDrifted`), the lifecycle phases had not.
 
-**Why it bites**: every future behavioural change lands here and is only testable end-to-end
-through the front door. It is also the file consumers read when learning the provider.
+**Why it bit**: every future behavioural change landed there and was only testable end-to-end through the
+front door. It is also the file consumers read when learning the provider.
 
-**Fix**: extract exported `Effect.fn` phases — `ensureCreated`, `applyUpdate`, `ensureRunning`
-(stop/restart/start), `awaitInstanceState` — leaving `reconcile` as ~60 lines of sequencing. Keep
-`instanceSpecDrifted` where it is.
+**Fixed** — three exported `Effect.fn` phases, each yielding its own services at call time, plus the
+fourth that already existed:
 
-**Acceptance**:
-- `reconcile` under ~100 lines; each phase has unit tests using `tests/helpers/mocks.ts`.
-- All existing `tests/convergence.test.ts` rows for `compute/v1 Instance` still green, unchanged —
-  the refactor must not move a single plan decision. If a row needs editing, that is a behaviour
-  change and needs its own justification.
-- `bun run check` and `bun test` clean.
+| phase | the lifecycle step it is |
+| `ensureCreated` | the create, its generated-vs-pinned physical name, and the R-20 create-timeout recovery (`getByName`, adopt, narrate) |
+| `applyUpdate` | the in-place write triggered by `instanceSpecDrifted` **or** `Factory.labelsDrifted`, with the mandatory `metadata.parentId` |
+| `ensureRunning` | the hash-divergence restart (update `stopped: true` → wait STOPPED → `Start` → wait RUNNING) and the plain `Start` after a `stopped` prop was removed; returns `restarted`, the caller's read-back witness |
+| `waitForInstanceState` | the terminal-state poll — it already *was* the fourth phase (extracted and tested under R-09), so it was not duplicated under a new name |
+
+`reconcile` is now **96 lines** (from 341) that read as the sequencing they are: guards → hosted runtime
+→ observe → ensure → sync → running → wait → read-back → fresh attributes. Each phase keeps the `@__PURE__`
+annotation for the D8 bundler reason documented at `waitForInstanceState` (a retained module-scope call
+drags the whole gRPC graph into the bundle), and `instanceSpecDrifted` stayed where it was.
+
+One type-level improvement fell out: the create-recovery used `Effect.catch((e: unknown) => …
+Effect.fail(e))`, which widened the phase's error channel to `unknown`. `Effect.catchIf` passes a
+non-matching failure through untouched, so `ensureCreated` now declares `PolledMethodError` — the failures
+`create` actually raises — with identical runtime behaviour.
+
+**Acceptance — met**:
+
+- `reconcile` is 96 lines, and the three new phases have **15 direct unit tests**
+  (`Nebius.compute.v1.Instance reconcile phases (R-08)`) driving them against `mockComputeLayer` and
+  asserting the *request* and the *call order*: the generated name + merged ownership labels; a pinned name
+  verbatim; a recoverable create adopted (and narrated); `NOT_FOUND` during the lookup re-raising the
+  **original** create error; a non-candidate failure (code 3) never triggering the lookup; a
+  `PERMISSION_DENIED` lookup warning instead of reading as "no instance there"; no-op vs spec-drift vs
+  **labels-only** updates; and the restart protocol including its two negatives (`stopped: true`, no
+  previous hash) and the `Start`-only path.
+- **The convergence suite was not edited.** All 501 tests in `instance.test.ts` +
+  `convergence.test.ts` pass unchanged, so no plan decision moved — the acceptance's hard requirement.
+- Four mutations were checked before committing: removing the `labelsDrifted` trigger → the labels-only
+test fails; dropping `!desiredStopped` → the stopped-instance test fails; dropping the STOPPED wait → the
+call-order test fails; making the recovery predicate always true → the no-lookup test fails.
+- `bun run check` exit 0 · **1786 tests / 1711 pass / 75 skip / 0 fail** (from 1771/1696 — the 15 new
+tests).
 
 ---
 
@@ -1365,8 +1392,11 @@ and **R-12 is done 2026-09-27** (see step 10).
    *count*: 41 `iam.project.list` call sites now share one session-long fetch, and the 23 hand-written
    fan-outs moved onto one bounded-concurrency helper. Offline (3 mutation checks replaced the live
    reading; the API's rate limit is the one thing still unmeasured, and the constant says so).
-11. **R-08** — last, because it is a large refactor over the file most likely to change for other
-   reasons. Do it when the rest is quiet.
+11. **R-08 — done 2026-09-27** — the refactor the sequencing deliberately kept for last, because it is a
+   large change over the file most likely to change for other reasons. Three phases extracted (`ensureCreated`,
+   `applyUpdate`, `ensureRunning`; `waitForInstanceState` already existed), `reconcile` 341 → 96 lines, 15 new
+   direct phase tests, and the convergence suite untouched — which was the acceptance that mattered. **This
+   closes the roast queue**: all 24 entries are DONE.
 
 ## Do not "fix" these — they are approved exceptions
 

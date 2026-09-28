@@ -516,6 +516,216 @@ const readBackRunningHash = Effect.fn('readBackRunningHash')(function* ({
   return shippedHash
 })
 
+// ----- RECONCILE PHASES
+//
+// `reconcile` is the provider's sequencing and nothing else (R-08): each lifecycle phase below is an
+// exported `Effect.fn` that yields its own services at call time, so it is unit-testable on its own and a
+// behavioural change lands in the phase it belongs to rather than in a 180-line generator. The four
+// phases are `ensureCreated` (create + the create-timeout recovery), `applyUpdate` (the in-place write),
+// `ensureRunning` (the stop→`Start` restart and the plain `Start`), and `waitForInstanceState` above (the
+// terminal-state poll, extracted and tested under R-09 — it already *was* the fourth phase).
+//
+// Every phase carries `@__PURE__` for the D8 reason documented at `waitForInstanceState`: they are
+// module-scope `Effect.fn` calls whose signatures name `ComputeGrpcService`, and the annotation is what
+// lets the runtime bundler drop them (a retained call drags the whole gRPC graph into the bundle).
+
+/**
+ * Phase — Ensure: create the instance, adopting it if the create timed out client-side.
+ *
+ * The recovery exists because the long-running operation is created server-side before the response
+ * reaches us, so a client-side failure can leave a live VM that nothing tracks — and destroy then has no
+ * id to act on and silently leaks the VM plus its boot disk. `isCreateRecoveryCandidate` (R-20) decides
+ * which failures can hide that, and the lookup is best-effort **and loud**: `NOT_FOUND` is the case the
+ * recovery exists for, anything else warns and re-raises the original create failure, which is the more
+ * useful error to report.
+ *
+ * Error channel: `PolledMethodError` — the same failures `create` declares. The predicate form
+ * (`Effect.catchIf`) rather than `catch((e: unknown) => … Effect.fail(e))` is what keeps that type: a
+ * non-matching failure is passed through untouched instead of being re-failed as `unknown`.
+ */
+export const ensureCreated = /* @__PURE__ */ Effect.fn('Nebius.compute.v1.Instance.ensureCreated')(function* ({
+  id,
+  news,
+  desired,
+  parentId,
+  labels,
+  session,
+}: {
+  id: string
+  news: InstanceSchema.InstanceProps
+  desired: NebiusInstanceSchema.InstanceSpec
+  parentId: string
+  labels: Record<string, string>
+  session: { note(message: string): Effect.Effect<void> }
+}): Effect.fn.Return<
+  NebiusInstanceSchema.Instance,
+  GrpcUtils.PolledMethodError,
+  ComputeGrpc.ComputeGrpcService | Alchemy.InstanceId | Alchemy.Stack | Alchemy.Stage
+> {
+  const computeGrpcService = yield* ComputeGrpc.ComputeGrpcService
+  const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
+  yield* session.note(`Creating Nebius.compute.v1.Instance (${name})`)
+  return yield* computeGrpcService.instance
+    .create({
+      metadata: { parentId, name, labels },
+      spec: desired,
+    })
+    .pipe(
+      Effect.catchIf(GrpcUtils.isCreateRecoveryCandidate, (createError) =>
+        Effect.gen(function* () {
+          const recovered = yield* computeGrpcService.instance.getByName({ parentId, name }).pipe(
+            // Best effort, and loud — the same policy as the recovery blocks in `ai/v1 {Endpoint,Job}`: the
+            // original create failure (re-raised below) is the more useful error to report.
+            Effect.catchTag('GrpcError', (lookupError) =>
+              lookupError.code === 5
+                ? Effect.succeed(undefined)
+                : Effect.logWarning(
+                    `Recovery lookup for Nebius.compute.v1.Instance '${name}' failed (${lookupError.code} ${lookupError.message}) — reporting the original create failure`,
+                  ).pipe(Effect.andThen(Effect.succeed(undefined))),
+            ),
+          )
+          if (recovered) {
+            yield* session.note(`Recovered Nebius.compute.v1.Instance (${recovered.metadata!.id}) after create failure`)
+            return recovered
+          }
+          return yield* Effect.fail(createError)
+        }),
+      ),
+    )
+})
+
+/**
+ * Phase — Sync: the in-place write, when the spec drifted **or** only the labels changed.
+ *
+ * Returns the instance the API answered with (`update` echoes the new resource), or the one it was handed
+ * when nothing had to be written. Two triggers, both required:
+ *
+ * - `instanceSpecDrifted` — the per-prop drift contract, which deliberately excludes `gpuCluster` (create-
+ *   only; a difference is a `replace` in `diff`, never an update the API would reject);
+ * - `Factory.labelsDrifted` — a labels-only change is not a spec drift, so without it a labels change
+ *   plans an update that writes nothing. The merged map is sent on **every** update as well as the create,
+ *   because an update that omits `metadata.labels` leaves the live map untouched and a label removed from
+ *   config must be removed in the cloud (measured 2026-09-24; AGENTS.md §Convergence).
+ *
+ * `metadata.parentId` is mandatory here (unlike VPC resources) — omitting it answers
+ * `INVALID_ARGUMENT: ParentID is invalid`.
+ */
+export const applyUpdate = /* @__PURE__ */ Effect.fn('Nebius.compute.v1.Instance.applyUpdate')(function* ({
+  instance,
+  news,
+  olds,
+  desired,
+  parentId,
+  labels,
+  session,
+}: {
+  instance: NebiusInstanceSchema.Instance
+  news: InstanceSchema.InstanceProps
+  olds: InstanceSchema.InstanceProps | undefined
+  desired: NebiusInstanceSchema.InstanceSpec
+  parentId: string
+  labels: Record<string, string>
+  session: { note(message: string): Effect.Effect<void> }
+}): Effect.fn.Return<
+  NebiusInstanceSchema.Instance,
+  GrpcUtils.PolledMethodError,
+  ComputeGrpc.ComputeGrpcService
+> {
+  if (
+    !instanceSpecDrifted(instance.spec, desired, news) &&
+    !Factory.labelsDrifted(instance.metadata?.labels, news.labels, olds?.labels)
+  ) {
+    return instance
+  }
+  const computeGrpcService = yield* ComputeGrpc.ComputeGrpcService
+  yield* session.note(`Updating Nebius.compute.v1.Instance (${instance.metadata!.name})`)
+  return yield* computeGrpcService.instance.update({
+    metadata: {
+      id: Ids.InstanceId.make(instance.metadata!.id),
+      parentId,
+      resourceVersion: instance.metadata!.resourceVersion.toString(),
+      labels,
+    },
+    spec: desired,
+  })
+})
+
+/**
+ * Phase — Ensure running: restart for a new bundle, or `Start` a VM whose `stopped` prop was removed.
+ *
+ * Both halves exist because `stopped: false` **cannot be transmitted** — proto3 bool defaults encode as
+ * absent, i.e. "leave unchanged" — so the service's `Start` RPC is the only way to say "run". A bundle
+ * change is the one thing that needs a restart (no reboot API): the unit's unconditional `ExecStartPre`
+ * re-fetches the manifest on start, so stop→start converges the code, and crash-restarts self-heal through
+ * `Restart=always` plus the same re-fetch (measured 2026-09-24).
+ *
+ * Returns `restarted` because the caller's read-back of the running hash is only meaningful when the VM was
+ * (re)started: `true` here is the witness that the running code may have changed.
+ */
+export const ensureRunning = /* @__PURE__ */ Effect.fn('Nebius.compute.v1.Instance.ensureRunning')(function* ({
+  instance,
+  news,
+  desiredStopped,
+  specNews,
+  parentId,
+  labels,
+  shippedHash,
+  previousHash,
+  session,
+}: {
+  instance: NebiusInstanceSchema.Instance
+  news: InstanceSchema.InstanceProps
+  desiredStopped: boolean
+  /** The stripped spec input, before `fromJSON` — the restart re-sends it with `stopped: true`. */
+  specNews: Record<string, unknown>
+  parentId: string
+  labels: Record<string, string>
+  shippedHash: string | undefined
+  previousHash: string | undefined
+  session: { note(message: string): Effect.Effect<void> }
+}): Effect.fn.Return<
+  { instance: NebiusInstanceSchema.Instance; restarted: boolean },
+  | GrpcUtils.PolledMethodError
+  | InstanceSchema.InstanceUnhealthyError
+  | InstanceSchema.InstanceStartTimeoutError,
+  ComputeGrpc.ComputeGrpcService
+> {
+  const computeGrpcService = yield* ComputeGrpc.ComputeGrpcService
+  const instanceId = Ids.InstanceId.make(instance.metadata!.id)
+  const name = instance.metadata!.name
+  const restart = Boolean(news.main) && !desiredStopped && previousHash !== undefined && shippedHash !== undefined && previousHash !== shippedHash
+
+  if (restart) {
+    yield* session.note(`Restarting Nebius.compute.v1.Instance (${name}) to pick up new bundle`)
+    const stoppedSpec = NebiusInstanceSchema.InstanceSpec.fromJSON({ ...specNews, stopped: true })
+    yield* computeGrpcService.instance.update({
+      metadata: {
+        id: instanceId,
+        parentId,
+        resourceVersion: instance.metadata!.resourceVersion.toString(),
+        labels,
+      },
+      spec: stoppedSpec,
+    })
+    yield* waitForInstanceState({ instanceId, targetStates: ['STOPPED'], session })
+    // Started through the service's `Start` RPC, **not** by re-sending the spec: `stopped: false` cannot be
+    // transmitted (proto3 bool default = absent = "leave unchanged"), so an update here was accepted and
+    // changed nothing, leaving the VM stopped while the `RUNNING` wait below failed. Measured 2026-09-24.
+    const started = yield* computeGrpcService.instance.start(instanceId)
+    yield* waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session })
+    return { instance: started, restarted: true }
+  }
+
+  if (news.stopped !== true && instance.spec?.stopped === true) {
+    yield* session.note(`Starting Nebius.compute.v1.Instance (${name}) — \`stopped\` is no longer set`)
+    const started = yield* computeGrpcService.instance.start(instanceId)
+    yield* waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session })
+    return { instance: started, restarted: false }
+  }
+
+  return { instance, restarted: false }
+})
+
 // ----- PROVIDER
 
 /** D8 bundle-safety guard — see modules/resources/storage/v1/bucket.ts (the bundler folds __ALCHEMY_RUNTIME__ in Worker bundles). */
@@ -561,7 +771,7 @@ export const NebiusInstanceProvider: Layer.Layer<
       instance = yield* getOrUndefined(computeGrpcService.instance.get(output.id))
     }
 
-    // 2. Ensure — create if missing (with ownership tags)
+    // 2. Ensure — create if missing (with ownership tags).
     const parentId = news.parentId || (yield* Config.String('NEBIUS_PROJECT_ID'))
     // The merged labels are computed **once** and sent on every update as well as the create: an update
     // that omits `metadata.labels` leaves the live map untouched, so converging a labels-only change means
@@ -569,117 +779,31 @@ export const NebiusInstanceProvider: Layer.Layer<
     // cloud (measured 2026-09-24 on `vpc/v1 Network`, `spikes/labels-convergence-probe.ts`; AGENTS.md
     // §Convergence).
     const labels = yield* Factory.mergedLabels(id, news.labels)
-    if (!instance) {
-      const name = news.name || (yield* AlchemyPhysicalName.createPhysicalName({ id, maxLength: 63, lowercase: true }))
-      yield* session.note(`Creating Nebius.compute.v1.Instance (${name})`)
-      instance = yield* computeGrpcService.instance
-        .create({
-          metadata: { parentId, name, labels },
-          spec: desired,
-        })
-        .pipe(
-          // Create can time out client-side while the backend still starts the
-          // instance (the long-running operation is created server-side before
-          // the response reaches us). Recover by looking the instance up by its
-          // deterministic physical name and adopting it — otherwise destroy has
-          // no ID to act on and silently leaks a running VM + boot disk.
-          Effect.catch((e: unknown) =>
-            Effect.gen(function* () {
-              // R-20: only failures that can hide a successful create warrant the lookup.
-              if (!GrpcUtils.isCreateRecoveryCandidate(e)) return yield* Effect.fail(e)
-              const recovered = yield* computeGrpcService.instance
-                .getByName({ parentId, name })
-                .pipe(
-                  // Best effort, and loud — the same policy as the recovery blocks in `ai/v1
-                  // {Endpoint,Job}`: `NOT_FOUND` is the case this recovery exists for, any other
-                  // failure means the lookup could not answer, and the original create failure
-                  // (re-raised below) is the more useful error to report.
-                  Effect.catchTag('GrpcError', (e) =>
-                    e.code === 5
-                      ? Effect.succeed(undefined)
-                      : Effect.logWarning(
-                          `Recovery lookup for Nebius.compute.v1.Instance '${name}' failed (${e.code} ${e.message}) — reporting the original create failure`,
-                        ).pipe(Effect.andThen(Effect.succeed(undefined))),
-                  ),
-                )
-              if (recovered) {
-                yield* session.note(
-                  `Recovered Nebius.compute.v1.Instance (${recovered.metadata!.id}) after create failure`,
-                )
-                return recovered
-              }
-              return yield* Effect.fail(e)
-            }),
-          ),
-        )
-    }
+    // The physical name, the create-timeout recovery and its failure classification live in
+    // `ensureCreated` (R-08).
+    instance ??= yield* ensureCreated({ id, news, desired, parentId, labels, session })
 
     const instanceId = Ids.InstanceId.make(instance.metadata!.id)
     const desiredStopped = Boolean(specNews.stopped)
 
-    // 3. Sync — update if the spec drifted from desired (hosted merges the
-    //    generated bootstrap into cloudInitUserData; user-data change = update,
-    //    Deviation 2 — Nebius accepts it in place).
-    //
-    //    `gpuCluster` is absent from the list below BY DESIGN: it is create-only,
-    //    so a difference is a `replace` (see `gpuClusterChangeRequiresReplace`),
-    //    never an in-place update — the API rejects an update that tries.
-    if (
-      instanceSpecDrifted(instance.spec, desired, news) ||
-      // A labels-only change is not a spec drift, so it needs its own trigger — carrying the merged map in
-      // `metadata.labels` converges only if this condition fires (`Factory.labelsDrifted`).
-      Factory.labelsDrifted(instance.metadata?.labels, news.labels, olds?.labels)
-    ) {
-      yield* session.note(`Updating Nebius.compute.v1.Instance (${instance.metadata!.name})`)
-      // The compute API requires metadata.parentId on update (unlike VPC
-      // resources) — omitting it yields `INVALID_ARGUMENT: ParentID is invalid`.
-      instance = yield* computeGrpcService.instance.update({
-        metadata: {
-          id: instanceId,
-          parentId,
-          resourceVersion: instance.metadata!.resourceVersion.toString(),
-          labels,
-        },
-        spec: desired,
-      })
-    }
+    // 3. Sync — the in-place write, when the spec drifted or only the labels changed (AGENTS.md
+    //    §Convergence: a labels-only change is not a spec drift, so it needs its own trigger).
+    instance = yield* applyUpdate({ instance, news, olds, desired, parentId, labels, session })
 
-    // 4. Host-mode restart — ONLY when the shipped bundle hash differs from
-    //    what the VM is running (Deviation 1: no reboot API; stop→start via
-    //    the `stopped` spec flag). The unit's unconditional `ExecStartPre`
-    //    re-fetches the manifest on start, so the restart converges the code.
-    //    Crash-restarts self-heal via `Restart=always` + the same re-fetch.
-    const needsRestart =
-      Boolean(news.main) &&
-      !desiredStopped &&
-      output?.code?.hash !== undefined &&
-      runtime.code?.hash !== undefined &&
-      output.code.hash !== runtime.code.hash
-    if (needsRestart) {
-      yield* session.note(`Restarting Nebius.compute.v1.Instance (${instance.metadata!.name}) to pick up new bundle`)
-      const stoppedSpec = NebiusInstanceSchema.InstanceSpec.fromJSON({ ...specNews, stopped: true })
-      instance = yield* computeGrpcService.instance.update({
-        metadata: {
-          id: instanceId,
-          parentId,
-          resourceVersion: instance.metadata!.resourceVersion.toString(),
-          labels,
-        },
-        spec: stoppedSpec,
-      })
-      yield* waitForInstanceState({ instanceId, targetStates: ['STOPPED'], session })
-      // Started through the service's `Start` RPC, **not** by re-sending the spec: `stopped: false` cannot be
-      // transmitted (proto3 bool default = absent = "leave unchanged"), so an update here was accepted and
-      // changed nothing, leaving the VM stopped while the `RUNNING` wait below failed. Measured 2026-09-24.
-      instance = yield* computeGrpcService.instance.start(instanceId)
-      yield* waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session })
-    } else if (news.stopped !== true && instance.spec?.stopped === true) {
-      // `stopped: true` was removed (or the VM was stopped out of band) and the caller wants it running:
-      // the same constraint, handled for the ordinary path rather than only for a bundle restart.
-      yield* session.note(`Starting Nebius.compute.v1.Instance (${instance.metadata!.name}) — \`stopped\` is no longer set`)
-      instance = yield* computeGrpcService.instance.start(instanceId)
-      yield* waitForInstanceState({ instanceId, targetStates: ['RUNNING'], session })
-    }
+    // 4. Running — a bundle-hash restart (stop → `Start`), or `Start` a VM whose `stopped` prop was
+    //    removed. `restarted` is the read-back witness below.
+    const running = yield* ensureRunning({
+      instance,
+      news,
+      desiredStopped,
+      specNews,
+      parentId,
+      labels,
+      shippedHash: runtime.code?.hash,
+      previousHash: output?.code?.hash,
+      session,
+    })
+    instance = running.instance
 
     // 5. Wait for a terminal state — on create AND on observed transient
     //    states (CREATING/STARTING/UPDATING — a previous deploy may have
@@ -691,7 +815,7 @@ export const NebiusInstanceProvider: Layer.Layer<
     //    divergence → the next reconcile restarts again). Only when the VM was
     //    (re)started this pass — otherwise trust the persisted state.
     const runningHash =
-      Boolean(news.main) && (needsRestart || output === undefined)
+      Boolean(news.main) && (running.restarted || output === undefined)
         ? yield* readBackRunningHash({
             instance,
             port: news.port ?? 3000,
