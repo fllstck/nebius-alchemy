@@ -162,6 +162,37 @@ at import (see _Install Dependencies_ above):
 | `typescript`                   | Not declared      | Bring TypeScript 6 or 7 (verified: 6.0.3, 7.0.2). It was a `>=6 <8` **optional** peer until 0.9.1, which made `npm install` fail against alchemy's optional TypeScript-5 chains (`ERESOLVE … peerOptional typescript`) — a compiler range here can only break installs, so the choice is yours. |
 | `alchemy`                      | Yes (peer, exact) | `2.0.0-beta.79` — the `latest` tag. **Not** `@next`, which is an _older_ beta. Exact on purpose: the CLI and this package's providers must share one `alchemy` (and one Effect instance), so a mismatch is an install error rather than two copies                                              |
 
+### Upgrading from 0.10.2
+
+**One new capability, three new plan-time errors, and two fixes.**
+
+* **Kubernetes workloads can now target an `mk8s` cluster directly** — no kubeconfig, no `kubectl`.
+  `Nebius.mk8s.Cluster` exposes a `connection` attribute and registers a `ClusterAdapter`, so
+  `Kubernetes.Deployment`/`Job`/`Manifest`/`HelmChart` run against the cluster with the ambient IAM access
+  token (measured live: `200` with the token, `403 system:anonymous` without). See `examples/mk8s-k8s.ts`.
+  Only pre-built `image` references work so far — `main` bundles and `context`/`dockerfile` sources fail with
+  _"this cluster has no managed image registry"_ until the Container Registry seam lands.
+* **Three configurations that used to be accepted now fail the plan**, each because the API accepted them and
+  then did something other than what was asked (all three measured live first):
+  * a **`dns/v1 Record.ttl`** that is not a whole number in `1 … 2147483647` — the API replaces `0` (and a
+    fractional value) with its default `600`, and the provider compares the live echo against your pinned
+    value, so a pinned `0` wrote an update on every reconcile that could never converge. Omit `ttl` for the
+    default;
+  * an **empty (`''`) key** in a `compute/v1` label map — compute answers a bare `metadata.labels is
+    invalid` naming nothing, while a blank (`'  '`) key is fine. VPC is unaffected (it stores an empty key);
+  * a **`=` or a newline in a hosted instance's env _key_** — systemd has no quoting on the key side, so
+    `{'A=B': 'v'}` shipped as key `A` with value `B='v'` and `{'KE\nY': 'v'}` as two variables, silently.
+    `MY.KEY`, `MY-KEY` and `MY_KEY` stay legal.
+* **A multi-line env _value_ now reaches the VM intact.** A newline used to be escaped to a literal `\n`, and
+  systemd recognises no C escapes — so a PEM in a hosted instance's `env` arrived corrupted. It is now
+  written verbatim.
+* **A `dns/v1 Zone` delete fails in ~1 s naming the records that block it**, instead of retrying for ~4
+  minutes and then reporting a message naming nothing. The NS/SOA records every zone carries are ignored.
+* **Internal (nothing to migrate):** mutations are no longer retried (the API does not dedupe on
+  `x-idempotency-key` — measured), `paginateAll` refuses a repeated page token, the tenant fan-out fetches
+  the project list once per session, cleanup failures that used to be swallowed now warn, and
+  `Instance.reconcile` is split into tested phases with **no behaviour change**.
+
 ### Upgrading from 0.10.1
 
 * **An unchanged deploy of a `compute.Instance` no longer writes an update.** The drift check compared whole

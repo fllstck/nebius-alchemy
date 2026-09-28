@@ -1,3 +1,74 @@
+# [0.11.0](https://github.com/fllstck/nebius-alchemy/compare/v0.10.2...v0.11.0) (2026-09-28)
+
+### ⚠️ Upgrade notes
+
+* **NEW — Kubernetes workloads can target an `mk8s` cluster directly, with no kubeconfig and no `kubectl`.**
+  `Nebius.mk8s.Cluster` now carries a `connection` attribute and registers a `ClusterAdapter`, so
+  `Kubernetes.Deployment`/`Job`/`Manifest`/`HelmChart` run against the cluster with the ambient IAM access
+  token (measured live: the API answers `200` with the token and `403 system:anonymous` without it). See
+  `examples/mk8s-k8s.ts`. **Scope:** pre-built `image` references only — `main` bundles and
+  `context`/`dockerfile` sources fail with _"this cluster has no managed image registry"_ until the Nebius
+  Container Registry seam lands.
+* **PLAN-TIME STRICTNESS — three configurations that used to be accepted (and then misbehave) now fail the
+  plan.** Each was measured against the live API before being turned into a filter:
+  * **`dns/v1 Record.ttl` must be a whole number of seconds in `1 … 2147483647`.** The API _accepts_ `0` (and
+    a fractional value) and silently substitutes its default `600`, while the provider compares the live echo
+    against your pinned value — so a pinned `0` wrote an update on **every** reconcile that could never
+    converge. Above `INT32_MAX` the refusal names no bound. Omit `ttl` for the default.
+  * **A `compute/v1` label map must not contain an empty (`''`) key.** Compute answers a bare
+    `3 INVALID_ARGUMENT: metadata.labels is invalid`, naming neither the label nor the reason; a blank
+    (`'  '`) key _is_ accepted, so the filter is exactly `key === ''`. VPC is deliberately unaffected — it
+    stores an empty key, and that absence of a filter is pinned by a test.
+  * **A `=` or a newline in a hosted instance's env _key_ is a plan-time error**
+    (`InvalidHostedEnvKey`). systemd has no quoting on the key side, so `{'A=B': 'v'}` used to ship as key
+    `A` with value `B='v'`, and `{'KE\nY': 'v'}` as two variables — silently either way. `MY.KEY`, `MY-KEY`
+    and `MY_KEY` all remain legal.
+* **FIX — a multi-line env _value_ now reaches the VM intact.** `quoteEnvValue` escaped a newline to a
+  literal `\n`, and systemd recognises no C escapes, so a PEM in a hosted instance's `env` arrived corrupted.
+  The value is now written verbatim inside its quotes (measured against systemd v255, the version the target
+  image ships).
+* **`dns/v1 Zone` deletes now fail fast and name the records.** A zone still holding out-of-band records is
+  refused by the API; the provider pre-checks and fails in ~1 s with the zone, the records and what to do,
+  instead of retrying for ~4 minutes and then reporting a message naming nothing. The NS and SOA records every
+  zone carries are ignored — they never block a delete.
+* **Type-level:** two error fields are now branded — `ZoneNotEmpty.zoneId` (`dns/v1`) and
+  `PricingPolicyHasRunningVms.id` (`billing/v1`) — so they read as the newtype rather than `string`.
+* **Internal, no migration needed.** Mutations are no longer retried: a live probe showed the API does not
+  dedupe on `x-idempotency-key` (neither for a completed nor for an in-flight request), so retries now apply
+  to reads only and a lost response is a loud failure instead of a possible duplicate write. `maxBackoff` is
+  actually enforced; `paginateAll` refuses a repeated page token instead of looping forever; the tenant
+  fan-out fetches the project list once per session with bounded concurrency; every failure that used to read
+  as "nothing there" (a swallowed `PERMISSION_DENIED` in a cleanup path) is now reported; and
+  `compute/v1 Instance.reconcile` is split into four exported phases with direct tests — **behaviour
+  unchanged**, which the untouched convergence tables are what pin.
+
+### Bug Fixes
+
+* **api-client:** implement maxBackoff cap and bound paginateAll loops ([b480801](https://github.com/fllstck/nebius-alchemy/commit/b48080182a4196c7692ab10017ee3bbd2de845da))
+* **compute/hosted:** keep newlines verbatim in quoted env values ([241e0a6](https://github.com/fllstck/nebius-alchemy/commit/241e0a652f221f653715b09bd9521b419d396d40))
+* **conformance:** enforce branded-ID audit and brand error-schema ids ([c75ce3f](https://github.com/fllstck/nebius-alchemy/commit/c75ce3f54b2192167618b04a5350420c2f991c5e))
+* **dns:** bound Record.ttl by measurement, not by the audit's claim ([7e221a1](https://github.com/fllstck/nebius-alchemy/commit/7e221a1e5a1f07a926c26afb23f810ac223f465a))
+* **dns:** pre-check that a Zone is empty before deleting it ([c736bdc](https://github.com/fllstck/nebius-alchemy/commit/c736bdc78d16a52759e07c96f562481fa23cdccc))
+* **hosted:** report fetch-key cleanup failures instead of swallowing them ([5ff958e](https://github.com/fllstck/nebius-alchemy/commit/5ff958e3a768b74a8eb0a99c763f40f1c0631942))
+* **lint:** enforce no-silent-error-swallow at error level ([e9d28ea](https://github.com/fllstck/nebius-alchemy/commit/e9d28eadddcf3d4b1aecea0a32b7835fd95be1aa))
+* **lint:** make no-effect-ignore catch pipe form and add rule self-tests ([78a8463](https://github.com/fllstck/nebius-alchemy/commit/78a8463b26575bd3e8c1df0472fe8f34ff031a10))
+* **mk8s:** replace plain Error with tagged errors in typed failure channels ([3a6e69c](https://github.com/fllstck/nebius-alchemy/commit/3a6e69c01cadcdf6bef0da46456e55b7843c6b35))
+* **resources:** classify create failures before recovery lookup ([88f7f1e](https://github.com/fllstck/nebius-alchemy/commit/88f7f1ef816a32655794c84c9d4206e184ed7e04))
+
+
+### Features
+
+* **examples:** add mk8s-k8s bridge example for Kubernetes workloads ([9e5e3b7](https://github.com/fllstck/nebius-alchemy/commit/9e5e3b775bac347bee5e2816412a6e76da41347f))
+* **mk8s:** add Kubernetes cluster adapter for CLI-free auth ([0a42bac](https://github.com/fllstck/nebius-alchemy/commit/0a42bacde17c1c56bef04ae6d0752dc9044fb5c3))
+* **spikes:** add mk8s auth probe cluster spike ([4df3099](https://github.com/fllstck/nebius-alchemy/commit/4df30995b0cfdb343cc3683d2cac54c6682c5506))
+* **spikes:** add mk8s kubeconfig auth probe ([836f3b1](https://github.com/fllstck/nebius-alchemy/commit/836f3b139c05b70f4a4847ed01e5c7078cc46a90))
+* **validation:** service-scoped label maps, measured not unified ([05deaeb](https://github.com/fllstck/nebius-alchemy/commit/05deaebf23206bc8bbcc8b578cf055feaf348f73))
+
+
+### Performance Improvements
+
+* **resources:** memoize tenant project list and bound fan-out concurrency ([9feeaf1](https://github.com/fllstck/nebius-alchemy/commit/9feeaf1d9c041b8ffe97ec15337f37d97df994e1))
+
 ## [0.10.2](https://github.com/fllstck/nebius-alchemy/compare/v0.10.1...v0.10.2) (2026-09-24)
 
 ### ⚠️ Upgrade notes
